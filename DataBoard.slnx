@@ -1,0 +1,7 @@
+<Solution>
+  <Project Path="databoard.client/databoard.client.esproj">
+    <Build />
+    <Deploy />
+  </Project>
+  <Project Path="DataBoard.Server/DataBoard.Server.csproj" />
+</Solution>
