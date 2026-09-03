@@ -1,7 +1,18 @@
 <Solution>
-  <Project Path="databoard.client/databoard.client.esproj">
-    <Build />
-    <Deploy />
-  </Project>
-  <Project Path="DataBoard.Server/DataBoard.Server.csproj" />
+  <Folder Name="/src/">
+    <Project Path="src/DataBoard.Domain/DataBoard.Domain.csproj" />
+    <Project Path="src/DataBoard.Application/DataBoard.Application.csproj" />
+    <Project Path="src/DataBoard.Infrastructure/DataBoard.Infrastructure.csproj" />
+    <Project Path="src/DataBoard.Server/DataBoard.Server.csproj" />
+    <Project Path="src/databoard.client/databoard.client.esproj">
+      <Build />
+      <Deploy />
+    </Project>
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/DataBoard.Domain.Tests/DataBoard.Domain.Tests.csproj" />
+    <Project Path="tests/DataBoard.Application.Tests/DataBoard.Application.Tests.csproj" />
+    <Project Path="tests/DataBoard.Infrastructure.Tests/DataBoard.Infrastructure.Tests.csproj" />
+    <Project Path="tests/DataBoard.Server.IntegrationTests/DataBoard.Server.IntegrationTests.csproj" />
+  </Folder>
 </Solution>

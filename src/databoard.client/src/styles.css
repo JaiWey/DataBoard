@@ -1,0 +1,38 @@
+/* Material theme variables come from material-theme.scss; these are the app-wide helpers built on them. */
+a { color: var(--mat-sys-primary); }
+h2 { font: var(--mat-sys-headline-small); margin: 0 0 1rem; }
+h3 { font: var(--mat-sys-title-large); margin: 1.5rem 0 0.75rem; }
+small { color: var(--mat-sys-on-surface-variant); }
+
+.ok { color: #1a7f37; }
+.fail { color: var(--mat-sys-error); }
+
+.sql {
+  background: var(--mat-sys-surface-container);
+  border-radius: var(--mat-sys-corner-small);
+  padding: 0.75rem;
+  overflow-x: auto;
+  font-size: 0.85rem;
+}
+
+.results { overflow-x: auto; }
+.results table, table.plain { border-collapse: collapse; font-size: 0.9rem; }
+.results th, .results td {
+  border: 1px solid var(--mat-sys-outline-variant);
+  padding: 0.3rem 0.6rem;
+  text-align: left;
+}
+.results th { background: var(--mat-sys-surface-container); }
+
+.chip {
+  display: inline-block;
+  background: var(--mat-sys-secondary-container);
+  color: var(--mat-sys-on-secondary-container);
+  border-radius: var(--mat-sys-corner-small);
+  padding: 0.1rem 0.5rem;
+  font-size: 0.85rem;
+}
+.chip.measure { background: var(--mat-sys-tertiary-container); color: var(--mat-sys-on-tertiary-container); }
+
+.form-row { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: flex-start; }
+.actions { margin-left: auto; display: flex; gap: 0.4rem; }

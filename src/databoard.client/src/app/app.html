@@ -1,0 +1,22 @@
+<mat-toolbar color="primary">
+  <a class="brand" routerLink="/">{{ title() }}</a>
+  <span class="spacer"></span>
+  @if (auth.user(); as user) {
+    <span class="who">{{ user.displayName }}</span>
+    <button mat-button type="button" (click)="logout()">Sign out</button>
+  }
+</mat-toolbar>
+
+<main>
+  <router-outlet />
+</main>
+
+<footer>
+  @if (health(); as h) {
+    <p id="api-status" class="ok">API status: {{ h.status }} ({{ h.timeUtc }})</p>
+  } @else if (error(); as e) {
+    <p id="api-status" class="fail">{{ e }}</p>
+  } @else {
+    <p id="api-status"><em>Checking API...</em></p>
+  }
+</footer>

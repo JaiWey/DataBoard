@@ -1,0 +1,34 @@
+using DataBoard.Domain.DataSources;
+using DataBoard.Domain.Datasets;
+using DataBoard.Domain.Organizations;
+using DataBoard.Infrastructure.Identity;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
+
+namespace DataBoard.Infrastructure.Persistence;
+
+internal sealed class DatasetConfiguration : IEntityTypeConfiguration<Dataset>
+{
+    public void Configure(EntityTypeBuilder<Dataset> builder)
+    {
+        builder.ToTable("datasets");
+        builder.HasKey(d => d.Id);
+        builder.Property(d => d.Name).IsRequired().HasMaxLength(Dataset.MaxNameLength);
+        builder.Property(d => d.Description).HasMaxLength(Dataset.MaxDescriptionLength);
+        builder.Property(d => d.Sql).IsRequired();
+
+        // The column list is one JSON document per dataset: it is always read and written as a whole.
+        builder.OwnsMany(d => d.Columns, columns =>
+        {
+            columns.ToJson("columns");
+            columns.Property(c => c.Role).HasConversion<string>();
+        });
+
+        builder.HasIndex(d => new { d.OrganizationId, d.Name }).IsUnique();
+        builder.HasIndex(d => d.DataSourceId);
+
+        builder.HasOne<Organization>().WithMany().HasForeignKey(d => d.OrganizationId).OnDelete(DeleteBehavior.Cascade);
+        builder.HasOne<DataSource>().WithMany().HasForeignKey(d => d.DataSourceId).OnDelete(DeleteBehavior.Cascade);
+        builder.HasOne<AppUser>().WithMany().HasForeignKey(d => d.CreatedByUserId).OnDelete(DeleteBehavior.Restrict);
+    }
+}

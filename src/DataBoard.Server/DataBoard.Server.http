@@ -1,0 +1,6 @@
+@DataBoard.Server_HostAddress = http://localhost:5185
+
+GET {{DataBoard.Server_HostAddress}}/api/health
+Accept: application/json
+
+###
