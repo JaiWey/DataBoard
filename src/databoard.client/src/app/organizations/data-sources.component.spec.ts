@@ -1,7 +1,9 @@
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { MatDialog } from '@angular/material/dialog';
 import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
+import { of } from 'rxjs';
 import { DataSourcesComponent } from './data-sources.component';
 
 const ORG = '11111111-1111-1111-1111-111111111111';
@@ -12,6 +14,7 @@ const SOURCE = {
   type: 'PostgreSql',
   createdUtc: '2026-10-07T00:00:00Z',
 };
+const OTHER = { ...SOURCE, id: '33333333-3333-3333-3333-333333333333', name: 'Warehouse' };
 
 describe('DataSourcesComponent', () => {
   let fixture: ComponentFixture<DataSourcesComponent>;
@@ -19,11 +22,19 @@ describe('DataSourcesComponent', () => {
 
   const el = () => fixture.nativeElement as HTMLElement;
   const buttons = () => Array.from(el().querySelectorAll('button')).map((b) => b.textContent?.trim());
+  const button = (text: string) =>
+    Array.from(el().querySelectorAll('button')).find((b) => b.textContent?.trim() === text) as HTMLButtonElement;
+  const listItems = () => Array.from(el().querySelectorAll('button.item')) as HTMLButtonElement[];
 
-  const load = (role: 'Viewer' | 'Editor' | 'Owner') => {
+  const load = (role: 'Viewer' | 'Editor' | 'Owner', items: unknown[] = [SOURCE]) => {
     fixture.detectChanges();
     http.expectOne('/api/organizations').flush([{ id: ORG, name: 'Acme', role }]);
-    http.expectOne(`/api/organizations/${ORG}/data-sources`).flush([SOURCE]);
+    http.expectOne(`/api/organizations/${ORG}/data-sources`).flush(items);
+    fixture.detectChanges();
+  };
+
+  const select = (index = 0) => {
+    listItems()[index].click();
     fixture.detectChanges();
   };
 
@@ -42,36 +53,75 @@ describe('DataSourcesComponent', () => {
 
   afterEach(() => http.verify());
 
-  it('lets viewers browse the schema but hides testing, querying and adding', () => {
-    load('Viewer');
+  it('lists the data sources on the left and asks for a selection on the right', () => {
+    load('Viewer', [SOURCE, OTHER]);
 
-    expect(buttons()).toEqual(['Schema']);
-    expect(el().textContent).not.toContain('Add a PostgreSQL data source');
+    expect(listItems().map((b) => b.querySelector('[matListItemTitle]')?.textContent?.trim())).toEqual(['Sales', 'Warehouse']);
+    expect(el().querySelector('.detail')?.textContent).toContain('Select a data source to see its details.');
   });
 
-  it('shows editors the query, test and add controls', () => {
-    load('Editor');
+  it('shows the details of the clicked data source and switches between sources', () => {
+    load('Viewer', [SOURCE, OTHER]);
 
-    expect(buttons()).toEqual(expect.arrayContaining(['Schema', 'Query', 'Test', 'Test connection', 'Save']));
+    select(0);
+    expect(el().querySelector('.detail')?.textContent).toContain('Sales');
+    expect(el().querySelector('.detail')?.textContent).toContain('PostgreSql');
+    expect(el().querySelector('.detail')?.textContent).not.toContain('Select a data source');
+
+    select(1);
+    expect(el().querySelector('.detail mat-card-title')?.textContent).toContain('Warehouse');
+  });
+
+  it('lets viewers browse the schema but hides testing, querying and adding', () => {
+    load('Viewer');
+    select();
+
+    expect(buttons()).toEqual(['SalesPostgreSql', 'Schema']);
+    expect(buttons()).not.toContain('Add data source');
+  });
+
+  it('shows editors the add, query and test controls', () => {
+    load('Editor');
+    select();
+
+    expect(buttons()).toEqual(expect.arrayContaining(['Add data source', 'Schema', 'Query', 'Test']));
   });
 
   it('loads and renders the schema tree when Schema is clicked', () => {
     load('Viewer');
+    select();
 
-    (Array.from(el().querySelectorAll('button')).find((b) => b.textContent === 'Schema') as HTMLButtonElement).click();
+    button('Schema').click();
     http.expectOne(`/api/organizations/${ORG}/data-sources/${SOURCE.id}/schema`).flush({
       schemas: [{ name: 'public', tables: [{ name: 'sales', kind: 'Table', columns: [{ name: 'id', dataType: 'integer', nullable: false }] }] }],
       truncated: false,
     });
     fixture.detectChanges();
 
-    expect(el().textContent).toContain('sales');
-    expect(el().textContent).toContain('integer');
+    expect(el().querySelector('.detail')?.textContent).toContain('sales');
+    expect(el().querySelector('.detail')?.textContent).toContain('integer');
+  });
+
+  it('clears what was open when another data source is selected', () => {
+    load('Viewer', [SOURCE, OTHER]);
+    select(0);
+    button('Schema').click();
+    http.expectOne(`/api/organizations/${ORG}/data-sources/${SOURCE.id}/schema`).flush({
+      schemas: [{ name: 'public', tables: [] }],
+      truncated: false,
+    });
+    fixture.detectChanges();
+
+    select(1);
+
+    expect(el().querySelector('details')).toBeNull();
+    expect(el().querySelector('.detail')?.textContent).toContain('Choose Schema');
   });
 
   it('shows the API validation message when a query is rejected', () => {
     load('Editor');
-    (Array.from(el().querySelectorAll('button')).find((b) => b.textContent === 'Query') as HTMLButtonElement).click();
+    select();
+    button('Query').click();
     fixture.detectChanges();
 
     const textarea = el().querySelector('textarea') as HTMLTextAreaElement;
@@ -88,36 +138,45 @@ describe('DataSourcesComponent', () => {
     expect(el().querySelector('[role=alert]')?.textContent).toContain('Only SELECT queries are allowed.');
   });
 
-  it('sends a connection string built from the form when testing a new connection', () => {
+  it('shows the result of testing a saved connection', () => {
+    load('Editor');
+    select();
+
+    button('Test').click();
+    http.expectOne(`/api/organizations/${ORG}/data-sources/${SOURCE.id}/test`)
+      .flush({ success: true, message: 'Connection successful.', serverVersion: '17.2', latencyMs: 5 });
+    fixture.detectChanges();
+
+    expect(el().querySelector('[role=status]')?.textContent).toContain('Connection successful.');
+  });
+
+  it('opens the add dialog and selects the data source it created', () => {
     load('Owner');
-    const set = (selector: string, value: string) => {
-      const input = el().querySelector(selector) as HTMLInputElement;
-      input.value = value;
-      input.dispatchEvent(new Event('input'));
-    };
-    set('input[formcontrolname=name]', 'Warehouse');
-    set('input[formcontrolname=host]', 'db.example.com');
-    set('input[formcontrolname=database]', 'wh');
-    set('input[formcontrolname=username]', 'reader');
-    set('input[formcontrolname=password]', 'pw');
+    const open = vi.spyOn(TestBed.inject(MatDialog), 'open').mockReturnValue({ afterClosed: () => of(OTHER) } as never);
+
+    button('Add data source').click();
+
+    expect(open).toHaveBeenCalled();
+    expect((open.mock.calls[0][1] as { data: unknown }).data).toEqual({ orgId: ORG });
+    http.expectOne(`/api/organizations/${ORG}/data-sources`).flush([SOURCE, OTHER]);
     fixture.detectChanges();
 
-    (Array.from(el().querySelectorAll('button')).find((b) => b.textContent === 'Test connection') as HTMLButtonElement).click();
+    expect(el().querySelector('.detail mat-card-title')?.textContent).toContain('Warehouse');
+  });
 
-    const req = http.expectOne(`/api/organizations/${ORG}/data-sources/test`);
-    expect(req.request.body.type).toBe('PostgreSql');
-    expect(req.request.body.connectionString).toBe(
-      'Host=db.example.com;Port=5432;Database=wh;Username=reader;Password=pw;SSL Mode=Prefer',
-    );
-    req.flush({ success: true, message: 'Connection successful.', serverVersion: '17.2', latencyMs: 12 });
-    fixture.detectChanges();
+  it('does nothing when the add dialog is cancelled', () => {
+    load('Owner');
+    vi.spyOn(TestBed.inject(MatDialog), 'open').mockReturnValue({ afterClosed: () => of(undefined) } as never);
 
-    expect(el().textContent).toContain('Connection successful.');
+    button('Add data source').click();
+
+    http.expectNone(`/api/organizations/${ORG}/data-sources`);
   });
 
   it('saves the current query as a dataset once it has run', () => {
     load('Editor');
-    (Array.from(el().querySelectorAll('button')).find((b) => b.textContent === 'Query') as HTMLButtonElement).click();
+    select();
+    button('Query').click();
     fixture.detectChanges();
 
     const sql = el().querySelector('textarea') as HTMLTextAreaElement;

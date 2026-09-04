@@ -1,12 +1,15 @@
+import { DatePipe } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatCardModule } from '@angular/material/card';
+import { MatDialog } from '@angular/material/dialog';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
-import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import { MatListModule } from '@angular/material/list';
 import { ActivatedRoute, RouterLink } from '@angular/router';
-import { buildPostgresConnectionString } from './connection-string';
+import { AddDataSourceDialogComponent } from './add-data-source-dialog.component';
 import { DatasetsService } from './datasets.service';
 import {
   ConnectionTestResult,
@@ -25,161 +28,172 @@ interface Organization {
 
 type Panel = 'schema' | 'query';
 
+/** Data sources of an organization: the list on the left, the selected one's details on the right. */
 @Component({
   selector: 'app-data-sources',
-  imports: [ReactiveFormsModule, RouterLink, MatCardModule, MatFormFieldModule, MatInputModule, MatButtonModule],
+  imports: [
+    ReactiveFormsModule,
+    RouterLink,
+    DatePipe,
+    MatButtonModule,
+    MatCardModule,
+    MatFormFieldModule,
+    MatInputModule,
+    MatListModule,
+  ],
   template: `
-    <p>
-      <a mat-button routerLink="/organizations">&larr; Organizations</a>
-      <a mat-button [routerLink]="['/organizations', organization()?.id ?? '', 'datasets']">Datasets</a>
-      <a mat-button [routerLink]="['/organizations', organization()?.id ?? '', 'dashboards']">Dashboards</a>
-    </p>
     <h2>{{ organization()?.name }} <small>data sources</small></h2>
 
-    @if (sources().length === 0) {
-      <p><em>No data sources yet.</em></p>
-    }
-
-    @for (source of sources(); track source.id) {
-      <mat-card class="source" appearance="outlined">
+    <div class="layout">
+      <mat-card appearance="raised" class="list">
         <mat-card-header>
-          <mat-card-title>{{ source.name }}</mat-card-title>
-          <mat-card-subtitle>{{ source.type }}</mat-card-subtitle>
-          <span class="actions">
-            <button mat-stroked-button type="button" (click)="open(source, 'schema')">Schema</button>
-            @if (canEdit()) {
-              <button mat-stroked-button type="button" (click)="open(source, 'query')">Query</button>
-              <button mat-button type="button" (click)="testSaved(source)">Test</button>
-            }
-          </span>
+          <mat-card-title>Data sources</mat-card-title>
+          @if (canEdit()) {
+            <button mat-flat-button type="button" class="add" (click)="openAddDialog()">Add data source</button>
+          }
         </mat-card-header>
         <mat-card-content>
-        @if (savedTest(); as t) {
-          @if (t.id === source.id) {
-            <p [class]="t.result.success ? 'ok' : 'fail'" role="status">{{ t.result.message }}</p>
+          @if (loaded() && sources().length === 0) {
+            <p><em>No data sources yet.</em></p>
           }
-        }
-
-        @if (selectedId() === source.id) {
-          @if (panel() === 'schema') {
-            @if (schema(); as s) {
-              @for (node of s.schemas; track node.name) {
-                <details open>
-                  <summary>{{ node.name }}</summary>
-                  @for (table of node.tables; track table.name) {
-                    <details>
-                      <summary>{{ table.name }} <small>{{ table.kind }}, {{ table.columns.length }} columns</small></summary>
-                      <ul class="columns">
-                        @for (column of table.columns; track column.name) {
-                          <li>
-                            <code>{{ column.name }}</code> {{ column.dataType }}
-                            @if (column.nullable) { <small>nullable</small> }
-                          </li>
-                        }
-                      </ul>
-                    </details>
-                  }
-                </details>
-              } @empty {
-                <p><em>No tables visible to this database account.</em></p>
-              }
-              @if (s.truncated) {
-                <p class="fail">The schema is large; only the first part is shown.</p>
-              }
-            } @else if (!panelError()) {
-              <p><em>Loading schema...</em></p>
+          <mat-action-list>
+            @for (source of sources(); track source.id) {
+              <button mat-list-item type="button" class="item" [activated]="selectedId() === source.id" (click)="select(source)">
+                <span matListItemTitle>{{ source.name }}</span>
+                <span matListItemLine>{{ source.type }}</span>
+              </button>
             }
-          }
-
-          @if (panel() === 'query') {
-            <form [formGroup]="queryForm" (ngSubmit)="runQuery(source)" class="query">
-              <mat-form-field class="sql-field">
-                <mat-label>SQL query</mat-label>
-                <textarea matInput formControlName="sql" rows="5" spellcheck="false" aria-label="SQL query"
-                          placeholder="SELECT * FROM my_table"></textarea>
-                <mat-hint>One read-only SELECT. Writes are blocked.</mat-hint>
-              </mat-form-field>
-              <button mat-flat-button type="submit" [disabled]="queryForm.invalid || busy()">Run (max 50 rows)</button>
-            </form>
-            @if (preview(); as p) {
-              <div class="results">
-                <table>
-                  <thead><tr>@for (c of p.columns; track $index) { <th>{{ c.name }}</th> }</tr></thead>
-                  <tbody>
-                    @for (row of p.rows; track $index) {
-                      <tr>@for (cell of row; track $index) { <td>{{ show(cell) }}</td> }</tr>
-                    }
-                  </tbody>
-                </table>
-              </div>
-              <p><small>{{ p.rows.length }} rows@if (p.truncated) { (more rows exist) }</small></p>
-
-              <form [formGroup]="datasetForm" (ngSubmit)="saveDataset(source)" class="save form-row">
-                <mat-form-field>
-                  <mat-label>Dataset name</mat-label>
-                  <input matInput formControlName="name" aria-label="Dataset name" />
-                </mat-form-field>
-                <button mat-flat-button type="submit" [disabled]="datasetForm.invalid || busy() || queryForm.invalid">Save as dataset</button>
-              </form>
-            }
-            @if (savedDataset(); as name) {
-              <p class="ok" role="status">
-                Saved dataset "{{ name }}". <a [routerLink]="['/organizations', orgId, 'datasets']">View datasets</a>
-              </p>
-            }
-          }
-
-          @for (message of panelError(); track message) {
-            <p class="fail" role="alert">{{ message }}</p>
-          }
-        }
+          </mat-action-list>
         </mat-card-content>
       </mat-card>
-    }
 
-    @if (canEdit()) {
-      <h3>Add a PostgreSQL data source</h3>
-      <form [formGroup]="form" (ngSubmit)="save()" class="add">
-        <mat-form-field><mat-label>Name</mat-label><input matInput formControlName="name" /></mat-form-field>
-        <mat-form-field><mat-label>Host</mat-label><input matInput formControlName="host" placeholder="db.example.com" /></mat-form-field>
-        <mat-form-field><mat-label>Port</mat-label><input matInput type="number" formControlName="port" /></mat-form-field>
-        <mat-form-field><mat-label>Database</mat-label><input matInput formControlName="database" /></mat-form-field>
-        <mat-form-field><mat-label>Username</mat-label><input matInput formControlName="username" autocomplete="off" /></mat-form-field>
-        <mat-form-field><mat-label>Password</mat-label><input matInput type="password" formControlName="password" autocomplete="new-password" /></mat-form-field>
-        <mat-form-field>
-          <mat-label>SSL</mat-label>
-          <select matNativeControl formControlName="sslMode">
-            <option value="Prefer">Prefer</option>
-            <option value="Require">Require</option>
-            <option value="Disable">Disable</option>
-          </select>
-        </mat-form-field>
-        <div class="buttons">
-          <button mat-stroked-button type="button" (click)="testNew()" [disabled]="form.invalid || busy()">Test connection</button>
-          <button mat-flat-button type="submit" [disabled]="form.invalid || busy()">Save</button>
-        </div>
-      </form>
-      <p class="hint"><small>Use a database account that can only SELECT the data you want to expose.</small></p>
+      <mat-card appearance="raised" class="detail">
+        @if (selected(); as source) {
+          <mat-card-header>
+            <mat-card-title>{{ source.name }}</mat-card-title>
+            <mat-card-subtitle>{{ source.type }} &middot; added {{ source.createdUtc | date: 'medium' }}</mat-card-subtitle>
+            <span class="actions">
+              <button mat-stroked-button type="button" (click)="open(source, 'schema')">Schema</button>
+              @if (canEdit()) {
+                <button mat-stroked-button type="button" (click)="open(source, 'query')">Query</button>
+                <button mat-button type="button" (click)="testSaved(source)">Test</button>
+              }
+            </span>
+          </mat-card-header>
 
-      @if (draftTest(); as t) {
-        <p [class]="t.success ? 'ok' : 'fail'" role="status">
-          {{ t.message }}@if (t.success && t.serverVersion) { (PostgreSQL {{ t.serverVersion }}, {{ t.latencyMs }} ms) }
-        </p>
-      }
-      @for (message of formError(); track message) {
-        <p class="fail" role="alert">{{ message }}</p>
-      }
-    }
+          <mat-card-content>
+            @if (savedTest(); as t) {
+              @if (t.id === source.id) {
+                <p [class]="t.result.success ? 'ok' : 'fail'" role="status">{{ t.result.message }}</p>
+              }
+            }
+
+            @if (!panel()) {
+              <p class="hint"><em>Choose Schema to browse its tables@if (canEdit()) { , or Query to run a read-only SELECT }.</em></p>
+            }
+
+            @if (panel() === 'schema') {
+              @if (schema(); as s) {
+                @for (node of s.schemas; track node.name) {
+                  <details open>
+                    <summary>{{ node.name }}</summary>
+                    @for (table of node.tables; track table.name) {
+                      <details>
+                        <summary>{{ table.name }} <small>{{ table.kind }}, {{ table.columns.length }} columns</small></summary>
+                        <ul class="columns">
+                          @for (column of table.columns; track column.name) {
+                            <li>
+                              <code>{{ column.name }}</code> {{ column.dataType }}
+                              @if (column.nullable) { <small>nullable</small> }
+                            </li>
+                          }
+                        </ul>
+                      </details>
+                    }
+                  </details>
+                } @empty {
+                  <p><em>No tables visible to this database account.</em></p>
+                }
+                @if (s.truncated) {
+                  <p class="fail">The schema is large; only the first part is shown.</p>
+                }
+              } @else if (!panelError()) {
+                <p><em>Loading schema...</em></p>
+              }
+            }
+
+            @if (panel() === 'query') {
+              <form [formGroup]="queryForm" (ngSubmit)="runQuery(source)" class="query">
+                <mat-form-field class="sql-field">
+                  <mat-label>SQL query</mat-label>
+                  <textarea matInput formControlName="sql" rows="5" spellcheck="false" aria-label="SQL query"
+                            placeholder="SELECT * FROM my_table"></textarea>
+                  <mat-hint>One read-only SELECT. Writes are blocked.</mat-hint>
+                </mat-form-field>
+                <button mat-flat-button type="submit" [disabled]="queryForm.invalid || busy()">Run (max 50 rows)</button>
+              </form>
+              @if (preview(); as p) {
+                <div class="results">
+                  <table>
+                    <thead><tr>@for (c of p.columns; track $index) { <th>{{ c.name }}</th> }</tr></thead>
+                    <tbody>
+                      @for (row of p.rows; track $index) {
+                        <tr>@for (cell of row; track $index) { <td>{{ show(cell) }}</td> }</tr>
+                      }
+                    </tbody>
+                  </table>
+                </div>
+                <p><small>{{ p.rows.length }} rows@if (p.truncated) { (more rows exist) }</small></p>
+
+                <form [formGroup]="datasetForm" (ngSubmit)="saveDataset(source)" class="save form-row">
+                  <mat-form-field>
+                    <mat-label>Dataset name</mat-label>
+                    <input matInput formControlName="name" aria-label="Dataset name" />
+                  </mat-form-field>
+                  <button mat-flat-button type="submit" [disabled]="datasetForm.invalid || busy() || queryForm.invalid">Save as dataset</button>
+                </form>
+              }
+              @if (savedDataset(); as name) {
+                <p class="ok" role="status">
+                  Saved dataset "{{ name }}". <a [routerLink]="['/organizations', orgId, 'datasets']">View datasets</a>
+                </p>
+              }
+            }
+
+            @for (message of panelError(); track message) {
+              <p class="fail" role="alert">{{ message }}</p>
+            }
+          </mat-card-content>
+        } @else {
+          <mat-card-content class="placeholder">
+            <p><em>Select a data source to see its details.</em></p>
+          </mat-card-content>
+        }
+      </mat-card>
+    </div>
   `,
   styles: `
-    .source { margin: 1rem 0; }
-    mat-card-header { align-items: center; }
+    :host { --mat-card-elevated-container-color: #fff; }
+    /* Both panels fill the space under the page title; the list scrolls inside its own card. */
+    .layout { display: grid; grid-template-columns: 20rem 1fr; gap: 1.25rem; align-items: start; }
+    .list { height: calc(100vh - 12.5rem); position: sticky; top: 1.25rem; }
+    .list mat-card-content { flex: 1; overflow-y: auto; }
+    .detail { min-height: calc(100vh - 12.5rem); }
+    @media (max-width: 52rem) {
+      .layout { grid-template-columns: 1fr; }
+      .list { height: auto; max-height: 20rem; position: static; }
+      .detail { min-height: 0; }
+    }
+    mat-card-header { align-items: center; flex-wrap: wrap; gap: 0.5rem; }
+    mat-card-title { font: var(--mat-sys-title-medium); }
+    .add { margin-left: auto; }
+    .actions { margin-left: auto; display: flex; gap: 0.4rem; }
+    mat-card-content { padding-top: 0.75rem; }
+    .placeholder { flex: 1; display: grid; place-items: center; text-align: center; color: var(--mat-sys-on-surface-variant); }
     .columns { margin: 0.25rem 0 0.5rem 1rem; padding: 0; list-style: none; }
-    .add, .query { display: grid; gap: 0.25rem; max-width: 28rem; }
-    .query { max-width: none; margin-top: 1rem; }
+    .query { display: grid; gap: 0.25rem; margin-top: 0.5rem; }
     .sql-field { width: 100%; }
     textarea { font-family: monospace; }
-    .buttons { display: flex; gap: 0.5rem; }
     .save { margin-top: 0.75rem; }
   `,
 })
@@ -189,6 +203,7 @@ export class DataSourcesComponent implements OnInit {
   private readonly api = inject(DataSourcesService);
   private readonly fb = inject(FormBuilder);
   private readonly datasetsApi = inject(DatasetsService);
+  private readonly dialog = inject(MatDialog);
 
   protected orgId = '';
 
@@ -198,27 +213,16 @@ export class DataSourcesComponent implements OnInit {
     return role === 'Editor' || role === 'Owner';
   });
   protected readonly sources = signal<DataSource[]>([]);
+  protected readonly loaded = signal(false);
 
   protected readonly selectedId = signal<string | null>(null);
-  protected readonly panel = signal<Panel>('schema');
+  protected readonly selected = computed(() => this.sources().find((s) => s.id === this.selectedId()) ?? null);
+  protected readonly panel = signal<Panel | null>(null);
   protected readonly schema = signal<DatabaseSchema | null>(null);
   protected readonly preview = signal<QueryPreview | null>(null);
   protected readonly panelError = signal<string[]>([]);
   protected readonly savedTest = signal<{ id: string; result: ConnectionTestResult } | null>(null);
-
-  protected readonly draftTest = signal<ConnectionTestResult | null>(null);
-  protected readonly formError = signal<string[]>([]);
   protected readonly busy = signal(false);
-
-  protected readonly form = this.fb.nonNullable.group({
-    name: ['', [Validators.required, Validators.maxLength(200)]],
-    host: ['', Validators.required],
-    port: [5432, [Validators.required, Validators.min(1), Validators.max(65535)]],
-    database: ['', Validators.required],
-    username: ['', Validators.required],
-    password: [''],
-    sslMode: ['Prefer' as 'Prefer' | 'Require' | 'Disable'],
-  });
 
   protected readonly queryForm = this.fb.nonNullable.group({
     sql: ['', Validators.required],
@@ -239,6 +243,33 @@ export class DataSourcesComponent implements OnInit {
 
   protected show(value: unknown): string {
     return value === null || value === undefined ? '∅' : String(value);
+  }
+
+  /** Shows a data source's details. What was open for the previous one is cleared. */
+  protected select(source: DataSource): void {
+    if (this.selectedId() === source.id) return;
+    this.selectedId.set(source.id);
+    this.panel.set(null);
+    this.schema.set(null);
+    this.preview.set(null);
+    this.panelError.set([]);
+    this.savedDataset.set(null);
+    this.savedTest.set(null);
+    this.queryForm.reset();
+    this.datasetForm.reset();
+  }
+
+  protected openAddDialog(): void {
+    this.dialog
+      .open<AddDataSourceDialogComponent, { orgId: string }, DataSource>(AddDataSourceDialogComponent, {
+        data: { orgId: this.orgId },
+        width: '34rem',
+        maxWidth: '95vw',
+      })
+      .afterClosed()
+      .subscribe((created) => {
+        if (created) this.reload(created.id);
+      });
   }
 
   protected open(source: DataSource, panel: Panel): void {
@@ -307,56 +338,15 @@ export class DataSourcesComponent implements OnInit {
     });
   }
 
-  protected testNew(): void {
-    if (this.form.invalid) return;
-    this.busy.set(true);
-    this.draftTest.set(null);
-    this.formError.set([]);
-
-    this.api.testNew(this.orgId, this.connectionString()).subscribe({
-      next: (result) => {
-        this.draftTest.set(result);
-        this.busy.set(false);
-      },
-      error: (e) => {
-        this.busy.set(false);
-        this.formError.set(problemMessages(e, 'Test failed.'));
+  /** Reloads the list; a newly created data source is selected so its details appear straight away. */
+  private reload(selectId?: string): void {
+    this.api.list(this.orgId).subscribe({
+      next: (items) => {
+        this.sources.set(items);
+        this.loaded.set(true);
+        const created = selectId ? items.find((s) => s.id === selectId) : undefined;
+        if (created) this.select(created);
       },
     });
-  }
-
-  protected save(): void {
-    if (this.form.invalid) return;
-    this.busy.set(true);
-    this.draftTest.set(null);
-    this.formError.set([]);
-
-    this.api.create(this.orgId, this.form.getRawValue().name, this.connectionString()).subscribe({
-      next: () => {
-        this.busy.set(false);
-        this.form.reset({ port: 5432, sslMode: 'Prefer' });
-        this.reload();
-      },
-      error: (e) => {
-        this.busy.set(false);
-        this.formError.set(problemMessages(e, 'Could not save the data source.'));
-      },
-    });
-  }
-
-  private connectionString(): string {
-    const v = this.form.getRawValue();
-    return buildPostgresConnectionString({
-      host: v.host,
-      port: v.port,
-      database: v.database,
-      username: v.username,
-      password: v.password,
-      sslMode: v.sslMode,
-    });
-  }
-
-  private reload(): void {
-    this.api.list(this.orgId).subscribe({ next: (items) => this.sources.set(items) });
   }
 }

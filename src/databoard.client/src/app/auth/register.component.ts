@@ -64,7 +64,7 @@ export class RegisterComponent {
 
     const { email, password, displayName } = this.form.getRawValue();
     this.auth.register(email, password, displayName).subscribe({
-      next: () => this.router.navigate(['/organizations']),
+      next: () => this.router.navigate(['/']),
       error: (e: HttpErrorResponse) => {
         this.busy.set(false);
         this.errors.set(this.messagesFrom(e));

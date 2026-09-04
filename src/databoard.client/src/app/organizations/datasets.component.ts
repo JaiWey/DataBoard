@@ -3,7 +3,10 @@ import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatCardModule } from '@angular/material/card';
 import { MatFormFieldModule } from '@angular/material/form-field';
+import { MatDialog } from '@angular/material/dialog';
 import { MatInputModule } from '@angular/material/input';
+import { MatListModule } from '@angular/material/list';
+import { AddDatasetDialogComponent } from './add-dataset-dialog.component';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { QueryPreview, problemMessages } from './data-sources.service';
@@ -19,22 +22,35 @@ interface Organization {
 
 @Component({
   selector: 'app-datasets',
-  imports: [ReactiveFormsModule, RouterLink, MatCardModule, MatFormFieldModule, MatInputModule, MatButtonModule, ChartComponent],
+  imports: [ReactiveFormsModule, RouterLink, MatCardModule, MatFormFieldModule, MatInputModule, MatListModule, MatButtonModule, ChartComponent],
   template: `
-    <p>
-      <a mat-button [routerLink]="['/organizations', orgId]">&larr; Data sources</a>
-      <a mat-button [routerLink]="['/organizations', orgId, 'dashboards']">Dashboards</a>
-    </p>
     <h2>{{ organization()?.name }} <small>datasets</small></h2>
 
-    @if (loaded() && datasets().length === 0) {
-      <p><em>No datasets yet.</em>
-        @if (canEdit()) { Run a query on a data source and choose <strong>Save as dataset</strong>. }
-      </p>
-    }
+    <div class="layout">
+      <mat-card appearance="raised" class="list">
+        <mat-card-header>
+          <mat-card-title>Datasets</mat-card-title>
+          @if (canEdit()) {
+            <button mat-flat-button type="button" class="add" (click)="openAddDialog()">Add dataset</button>
+          }
+        </mat-card-header>
+        <mat-card-content>
+          @if (loaded() && datasets().length === 0) {
+            <p><em>No datasets yet.</em></p>
+          }
+          <mat-action-list>
+            @for (item of datasets(); track item.id) {
+              <button mat-list-item type="button" class="item" [activated]="selectedId() === item.id" (click)="select(item)">
+                <span matListItemTitle>{{ item.name }}</span>
+                <span matListItemLine>{{ item.columns.length }} columns</span>
+              </button>
+            }
+          </mat-action-list>
+        </mat-card-content>
+      </mat-card>
 
-    @for (dataset of datasets(); track dataset.id) {
-      <mat-card class="dataset" appearance="outlined">
+      <mat-card appearance="raised" class="detail">
+      @if (selected(); as dataset) {
         <mat-card-header>
           <mat-card-title>{{ dataset.name }}</mat-card-title>
           <span class="actions">
@@ -58,7 +74,7 @@ interface Organization {
 
         @if (dataset.sql) { <pre class="sql">{{ dataset.sql }}</pre> }
 
-        @if (exploringId() === dataset.id) {
+        @if (panel() === 'explore') {
           <form [formGroup]="exploreForm" (ngSubmit)="run(dataset)" class="explore form-row">
             <mat-form-field>
               <mat-label>Group by</mat-label>
@@ -151,7 +167,7 @@ interface Organization {
           }
         }
 
-        @if (selectedId() === dataset.id) {
+        @if (panel() === 'preview') {
           @if (preview(); as p) {
             <div class="results">
               <table>
@@ -170,14 +186,34 @@ interface Organization {
           }
         }
         </mat-card-content>
+      } @else {
+        <mat-card-content class="placeholder">
+          <p><em>Select a dataset to see its details.</em></p>
+        </mat-card-content>
+      }
       </mat-card>
-    }
+    </div>
   `,
   styles: `
-    .dataset { margin: 1rem 0; }
+    :host { --mat-card-elevated-container-color: #fff; }
+    /* Both panels fill the space under the page title; the list scrolls inside its own card. */
+    .layout { display: grid; grid-template-columns: 20rem 1fr; gap: 1.25rem; align-items: start; }
+    .list { height: calc(100vh - 12.5rem); position: sticky; top: 1.25rem; }
+    .list mat-card-content { flex: 1; overflow-y: auto; }
+    .detail { min-height: calc(100vh - 12.5rem); }
+    @media (max-width: 52rem) {
+      .layout { grid-template-columns: 1fr; }
+      .list { height: auto; max-height: 20rem; position: static; }
+      .detail { min-height: 0; }
+    }
+    mat-card-title { font: var(--mat-sys-title-medium); }
+    .add, .actions { margin-left: auto; }
+    .actions { display: flex; gap: 0.4rem; }
+    mat-card-content { padding-top: 0.75rem; }
+    .placeholder { flex: 1; display: grid; place-items: center; text-align: center; color: var(--mat-sys-on-surface-variant); }
     .desc { margin: 0.25rem 0; color: var(--mat-sys-on-surface-variant); }
     .chips { display: flex; flex-wrap: wrap; gap: 0.35rem; }
-    mat-card-header { align-items: center; }
+    mat-card-header { align-items: center; flex-wrap: wrap; gap: 0.5rem; }
     .explore { margin: 1rem 0 0; }
     .run { margin-top: 0.4rem; }
     .bar-cell { width: 12rem; }
@@ -198,13 +234,16 @@ export class DatasetsComponent implements OnInit {
   protected readonly datasets = signal<Dataset[]>([]);
   protected readonly loaded = signal(false);
   protected readonly selectedId = signal<string | null>(null);
+  protected readonly selected = computed(() => this.datasets().find((d) => d.id === this.selectedId()) ?? null);
+  /** What the detail pane shows below the dataset's description: nothing, a data preview, or the explorer. */
+  protected readonly panel = signal<'preview' | 'explore' | null>(null);
+  private readonly dialog = inject(MatDialog);
   protected readonly preview = signal<QueryPreview | null>(null);
   protected readonly errors = signal<string[]>([]);
 
   protected readonly aggregations: Aggregation[] = ['Count', 'Sum', 'Avg', 'Min', 'Max', 'CountDistinct'];
   protected readonly grains: TimeGrain[] = ['Day', 'Week', 'Month', 'Quarter', 'Year'];
   protected readonly chartTypes: WidgetChartType[] = ['Table', 'Bar', 'Line', 'Pie'];
-  protected readonly exploringId = signal<string | null>(null);
   private readonly dashboardsApi = inject(DashboardsService);
   private lastQuery: ChartQuery | null = null;
   protected readonly addingToDashboard = signal(false);
@@ -238,8 +277,34 @@ export class DatasetsComponent implements OnInit {
     this.reload();
   }
 
+  /** Shows a dataset's details. What was open for the previous one is cleared. */
+  protected select(dataset: Dataset): void {
+    if (this.selectedId() === dataset.id) return;
+    this.selectedId.set(dataset.id);
+    this.panel.set(null);
+    this.preview.set(null);
+    this.result.set(null);
+    this.errors.set([]);
+    this.addingToDashboard.set(false);
+    this.addedTo.set(null);
+  }
+
+  protected openAddDialog(): void {
+    this.dialog
+      .open<AddDatasetDialogComponent, { orgId: string }, Dataset>(AddDatasetDialogComponent, {
+        data: { orgId: this.orgId },
+        width: '40rem',
+        maxWidth: '95vw',
+      })
+      .afterClosed()
+      .subscribe((created) => {
+        if (created) this.reload(created.id);
+      });
+  }
+
   protected show(dataset: Dataset): void {
     this.selectedId.set(dataset.id);
+    this.panel.set('preview');
     this.preview.set(null);
     this.errors.set([]);
     this.api.preview(this.orgId, dataset.id).subscribe({
@@ -249,7 +314,8 @@ export class DatasetsComponent implements OnInit {
   }
 
   protected explore(dataset: Dataset): void {
-    this.exploringId.set(this.exploringId() === dataset.id ? null : dataset.id);
+    this.selectedId.set(dataset.id);
+    this.panel.set(this.panel() === 'explore' ? null : 'explore');
     this.result.set(null);
     this.errors.set([]);
     const firstMeasure = dataset.columns.find((c) => c.role === 'Measure');
@@ -354,7 +420,11 @@ export class DatasetsComponent implements OnInit {
   protected remove(dataset: Dataset): void {
     if (!confirm(`Delete the dataset "${dataset.name}"?`)) return;
     this.api.remove(this.orgId, dataset.id).subscribe({
-      next: () => this.reload(),
+      next: () => {
+        this.selectedId.set(null);
+        this.panel.set(null);
+        this.reload();
+      },
       error: (e) => {
         this.selectedId.set(dataset.id);
         this.errors.set(problemMessages(e, 'Could not delete the dataset.'));
@@ -362,11 +432,14 @@ export class DatasetsComponent implements OnInit {
     });
   }
 
-  private reload(): void {
+  /** Reloads the list; a newly created dataset is selected so its details appear straight away. */
+  private reload(selectId?: string): void {
     this.api.list(this.orgId).subscribe({
       next: (items) => {
         this.datasets.set(items);
         this.loaded.set(true);
+        const created = selectId ? items.find((d) => d.id === selectId) : undefined;
+        if (created) this.select(created);
       },
     });
   }

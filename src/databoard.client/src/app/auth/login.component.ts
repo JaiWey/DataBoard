@@ -58,7 +58,7 @@ export class LoginComponent {
 
     const { email, password } = this.form.getRawValue();
     this.auth.login(email, password).subscribe({
-      next: () => this.router.navigate(['/organizations']),
+      next: () => this.router.navigate(['/']),
       error: (e: HttpErrorResponse) => {
         this.busy.set(false);
         this.error.set(e.status === 401 ? 'Invalid email or password.' : 'Sign in failed. Try again.');

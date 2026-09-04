@@ -1,7 +1,9 @@
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { MatDialog } from '@angular/material/dialog';
 import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
+import { of } from 'rxjs';
 import { ECHARTS_LOADER } from '../charts/chart.component';
 import { DatasetsComponent } from './datasets.component';
 
@@ -26,13 +28,19 @@ describe('DatasetsComponent', () => {
   let http: HttpTestingController;
 
   const el = () => fixture.nativeElement as HTMLElement;
-  const buttonText = () => Array.from(el().querySelectorAll('button')).map((b) => b.textContent?.trim());
+  /** The buttons of the detail pane (the list on the left has its own). */
+  const buttonText = () => Array.from(el().querySelectorAll('.detail button')).map((b) => b.textContent?.trim());
 
-  const load = (role: 'Viewer' | 'Editor' | 'Owner', items: unknown[]) => {
+  /** Loads the page and, unless told otherwise, clicks the first dataset in the list to show its details. */
+  const load = (role: 'Viewer' | 'Editor' | 'Owner', items: unknown[], selectFirst = true) => {
     fixture.detectChanges();
     http.expectOne('/api/organizations').flush([{ id: ORG, name: 'Acme', role }]);
     http.expectOne(`/api/organizations/${ORG}/datasets`).flush(items);
     fixture.detectChanges();
+    if (selectFirst && items.length > 0) {
+      (el().querySelector('button.item') as HTMLButtonElement).click();
+      fixture.detectChanges();
+    }
   };
 
   beforeEach(() => {
@@ -55,7 +63,48 @@ describe('DatasetsComponent', () => {
     load('Editor', []);
 
     expect(el().textContent).toContain('No datasets yet.');
-    expect(el().textContent).toContain('Save as dataset');
+    expect(Array.from(el().querySelectorAll('button')).some((b) => b.textContent?.trim() === 'Add dataset')).toBe(true);
+  });
+
+  it('does not offer adding a dataset to viewers', () => {
+    load('Viewer', []);
+
+    expect(Array.from(el().querySelectorAll('button')).some((b) => b.textContent?.trim() === 'Add dataset')).toBe(false);
+  });
+
+  it('lists datasets on the left and asks for a selection on the right', () => {
+    load('Viewer', [dataset(null)], false);
+
+    expect(el().querySelector('button.item [matListItemTitle]')?.textContent?.trim()).toBe('Orders');
+    expect(el().querySelector('.detail')?.textContent).toContain('Select a dataset to see its details.');
+  });
+
+  it('switches the details when another dataset is clicked and clears what was open', () => {
+    const second = { ...dataset(null), id: '55555555-5555-5555-5555-555555555555', name: 'Customers' };
+    load('Viewer', [dataset(null), second]);
+    (Array.from(el().querySelectorAll('.detail button')).find((b) => b.textContent?.trim() === 'Explore') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(el().querySelector('form.explore')).not.toBeNull();
+
+    (el().querySelectorAll('button.item')[1] as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    expect(el().querySelector('.detail mat-card-title')?.textContent).toContain('Customers');
+    expect(el().querySelector('form.explore')).toBeNull();
+  });
+
+  it('opens the add dialog and selects the dataset it created', () => {
+    load('Owner', [dataset(null)], false);
+    const created = { ...dataset(null), id: '55555555-5555-5555-5555-555555555555', name: 'Customers' };
+    const open = vi.spyOn(TestBed.inject(MatDialog), 'open').mockReturnValue({ afterClosed: () => of(created) } as never);
+
+    (Array.from(el().querySelectorAll('button')).find((b) => b.textContent?.trim() === 'Add dataset') as HTMLButtonElement).click();
+
+    expect((open.mock.calls[0][1] as { data: unknown }).data).toEqual({ orgId: ORG });
+    http.expectOne(`/api/organizations/${ORG}/datasets`).flush([dataset(null), created]);
+    fixture.detectChanges();
+
+    expect(el().querySelector('.detail mat-card-title')?.textContent).toContain('Customers');
   });
 
   it('shows columns as dimensions or measures', () => {
@@ -83,7 +132,7 @@ describe('DatasetsComponent', () => {
   it('loads and renders a preview of the data', () => {
     load('Viewer', [dataset(null)]);
 
-    (el().querySelector('button') as HTMLButtonElement).click();
+    (Array.from(el().querySelectorAll('.detail button')).find((b) => b.textContent?.trim() === 'Preview') as HTMLButtonElement).click();
     http.expectOne(`/api/organizations/${ORG}/datasets/${dataset(null).id}/preview`).flush({
       columns: [{ name: 'region', dataType: 'text' }, { name: 'amount', dataType: 'numeric' }],
       rows: [['Auckland', 10], [null, 5]],

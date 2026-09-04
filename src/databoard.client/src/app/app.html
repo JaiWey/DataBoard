@@ -1,9 +1,29 @@
-<mat-toolbar color="primary">
-  <a class="brand" routerLink="/">{{ title() }}</a>
-  <span class="spacer"></span>
+<mat-toolbar class="topbar">
+  <a class="brand" routerLink="/" aria-label="DataBoard home">
+    <svg viewBox="0 0 32 32" width="28" height="28" aria-hidden="true">
+      <rect x="2" y="2" width="28" height="28" rx="7" fill="#3370ff" />
+      <rect x="8" y="16" width="4" height="8" rx="1" fill="#fff" />
+      <rect x="14" y="10" width="4" height="14" rx="1" fill="#fff" />
+      <rect x="20" y="13" width="4" height="11" rx="1" fill="#fff" />
+    </svg>
+    <span>{{ title() }}</span>
+  </a>
+
   @if (auth.user(); as user) {
+    <nav aria-label="Main">
+      <a mat-button routerLink="/" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }">Workbench</a>
+      @if (orgId(); as id) {
+        <a mat-button [routerLink]="['/organizations', id, 'dashboards']" routerLinkActive="active">Dashboards</a>
+        <a mat-button [routerLink]="['/organizations', id, 'datasets']" routerLinkActive="active">Datasets</a>
+        <a mat-button [routerLink]="['/organizations', id]" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }">Data sources</a>
+      }
+      <a mat-button routerLink="/organizations" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }">Organizations</a>
+    </nav>
+
+    <span class="spacer"></span>
+    <span class="avatar" aria-hidden="true">{{ initials() }}</span>
     <span class="who">{{ user.displayName }}</span>
-    <button mat-button type="button" (click)="logout()">Sign out</button>
+    <button mat-stroked-button type="button" class="signout" (click)="logout()">Sign out</button>
   }
 </mat-toolbar>
 
