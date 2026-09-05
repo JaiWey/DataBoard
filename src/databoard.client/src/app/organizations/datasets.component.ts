@@ -2,17 +2,13 @@ import { HttpClient } from '@angular/common/http';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatCardModule } from '@angular/material/card';
-import { MatFormFieldModule } from '@angular/material/form-field';
-import { MatDialog } from '@angular/material/dialog';
-import { MatInputModule } from '@angular/material/input';
 import { MatListModule } from '@angular/material/list';
-import { AddDatasetDialogComponent } from './add-dataset-dialog.component';
-import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
-import { ActivatedRoute, RouterLink } from '@angular/router';
-import { QueryPreview, problemMessages } from './data-sources.service';
-import { ChartComponent } from '../charts/chart.component';
-import { Dashboard, DashboardSummary, DashboardsService, NEW_ID, WidgetChartType } from '../dashboards/dashboards.service';
-import { Aggregation, ChartQuery, ChartResult, Dataset, DatasetsService, TimeGrain } from './datasets.service';
+import { ActivatedRoute } from '@angular/router';
+import { DatasetTabComponent } from './dataset-tab.component';
+import { NewDatasetTabComponent } from './new-dataset-tab.component';
+import { Dataset, DatasetsService } from './datasets.service';
+
+const NEW_PREFIX = 'new:';
 
 interface Organization {
   id: string;
@@ -20,9 +16,10 @@ interface Organization {
   role: 'Viewer' | 'Editor' | 'Owner';
 }
 
+/** Datasets of an organization: a list on the left, and the datasets opened from it as tabs on the right. */
 @Component({
   selector: 'app-datasets',
-  imports: [ReactiveFormsModule, RouterLink, MatCardModule, MatFormFieldModule, MatInputModule, MatListModule, MatButtonModule, ChartComponent],
+  imports: [MatCardModule, MatListModule, MatButtonModule, DatasetTabComponent, NewDatasetTabComponent],
   template: `
     <h2>{{ organization()?.name }} <small>datasets</small></h2>
 
@@ -31,7 +28,7 @@ interface Organization {
         <mat-card-header>
           <mat-card-title>Datasets</mat-card-title>
           @if (canEdit()) {
-            <button mat-flat-button type="button" class="add" (click)="openAddDialog()">Add dataset</button>
+            <button mat-flat-button type="button" class="add" (click)="addDataset()">Add dataset</button>
           }
         </mat-card-header>
         <mat-card-content>
@@ -40,7 +37,7 @@ interface Organization {
           }
           <mat-action-list>
             @for (item of datasets(); track item.id) {
-              <button mat-list-item type="button" class="item" [activated]="selectedId() === item.id" (click)="select(item)">
+              <button mat-list-item type="button" class="item" [activated]="activeId() === item.id" (click)="open(item)">
                 <span matListItemTitle>{{ item.name }}</span>
                 <span matListItemLine>{{ item.columns.length }} columns</span>
               </button>
@@ -49,175 +46,69 @@ interface Organization {
         </mat-card-content>
       </mat-card>
 
-      <mat-card appearance="raised" class="detail">
-      @if (selected(); as dataset) {
-        <mat-card-header>
-          <mat-card-title>{{ dataset.name }}</mat-card-title>
-          <span class="actions">
-            <button mat-stroked-button type="button" (click)="show(dataset)">Preview</button>
-            <button mat-stroked-button type="button" (click)="explore(dataset)">Explore</button>
-            @if (canEdit()) {
-              <button mat-button type="button" (click)="remove(dataset)">Delete</button>
+      <section class="workspace">
+        @if (tabs().length > 0) {
+          <div class="tabstrip" role="tablist" aria-label="Open datasets">
+            @for (tab of tabs(); track tab.id) {
+              <div class="tab" role="presentation" [class.active]="tab.id === activeId()">
+                <button type="button" role="tab" class="tab-label" [attr.aria-selected]="tab.id === activeId()"
+                        (click)="activeId.set(tab.id)" (auxclick)="$event.button === 1 && close(tab.id)">
+                  {{ tab.name }}@if (dirtyIds().has(tab.id)) { <span class="dot" title="Unsaved changes" aria-label="Unsaved changes"> ●</span> }
+                </button>
+                <button type="button" class="tab-close" [attr.aria-label]="'Close ' + tab.name" (click)="close(tab.id)">×</button>
+              </div>
             }
-          </span>
-        </mat-card-header>
-        <mat-card-content>
-        @if (dataset.description) { <p class="desc">{{ dataset.description }}</p> }
-
-        <p class="chips">
-          @for (column of dataset.columns; track column.name) {
-            <span class="chip" [class.measure]="column.role === 'Measure'" [title]="column.dataType">
-              {{ column.name }} <small>{{ column.role === 'Measure' ? 'measure' : 'dimension' }}</small>
-            </span>
-          }
-        </p>
-
-        @if (dataset.sql) { <pre class="sql">{{ dataset.sql }}</pre> }
-
-        @if (panel() === 'explore') {
-          <form [formGroup]="exploreForm" (ngSubmit)="run(dataset)" class="explore form-row">
-            <mat-form-field>
-              <mat-label>Group by</mat-label>
-              <select matNativeControl formControlName="dimension" aria-label="Group by">
-                <option value="">(nothing)</option>
-                @for (column of dataset.columns; track column.name) { <option [value]="column.name">{{ column.name }}</option> }
-              </select>
-            </mat-form-field>
-            @if (grainAvailable(dataset)) {
-              <mat-form-field>
-              <mat-label>Per</mat-label>
-              <select matNativeControl formControlName="grain" aria-label="Time grain">
-                  <option value="">(exact value)</option>
-                  @for (g of grains; track g) { <option [value]="g">{{ g }}</option> }
-                </select>
-            </mat-form-field>
-            }
-            <mat-form-field>
-              <mat-label>Measure</mat-label>
-              <select matNativeControl formControlName="aggregation" aria-label="Aggregation">
-                @for (a of aggregations; track a) { <option [value]="a">{{ a }}</option> }
-              </select>
-            </mat-form-field>
-            @if (exploreForm.controls.aggregation.value !== 'Count') {
-              <mat-form-field>
-              <mat-label>of</mat-label>
-              <select matNativeControl formControlName="measureColumn" aria-label="Measure column">
-                  @for (column of measureColumns(dataset); track column.name) { <option [value]="column.name">{{ column.name }}</option> }
-                </select>
-            </mat-form-field>
-            }
-            <mat-form-field>
-              <mat-label>Show as</mat-label>
-              <select matNativeControl formControlName="chartType" aria-label="Chart type">
-                @for (t of chartTypes; track t) { <option [value]="t">{{ t }}</option> }
-              </select>
-            </mat-form-field>
-            <button mat-flat-button type="submit" class="run" [disabled]="busy()">Run</button>
-          </form>
-
-          @if (result(); as r) {
-            @if (exploreForm.controls.chartType.value !== 'Table' && r.rows.length > 0) {
-              <app-chart [kind]="chartKind()" [result]="r" label="Chart of the query result" />
-            }
-            <div class="results">
-              <table>
-                <thead><tr>@for (c of r.columns; track $index) { <th>{{ c.name }}</th> }</tr></thead>
-                <tbody>
-                  @for (row of r.rows; track $index) {
-                    <tr>
-                      @for (cell of row; track $index) { <td>{{ cell === null ? '∅' : cell }}</td> }
-                      @if (r.columns.length === 2 && exploreForm.controls.chartType.value === 'Table') {
-                        <td class="bar-cell"><span class="bar" [style.width.%]="barWidth(r, $index)"></span></td>
-                      }
-                    </tr>
-                  }
-                </tbody>
-              </table>
-            </div>
-            <p><small>{{ r.rows.length }} rows@if (r.truncated) { (more exist; raise the limit) }</small></p>
-            @if (r.sql) { <details><summary>Generated SQL</summary><pre class="sql">{{ r.sql }}</pre></details> }
-            @if (canEdit()) {
-              @if (!addingToDashboard()) {
-                <button mat-stroked-button type="button" (click)="startAdd()">Add to dashboard</button>
-              } @else {
-                <form [formGroup]="addForm" (ngSubmit)="addToDashboard(dataset)" class="add-widget form-row">
-                  <mat-form-field>
-                    <mat-label>Dashboard</mat-label>
-                    <select matNativeControl formControlName="dashboardId" aria-label="Dashboard">
-                      @for (d of dashboards(); track d.id) { <option [value]="d.id">{{ d.name }}</option> }
-                    </select>
-                  </mat-form-field>
-                  <mat-form-field>
-                    <mat-label>Chart title</mat-label>
-                    <input matInput formControlName="title" aria-label="Chart title" />
-                  </mat-form-field>
-                  <button mat-flat-button type="submit" class="run" [disabled]="addForm.invalid || busy()">Add</button>
-                </form>
-                @if (dashboards().length === 0) {
-                  <p><small>There are no dashboards yet. <a [routerLink]="['/organizations', orgId, 'dashboards']">Create one</a> first.</small></p>
-                }
-              }
-              @if (addedTo(); as added) {
-                <p class="ok" role="status">Added to "{{ added.name }}". <a [routerLink]="['/organizations', orgId, 'dashboards', added.id]">Open dashboard</a></p>
-              }
+          </div>
+          @for (tab of tabs(); track tab.id) {
+            @if (tab.dataset; as dataset) {
+              <app-dataset-tab [dataset]="dataset" [orgId]="orgId" [canEdit]="canEdit()" [active]="tab.id === activeId()"
+                               (updated)="replace($event)" (deleted)="onDeleted($event)" (dirtyChange)="setDirty(tab.id, $event)" />
+            } @else {
+              <app-new-dataset-tab [orgId]="orgId" [active]="tab.id === activeId()"
+                                   (created)="onCreated(tab.id, $event)" (dirtyChange)="setDirty(tab.id, $event)" />
             }
           }
-          @for (message of errors(); track message) {
-            <p class="fail" role="alert">{{ message }}</p>
-          }
+        } @else {
+          <mat-card appearance="raised" class="detail empty">
+            <mat-card-content class="placeholder">
+              <p><em>Select a dataset to see its details.</em></p>
+            </mat-card-content>
+          </mat-card>
         }
-
-        @if (panel() === 'preview') {
-          @if (preview(); as p) {
-            <div class="results">
-              <table>
-                <thead><tr>@for (c of p.columns; track $index) { <th>{{ c.name }}</th> }</tr></thead>
-                <tbody>
-                  @for (row of p.rows; track $index) {
-                    <tr>@for (cell of row; track $index) { <td>{{ cell === null ? '∅' : cell }}</td> }</tr>
-                  }
-                </tbody>
-              </table>
-            </div>
-            <p><small>{{ p.rows.length }} rows@if (p.truncated) { (more rows exist) }</small></p>
-          }
-          @for (message of errors(); track message) {
-            <p class="fail" role="alert">{{ message }}</p>
-          }
-        }
-        </mat-card-content>
-      } @else {
-        <mat-card-content class="placeholder">
-          <p><em>Select a dataset to see its details.</em></p>
-        </mat-card-content>
-      }
-      </mat-card>
+      </section>
     </div>
   `,
   styles: `
     :host { --mat-card-elevated-container-color: #fff; }
-    /* Both panels fill the space under the page title; the list scrolls inside its own card. */
-    .layout { display: grid; grid-template-columns: 20rem 1fr; gap: 1.25rem; align-items: start; }
-    .list { height: calc(100vh - 12.5rem); position: sticky; top: 1.25rem; }
+    /* Both columns are exactly as tall as the space under the title (so the page itself never scrolls) and scroll inside. */
+    .layout { display: grid; grid-template-columns: 20rem 1fr; gap: 1.25rem; height: calc(100vh - 16rem); min-height: 24rem; }
+    .list { height: 100%; min-height: 0; }
     .list mat-card-content { flex: 1; overflow-y: auto; }
-    .detail { min-height: calc(100vh - 12.5rem); }
+    .workspace { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+    .workspace > app-dataset-tab, .workspace > app-new-dataset-tab { flex: 1; min-height: 0; }
+    .workspace > .empty { flex: 1; }
     @media (max-width: 52rem) {
-      .layout { grid-template-columns: 1fr; }
-      .list { height: auto; max-height: 20rem; position: static; }
-      .detail { min-height: 0; }
+      .layout { grid-template-columns: 1fr; height: auto; }
+      .list { height: auto; max-height: 20rem; }
+      .workspace > app-dataset-tab, .workspace > app-new-dataset-tab { min-height: 30rem; }
     }
     mat-card-title { font: var(--mat-sys-title-medium); }
-    .add, .actions { margin-left: auto; }
-    .actions { display: flex; gap: 0.4rem; }
+    .add { margin-left: auto; }
+    mat-card-header { align-items: center; flex-wrap: wrap; gap: 0.5rem; }
     mat-card-content { padding-top: 0.75rem; }
     .placeholder { flex: 1; display: grid; place-items: center; text-align: center; color: var(--mat-sys-on-surface-variant); }
-    .desc { margin: 0.25rem 0; color: var(--mat-sys-on-surface-variant); }
-    .chips { display: flex; flex-wrap: wrap; gap: 0.35rem; }
-    mat-card-header { align-items: center; flex-wrap: wrap; gap: 0.5rem; }
-    .explore { margin: 1rem 0 0; }
-    .run { margin-top: 0.4rem; }
-    .bar-cell { width: 12rem; }
-    .bar { display: block; height: 0.8rem; background: var(--mat-sys-primary); border-radius: 2px; }
+
+    /* VS Code style tab strip: a scrolling row, the active tab merges into the pane below. */
+    .tabstrip { display: flex; overflow-x: auto; margin-bottom: 0.5rem; flex: none; border-bottom: 1px solid var(--mat-sys-outline-variant); }
+    .tab { display: flex; align-items: center; flex: none; border: 1px solid transparent; border-bottom: 0; border-radius: 6px 6px 0 0;
+           color: var(--mat-sys-on-surface-variant); }
+    .tab.active { background: #fff; border-color: var(--mat-sys-outline-variant); color: var(--mat-sys-on-surface);
+                  box-shadow: inset 0 2px 0 var(--mat-sys-primary); }
+    .tab button { border: 0; background: none; color: inherit; font: var(--mat-sys-label-large); cursor: pointer; }
+    .tab-label { padding: 0.55rem 0.5rem 0.55rem 0.9rem; max-width: 14rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .tab-close { padding: 0 0.6rem; font-size: 1.1rem; line-height: 1; border-radius: 4px; }
+    .tab-close:hover { background: var(--mat-sys-surface-container-high); }
+    .dot { color: var(--mat-sys-primary); }
   `,
 })
 export class DatasetsComponent implements OnInit {
@@ -233,41 +124,20 @@ export class DatasetsComponent implements OnInit {
   });
   protected readonly datasets = signal<Dataset[]>([]);
   protected readonly loaded = signal(false);
-  protected readonly selectedId = signal<string | null>(null);
-  protected readonly selected = computed(() => this.datasets().find((d) => d.id === this.selectedId()) ?? null);
-  /** What the detail pane shows below the dataset's description: nothing, a data preview, or the explorer. */
-  protected readonly panel = signal<'preview' | 'explore' | null>(null);
-  private readonly dialog = inject(MatDialog);
-  protected readonly preview = signal<QueryPreview | null>(null);
-  protected readonly errors = signal<string[]>([]);
 
-  protected readonly aggregations: Aggregation[] = ['Count', 'Sum', 'Avg', 'Min', 'Max', 'CountDistinct'];
-  protected readonly grains: TimeGrain[] = ['Day', 'Week', 'Month', 'Quarter', 'Year'];
-  protected readonly chartTypes: WidgetChartType[] = ['Table', 'Bar', 'Line', 'Pie'];
-  private readonly dashboardsApi = inject(DashboardsService);
-  private lastQuery: ChartQuery | null = null;
-  protected readonly addingToDashboard = signal(false);
-  protected readonly dashboards = signal<DashboardSummary[]>([]);
-  protected readonly addedTo = signal<{ id: string; name: string } | null>(null);
-  protected readonly result = signal<ChartResult | null>(null);
-  protected readonly busy = signal(false);
-  private readonly fb = inject(FormBuilder);
-  protected readonly exploreForm = this.fb.nonNullable.group({
-    dimension: [''],
-    grain: [''],
-    aggregation: ['Count' as Aggregation],
-    measureColumn: [''],
-    chartType: ['Table' as WidgetChartType],
-  });
-  protected readonly addForm = this.fb.nonNullable.group({
-    dashboardId: ['', Validators.required],
-    title: ['', [Validators.required, Validators.maxLength(200)]],
-  });
-
-  protected chartKind(): 'Bar' | 'Line' | 'Pie' {
-    const type = this.exploreForm.controls.chartType.value;
-    return type === 'Table' ? 'Bar' : type;
-  }
+  /** Ids of the open tabs, left to right, and which one is showing. */
+  protected readonly openIds = signal<string[]>([]);
+  protected readonly activeId = signal<string | null>(null);
+  protected readonly dirtyIds = signal<ReadonlySet<string>>(new Set());
+  /** An open tab is a saved dataset, or an unsaved new one (its id starts with "new:" and it has no dataset). */
+  protected readonly tabs = computed(() =>
+    this.openIds().flatMap((id): { id: string; name: string; dataset: Dataset | null }[] => {
+      if (id.startsWith(NEW_PREFIX)) return [{ id, name: 'New dataset', dataset: null }];
+      const dataset = this.datasets().find((d) => d.id === id);
+      return dataset ? [{ id, name: dataset.name, dataset }] : [];
+    }),
+  );
+  private newCount = 0;
 
   ngOnInit(): void {
     this.orgId = this.route.snapshot.paramMap.get('id') ?? '';
@@ -277,169 +147,101 @@ export class DatasetsComponent implements OnInit {
     this.reload();
   }
 
-  /** Shows a dataset's details. What was open for the previous one is cleared. */
-  protected select(dataset: Dataset): void {
-    if (this.selectedId() === dataset.id) return;
-    this.selectedId.set(dataset.id);
-    this.panel.set(null);
-    this.preview.set(null);
-    this.result.set(null);
-    this.errors.set([]);
-    this.addingToDashboard.set(false);
-    this.addedTo.set(null);
+  /** Opens a dataset in a tab, or shows its tab if it is already open. */
+  protected open(dataset: Dataset): void {
+    if (!this.openIds().includes(dataset.id)) this.openIds.update((ids) => [...ids, dataset.id]);
+    this.activeId.set(dataset.id);
+    this.remember();
   }
 
-  protected openAddDialog(): void {
-    this.dialog
-      .open<AddDatasetDialogComponent, { orgId: string }, Dataset>(AddDatasetDialogComponent, {
-        data: { orgId: this.orgId },
-        width: '40rem',
-        maxWidth: '95vw',
-      })
-      .afterClosed()
-      .subscribe((created) => {
-        if (created) this.reload(created.id);
-      });
+  protected close(id: string): void {
+    if (this.dirtyIds().has(id) && !confirm('This dataset has unsaved changes. Close it anyway?')) return;
+    this.drop(id);
   }
 
-  protected show(dataset: Dataset): void {
-    this.selectedId.set(dataset.id);
-    this.panel.set('preview');
-    this.preview.set(null);
-    this.errors.set([]);
-    this.api.preview(this.orgId, dataset.id).subscribe({
-      next: (p) => this.preview.set(p),
-      error: (e) => this.errors.set(problemMessages(e, 'Could not load the data.')),
+  protected setDirty(id: string, dirty: boolean): void {
+    this.dirtyIds.update((set) => {
+      if (set.has(id) === dirty) return set;
+      const next = new Set(set);
+      if (dirty) next.add(id);
+      else next.delete(id);
+      return next;
     });
   }
 
-  protected explore(dataset: Dataset): void {
-    this.selectedId.set(dataset.id);
-    this.panel.set(this.panel() === 'explore' ? null : 'explore');
-    this.result.set(null);
-    this.errors.set([]);
-    const firstMeasure = dataset.columns.find((c) => c.role === 'Measure');
-    this.exploreForm.reset({ dimension: '', grain: '', aggregation: 'Count', measureColumn: firstMeasure?.name ?? '', chartType: 'Table' });
-    this.addingToDashboard.set(false);
-    this.addedTo.set(null);
+  /** A saved dataset replaces its old copy in the list, which keeps its tab and name current. */
+  protected replace(saved: Dataset): void {
+    this.datasets.update((items) => items.map((d) => (d.id === saved.id ? saved : d)));
   }
 
-  protected grainAvailable(dataset: Dataset): boolean {
-    const column = dataset.columns.find((c) => c.name === this.exploreForm.controls.dimension.value);
-    return !!column && /^(date|timestamp)/i.test(column.dataType);
+  protected onDeleted(id: string): void {
+    this.drop(id);
+    this.reload();
   }
 
-  /** Sum and average only make sense on numbers; the others work on any column. */
-  protected measureColumns(dataset: Dataset) {
-    const numbersOnly = ['Sum', 'Avg'].includes(this.exploreForm.controls.aggregation.value);
-    return numbersOnly ? dataset.columns.filter((c) => c.role === 'Measure') : dataset.columns;
+  /** Opens an empty editor in a new tab; the dataset is only created when that tab is saved. */
+  protected addDataset(): void {
+    const id = `${NEW_PREFIX}${++this.newCount}`;
+    this.openIds.update((ids) => [...ids, id]);
+    this.activeId.set(id);
   }
 
-  protected run(dataset: Dataset): void {
-    const v = this.exploreForm.getRawValue();
-    const query: ChartQuery = {
-      dimensions: v.dimension
-        ? [{ column: v.dimension, ...(v.grain && this.grainAvailable(dataset) ? { grain: v.grain as TimeGrain } : {}) }]
-        : [],
-      measures: [
-        v.aggregation === 'Count'
-          ? { aggregation: 'Count', alias: 'count' }
-          : { aggregation: v.aggregation, column: v.measureColumn, alias: 'value' },
-      ],
-      limit: 100,
-    };
-
-    this.lastQuery = query;
-    this.addedTo.set(null);
-    this.busy.set(true);
-    this.errors.set([]);
-    this.api.query(this.orgId, dataset.id, query).subscribe({
-      next: (r) => {
-        this.result.set(r);
-        this.busy.set(false);
-      },
-      error: (e) => {
-        this.result.set(null);
-        this.busy.set(false);
-        this.errors.set(problemMessages(e, 'The query failed.'));
-      },
-    });
+  /** The new-dataset tab was saved: it becomes the tab of the created dataset, in the same place. */
+  protected onCreated(tabId: string, created: Dataset): void {
+    this.datasets.update((items) => [...items, created]);
+    this.openIds.update((ids) => ids.map((id) => (id === tabId ? created.id : id)));
+    this.setDirty(tabId, false);
+    this.activeId.set(created.id);
+    this.remember();
+    this.reload();
   }
 
-  protected startAdd(): void {
-    this.addingToDashboard.set(true);
-    this.dashboardsApi.list(this.orgId).subscribe({
-      next: (items) => {
-        this.dashboards.set(items);
-        if (items.length > 0 && !this.addForm.controls.dashboardId.value) this.addForm.controls.dashboardId.setValue(items[0].id);
-      },
-      error: (e) => this.errors.set(problemMessages(e, 'Could not load dashboards.')),
-    });
+  /** Removes a tab; if it was showing, its right neighbour (or else its left) takes over. */
+  private drop(id: string): void {
+    const ids = this.openIds();
+    const index = ids.indexOf(id);
+    if (index < 0) return;
+    const remaining = ids.filter((i) => i !== id);
+    this.openIds.set(remaining);
+    this.setDirty(id, false);
+    if (this.activeId() === id) this.activeId.set(remaining[index] ?? remaining[index - 1] ?? null);
+    this.remember();
   }
 
-  /** Appends the chart just explored (its query and chart type) as a new widget of the chosen dashboard. */
-  protected addToDashboard(dataset: Dataset): void {
-    if (this.addForm.invalid || !this.lastQuery) return;
-    const { dashboardId, title } = this.addForm.getRawValue();
-    const query = this.lastQuery;
-    const chartType = this.exploreForm.controls.chartType.value;
-
-    this.busy.set(true);
-    this.errors.set([]);
-    this.dashboardsApi.get(this.orgId, dashboardId).subscribe({
-      next: (dashboard: Dashboard) => {
-        const widget = { id: NEW_ID, title, datasetId: dataset.id, chartType, query };
-        this.dashboardsApi
-          .update(this.orgId, dashboard, { ...dashboard.definition, widgets: [...dashboard.definition.widgets, widget] })
-          .subscribe({
-            next: (saved) => {
-              this.busy.set(false);
-              this.addedTo.set({ id: saved.id, name: saved.name });
-              this.addForm.controls.title.reset();
-            },
-            error: (e) => {
-              this.busy.set(false);
-              this.errors.set(problemMessages(e, 'Could not add the chart.'));
-            },
-          });
-      },
-      error: (e) => {
-        this.busy.set(false);
-        this.errors.set(problemMessages(e, 'Could not load the dashboard.'));
-      },
-    });
+  private get storageKey(): string {
+    return `databoard.datasetTabs.${this.orgId}`;
   }
 
-  /** Width of a bar as a percentage of the largest value in the second column. */
-  protected barWidth(result: ChartResult, rowIndex: number): number {
-    const values = result.rows.map((r) => Number(r[1]) || 0);
-    const max = Math.max(...values, 0);
-    return max > 0 ? Math.max(0, (values[rowIndex] / max) * 100) : 0;
+  /** Remembers which tabs are open, per organization, so a reload brings them back. */
+  private remember(): void {
+    try {
+      localStorage.setItem(this.storageKey, JSON.stringify({ open: this.openIds().filter((id) => !id.startsWith(NEW_PREFIX)), active: this.activeId() }));
+    } catch {
+      // Storage can be unavailable (private windows, blocked site data); the tabs just are not remembered.
+    }
   }
 
-  protected remove(dataset: Dataset): void {
-    if (!confirm(`Delete the dataset "${dataset.name}"?`)) return;
-    this.api.remove(this.orgId, dataset.id).subscribe({
-      next: () => {
-        this.selectedId.set(null);
-        this.panel.set(null);
-        this.reload();
-      },
-      error: (e) => {
-        this.selectedId.set(dataset.id);
-        this.errors.set(problemMessages(e, 'Could not delete the dataset.'));
-      },
-    });
+  private restore(items: Dataset[]): void {
+    try {
+      const saved = JSON.parse(localStorage.getItem(this.storageKey) ?? 'null') as { open?: string[]; active?: string | null } | null;
+      const open = (saved?.open ?? []).filter((id) => items.some((d) => d.id === id));
+      this.openIds.set(open);
+      this.activeId.set(open.includes(saved?.active ?? '') ? (saved?.active ?? null) : (open[0] ?? null));
+    } catch {
+      // Nothing usable stored.
+    }
   }
 
-  /** Reloads the list; a newly created dataset is selected so its details appear straight away. */
-  private reload(selectId?: string): void {
+  private reload(): void {
     this.api.list(this.orgId).subscribe({
       next: (items) => {
+        const first = !this.loaded();
         this.datasets.set(items);
         this.loaded.set(true);
-        const created = selectId ? items.find((d) => d.id === selectId) : undefined;
-        if (created) this.select(created);
+        if (first) this.restore(items);
+        // Tabs of datasets that no longer exist (deleted elsewhere) go away.
+        const gone = this.openIds().filter((id) => !id.startsWith(NEW_PREFIX) && !items.some((d) => d.id === id));
+        gone.forEach((id) => this.drop(id));
       },
     });
   }

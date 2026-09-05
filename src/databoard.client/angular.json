@@ -35,7 +35,12 @@
                 "input": "public"
               }
             ],
-            "styles": ["src/material-theme.scss", "src/styles.css"]
+            "styles": [
+              "src/material-theme.scss",
+              "src/styles.css",
+              { "input": "node_modules/monaco-editor/min/vs/editor/editor.main.css", "bundleName": "monaco", "inject": false }
+            ],
+            "loader": { ".ttf": "file" }
           },
           "configurations": {
             "production": {

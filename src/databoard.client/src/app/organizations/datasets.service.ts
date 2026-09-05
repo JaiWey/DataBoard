@@ -53,6 +53,10 @@ export class DatasetsService {
     return this.http.post<Dataset>(this.url(orgId), { dataSourceId, name, description: description ?? null, sql });
   }
 
+  update(orgId: string, id: string, name: string, sql: string, description: string | null): Observable<Dataset> {
+    return this.http.put<Dataset>(this.url(orgId, `/${id}`), { name, description, sql });
+  }
+
   remove(orgId: string, id: string): Observable<void> {
     return this.http.delete<void>(this.url(orgId, `/${id}`));
   }

@@ -22,6 +22,9 @@ export interface TableSchema { name: string; kind: string; columns: ColumnSchema
 export interface SchemaNode { name: string; tables: TableSchema[] }
 export interface DatabaseSchema { schemas: SchemaNode[]; truncated: boolean }
 
+/** The most rows the API returns for one query. */
+export const MAX_PREVIEW_ROWS = 100;
+
 export interface QueryPreview {
   columns: { name: string; dataType: string }[];
   rows: unknown[][];
@@ -68,7 +71,7 @@ export class DataSourcesService {
     return this.http.get<DatabaseSchema>(this.url(orgId, `/${id}/schema`));
   }
 
-  preview(orgId: string, id: string, sql: string): Observable<QueryPreview> {
-    return this.http.post<QueryPreview>(this.url(orgId, `/${id}/preview`), { sql });
+  preview(orgId: string, id: string, sql: string, maxRows?: number): Observable<QueryPreview> {
+    return this.http.post<QueryPreview>(this.url(orgId, `/${id}/preview`), maxRows ? { sql, maxRows } : { sql });
   }
 }

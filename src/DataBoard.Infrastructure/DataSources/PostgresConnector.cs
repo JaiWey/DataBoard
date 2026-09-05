@@ -4,11 +4,12 @@ using System.Security.Authentication;
 using DataBoard.Application.Common;
 using DataBoard.Application.DataSources;
 using DataBoard.Domain.DataSources;
+using Microsoft.Extensions.Logging;
 using Npgsql;
 
 namespace DataBoard.Infrastructure.DataSources;
 
-internal sealed class PostgresConnector(NetworkGuard networkGuard) : IDataSourceConnector
+internal sealed class PostgresConnector(NetworkGuard networkGuard, ILogger<PostgresConnector> logger) : IDataSourceConnector
 {
     private const int MaxSchemaColumns = 20_000;
     private const int MaxCellLength = 1_000;
@@ -27,6 +28,7 @@ internal sealed class PostgresConnector(NetworkGuard networkGuard) : IDataSource
         }
         catch (Exception ex) when (IsConnectionFailure(ex, ct))
         {
+            logger.LogWarning(ex, "Testing a PostgreSQL connection failed.");
             return new ConnectionTestResult(false, Describe(ex), null, stopwatch.ElapsedMilliseconds);
         }
     }
@@ -70,6 +72,7 @@ internal sealed class PostgresConnector(NetworkGuard networkGuard) : IDataSource
         }
         catch (Exception ex) when (IsConnectionFailure(ex, ct))
         {
+            logger.LogWarning(ex, "Reading the PostgreSQL schema failed.");
             throw new ValidationException("DataSource", Describe(ex));
         }
     }
@@ -153,6 +156,8 @@ internal sealed class PostgresConnector(NetworkGuard networkGuard) : IDataSource
         }
         catch (Exception ex) when (IsConnectionFailure(ex, ct))
         {
+            // The user only gets a plain message (Describe); the real cause is kept for whoever runs the server.
+            logger.LogWarning(ex, "Running a query on a PostgreSQL data source failed.");
             throw new ValidationException("DataSource", Describe(ex));
         }
     }

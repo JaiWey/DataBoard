@@ -24,6 +24,7 @@
     "@angular/router": "^22.2.0",
     "echarts": "^6.1.0",
     "jest-editor-support": "*",
+    "monaco-editor": "^0.57.0",
     "run-script-os": "*",
     "rxjs": "~7.8.0",
     "tslib": "^2.3.0"
