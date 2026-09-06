@@ -14,6 +14,7 @@ public static class DependencyInjection
         services.AddScoped<OrganizationAccess>();
         services.AddScoped<DataSourceConnectors>();
         services.AddScoped<ChartSqlRenderers>();
+        services.AddScoped<TableViewSqlRenderers>();
 
         services.AddScoped<CreateOrganizationHandler>();
         services.AddScoped<ListMyOrganizationsHandler>();
@@ -32,6 +33,7 @@ public static class DependencyInjection
         services.AddScoped<UpdateDatasetHandler>();
         services.AddScoped<DeleteDatasetHandler>();
         services.AddScoped<PreviewDatasetHandler>();
+        services.AddScoped<PreviewTableViewHandler>();
         services.AddScoped<RunChartQueryHandler>();
 
         services.AddScoped<CreateDashboardHandler>();

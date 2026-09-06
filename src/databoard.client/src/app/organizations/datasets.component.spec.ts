@@ -174,9 +174,13 @@ describe('DatasetsComponent', () => {
   const addButton = () =>
     Array.from(el().querySelectorAll('button')).find((b) => b.textContent?.trim() === 'Add dataset') as HTMLButtonElement;
 
-  /** Clicks "Add dataset" and answers the data source list the new tab asks for. */
-  const startNew = async () => {
+  /** Clicks "Add dataset", picks a kind from its menu, and answers the data source list the new tab asks for. */
+  const startNew = async (kind: 'sql' | 'view' = 'sql') => {
     addButton().click();
+    fixture.detectChanges();
+    const label = kind === 'sql' ? 'SQL dataset' : 'Table view dataset';
+    const item = Array.from(document.querySelectorAll('button[mat-menu-item]')).find((b) => b.textContent?.trim() === label) as HTMLButtonElement;
+    item.click();
     fixture.detectChanges();
     http.expectOne(`/api/organizations/${ORG}/data-sources`).flush(sources);
     await settle();
@@ -250,6 +254,266 @@ describe('DatasetsComponent', () => {
     load('Owner', [dataset(null)], false);
 
     expect(tabNames()).toEqual([]);
+  });
+
+  // ---- table view datasets ----
+
+  const schema = {
+    schemas: [{
+      name: 'public',
+      tables: [
+        { name: 'orders', kind: 'Table', columns: [
+          { name: 'id', dataType: 'integer', nullable: false }, { name: 'customer_id', dataType: 'integer', nullable: false } ] },
+        { name: 'customers', kind: 'Table', columns: [
+          { name: 'id', dataType: 'integer', nullable: false }, { name: 'name', dataType: 'text', nullable: true } ] },
+      ],
+    }],
+    truncated: false,
+  };
+  const schemaUrl = (source: string) => `/api/organizations/${ORG}/data-sources/${source}/schema`;
+  const previewUrl = (source: string) => `/api/organizations/${ORG}/data-sources/${source}/table-view/preview`;
+  const byLabel = <T extends HTMLElement>(label: string) => el().querySelector(`[aria-label="${label}"]`) as T;
+  const click = (label: string) => {
+    byLabel<HTMLButtonElement>(label).click();
+    fixture.detectChanges();
+  };
+  const choose = (label: string, value: string) => {
+    const select = byLabel<HTMLSelectElement>(label);
+    select.value = value;
+    select.dispatchEvent(new Event('change'));
+    fixture.detectChanges();
+  };
+  /** Makes the next "Fields" dialog answer with these fields, as if they were ticked and Done was pressed. */
+  const pickFields = (fields: string[]) =>
+    vi.spyOn(TestBed.inject(MatDialog), 'open').mockReturnValue({ afterClosed: () => of(fields) } as never);
+
+  const startView = async () => {
+    load('Owner', [], false);
+    await startNew('view');
+    http.expectOne(schemaUrl('src-1')).flush(schema);
+    await settle();
+  };
+
+  it('offers SQL and table view datasets from the add menu', async () => {
+    load('Owner', [], false);
+    addButton().click();
+    fixture.detectChanges();
+
+    const items = Array.from(document.querySelectorAll('button[mat-menu-item]')).map((b) => b.textContent?.trim());
+    expect(items).toEqual(['SQL dataset', 'Table view dataset']);
+  });
+
+  it('opens the table view builder in a new tab, with the data source picked inside it', async () => {
+    await startView();
+
+    expect(tabNames()).toEqual(['New table view']);
+    expect(monaco.editors.length).toBe(0); // no SQL editor: this kind is built from tables
+    expect(el().textContent).toContain('Step 1 · Main table');
+    const tables = Array.from(el().querySelectorAll('select[aria-label="Table of step 1"] option')).map((o) => o.textContent?.trim());
+    expect(tables).toEqual(['Choose a table…', 'public.orders', 'public.customers']);
+  });
+
+  it('guides through the main table, its fields and a run of just that step', async () => {
+    await startView();
+    expect(byLabel<HTMLButtonElement>('Run step 1').disabled).toBe(true);
+    expect(byLabel<HTMLButtonElement>('Choose fields of step 1').disabled).toBe(true);
+
+    choose('Table of step 1', '0');
+    pickFields(['id', 'customer_id']);
+    click('Choose fields of step 1');
+
+    expect(Array.from(el().querySelectorAll('.chip')).map((c) => c.textContent?.trim())).toEqual(['id', 'customer_id']);
+    click('Run step 1');
+    const req = http.expectOne({ method: 'POST', url: previewUrl('src-1') });
+    expect(req.request.body).toEqual({
+      definition: { main: { schema: 'public', name: 'orders', fields: ['id', 'customer_id'] }, joins: [] },
+      maxRows: 100,
+    });
+    req.flush({ columns: [{ name: 'id', dataType: 'int4' }], rows: [[1], [2]], truncated: false, sql: 'SELECT t0."id" FROM "public"."orders" AS t0' });
+    await settle();
+
+    expect(el().querySelectorAll('app-sql-results tbody tr').length).toBe(2);
+    expect(el().querySelector('.generated pre')?.textContent).toContain('FROM "public"."orders"');
+  });
+
+  it('adds a join step, relates the tables and runs the current step with its joins', async () => {
+    await startView();
+    choose('Table of step 1', '0');
+    pickFields(['id']);
+    click('Choose fields of step 1');
+
+    el().querySelector<HTMLButtonElement>('button.add-join')!.click();
+    fixture.detectChanges();
+    expect(el().textContent).toContain('Step 2 · Join table');
+    expect(byLabel<HTMLButtonElement>('Run step 2').disabled).toBe(true); // no table or relationship yet
+
+    choose('Join type of step 2', 'Left');
+    choose('Table of step 2', '1');
+    pickFields(['name']);
+    click('Choose fields of step 2');
+    const left = Array.from(el().querySelectorAll('select[aria-label^="Earlier field of condition 1"] option')).map((o) => o.textContent?.trim());
+    expect(left).toEqual(['Choose…', 'orders.id', 'orders.customer_id']);
+    choose('Earlier field of condition 1 in step 2', '0:customer_id');
+    choose('Field of this table in condition 1 in step 2', 'id');
+
+    click('Run step 2');
+    const req = http.expectOne({ method: 'POST', url: previewUrl('src-1') });
+    expect(req.request.body.definition).toEqual({
+      main: { schema: 'public', name: 'orders', fields: ['id'] },
+      joins: [{
+        type: 'Left',
+        table: { schema: 'public', name: 'customers', fields: ['name'] },
+        on: [{ leftStep: 0, leftField: 'customer_id', rightField: 'id' }],
+      }],
+    });
+    req.flush({ columns: [], rows: [], truncated: false, sql: 'SELECT 1' });
+    await settle();
+
+    // Running step 1 again sends only the main table.
+    click('Run step 1');
+    expect(http.expectOne({ method: 'POST', url: previewUrl('src-1') }).request.body.definition.joins).toEqual([]);
+  });
+
+  it('can have several conditions in a join and remove the last step', async () => {
+    await startView();
+    choose('Table of step 1', '0');
+    pickFields(['id']);
+    click('Choose fields of step 1');
+    el().querySelector<HTMLButtonElement>('button.add-join')!.click();
+    fixture.detectChanges();
+
+    click('Add condition to step 2');
+    expect(el().querySelectorAll('.condition').length).toBe(2);
+    click('Remove condition 2 of step 2');
+    expect(el().querySelectorAll('.condition').length).toBe(1);
+
+    click('Remove step 2');
+    expect(el().textContent).not.toContain('Step 2');
+  });
+
+  it('shows why a step failed', async () => {
+    await startView();
+    choose('Table of step 1', '0');
+    pickFields(['id']);
+    click('Choose fields of step 1');
+
+    click('Run step 1');
+    http.expectOne({ method: 'POST', url: previewUrl('src-1') })
+      .flush({ errors: { Definition: ["Main table: the table 'public.orders' was not found in the data source."] } }, { status: 400, statusText: 'Bad Request' });
+    await settle();
+
+    expect(el().querySelector('app-sql-results [role=alert]')?.textContent).toContain('was not found');
+  });
+
+  it('saves the table view through the name dialog and turns the tab into the created dataset', async () => {
+    await startView();
+    choose('Table of step 1', '0');
+    pickFields(['id']);
+    click('Choose fields of step 1');
+    const created = { ...dataset('SELECT 1'), id: '77777777-7777-7777-7777-777777777777', name: 'Orders view', kind: 'TableView' };
+    const open = vi.spyOn(TestBed.inject(MatDialog), 'open').mockReturnValue({ afterClosed: () => of(created) } as never);
+
+    (Array.from(el().querySelectorAll('.detail button')).find((b) => b.textContent?.trim() === 'Save') as HTMLButtonElement).click();
+
+    expect((open.mock.calls.at(-1)![1] as { data: unknown }).data).toEqual({
+      orgId: ORG,
+      dataSourceId: 'src-1',
+      definition: { main: { schema: 'public', name: 'orders', fields: ['id'] }, joins: [] },
+    });
+    http.expectOne(`/api/organizations/${ORG}/datasets`).flush([created]);
+    await settle();
+    http.expectOne(schemaUrl(created.dataSourceId)).flush(schema); // the saved tab's builder loads the tables
+
+    expect(tabNames()).toEqual(['Orders view']);
+  });
+
+  it('cannot save a table view until a table and a field are chosen', async () => {
+    await startView();
+    const save = () => Array.from(el().querySelectorAll('.detail button')).find((b) => b.textContent?.trim() === 'Save') as HTMLButtonElement;
+    expect(save().disabled).toBe(true);
+
+    choose('Table of step 1', '0');
+    expect(save().disabled).toBe(true);
+
+    pickFields(['id']);
+    click('Choose fields of step 1');
+    expect(save().disabled).toBe(false);
+  });
+
+  it('starts the view over when another data source is chosen', async () => {
+    load('Owner', [], false);
+    addButton().click();
+    fixture.detectChanges();
+    (Array.from(document.querySelectorAll('button[mat-menu-item]')).find((b) => b.textContent?.trim() === 'Table view dataset') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    http.expectOne(`/api/organizations/${ORG}/data-sources`).flush(sources);
+    await settle();
+    http.expectOne(schemaUrl('src-1')).flush(schema);
+    await settle();
+    choose('Table of step 1', '0');
+
+    choose('Data source', 'src-2');
+    http.expectOne(schemaUrl('src-2')).flush({ schemas: [], truncated: false });
+    await settle();
+
+    expect(byLabel<HTMLSelectElement>('Table of step 1').value).toBe('');
+  });
+
+  // ---- a saved table view ----
+
+  const viewDataset = () => ({
+    ...dataset('SELECT t0."id" AS "id" FROM "public"."orders" AS t0'),
+    kind: 'TableView',
+    definition: { main: { schema: 'public', name: 'orders', fields: ['id'] }, joins: [] },
+  });
+
+  it('opens a saved table view in the builder with its generated SQL shown read-only', async () => {
+    load('Editor', [viewDataset()]);
+    http.expectOne(schemaUrl(viewDataset().dataSourceId)).flush(schema);
+    await settle();
+
+    expect(el().textContent).toContain('Step 1 · Main table');
+    expect(byLabel<HTMLSelectElement>('Table of step 1').selectedOptions[0].textContent?.trim()).toBe('public.orders');
+    expect(Array.from(el().querySelectorAll('.step .chip')).map((c) => c.textContent?.trim())).toEqual(['id']);
+    expect(monaco.editors.length).toBe(1);
+    expect(monaco.editors[0].readOnly).toBe(true);
+    expect(monaco.editors[0].value).toContain('FROM "public"."orders"');
+    expect(el().querySelector('button.item [matListItemLine]')?.textContent).toContain('table view');
+  });
+
+  it('saves an edited table view with its definition, not SQL', async () => {
+    load('Editor', [viewDataset()]);
+    http.expectOne(schemaUrl(viewDataset().dataSourceId)).flush(schema);
+    await settle();
+    const saveButton = () => Array.from(el().querySelectorAll('.detail button')).find((b) => b.textContent?.trim() === 'Save') as HTMLButtonElement;
+    expect(saveButton().disabled).toBe(true);
+
+    pickFields(['id', 'customer_id']);
+    click('Choose fields of step 1');
+    await settle();
+    expect(saveButton().disabled).toBe(false);
+    expect(el().querySelector('.tab .dot')).not.toBeNull();
+
+    saveButton().click();
+    const req = http.expectOne({ method: 'PUT', url: `/api/organizations/${ORG}/datasets/${dataset(null).id}` });
+    expect(req.request.body).toEqual({
+      name: 'Orders',
+      description: 'All orders',
+      definition: { main: { schema: 'public', name: 'orders', fields: ['id', 'customer_id'] }, joins: [] },
+    });
+    req.flush({ ...viewDataset(), definition: req.request.body.definition });
+    await settle();
+
+    expect(el().querySelector('.tab .dot')).toBeNull();
+  });
+
+  it('shows a viewer the data of a table view but neither the builder nor the SQL', async () => {
+    load('Viewer', [{ ...viewDataset(), sql: null, definition: null }]);
+    await settle();
+
+    expect(el().textContent).not.toContain('Step 1');
+    expect(monaco.editors.length).toBe(0);
+    expect(buttonText()).toEqual(['Preview', 'Explore']);
   });
 
   it('shows columns as dimensions or measures', () => {

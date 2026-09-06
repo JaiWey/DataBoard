@@ -1,4 +1,5 @@
 using DataBoard.Application.DataSources;
+using DataBoard.Application.Datasets;
 using DataBoard.Domain.DataSources;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -53,4 +54,11 @@ public class DataSourcesController : ControllerBase
 	public async Task<ActionResult<QueryPreview>> Preview(
 		Guid organizationId, Guid dataSourceId, PreviewBody body, [FromServices] PreviewQueryHandler handler, CancellationToken ct) =>
 		Ok(await handler.HandleAsync(organizationId, dataSourceId, new PreviewQueryRequest(body.Sql, body.MaxRows), ct));
+
+	/// <summary>Runs a table view definition (main table, fields, joins) without saving it. Editors and Owners only.</summary>
+	[HttpPost("{dataSourceId:guid}/table-view/preview")]
+	[EnableRateLimiting("connections")]
+	public async Task<ActionResult<TableViewPreviewResult>> PreviewTableView(
+		Guid organizationId, Guid dataSourceId, PreviewTableViewRequest body, [FromServices] PreviewTableViewHandler handler, CancellationToken ct) =>
+		Ok(await handler.HandleAsync(organizationId, dataSourceId, body, ct));
 }

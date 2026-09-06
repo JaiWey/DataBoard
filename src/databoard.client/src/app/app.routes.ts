@@ -34,7 +34,8 @@ export const routes: Routes = [
   {
     path: 'organizations/:id/dashboards/:dashboardId',
     canActivate: [authGuard],
-    loadComponent: () => import('./dashboards/dashboard.component').then((m) => m.DashboardComponent),
+    // The same page; it opens that dashboard in a tab (this is the address "Open dashboard" links to).
+    loadComponent: () => import('./dashboards/dashboards.component').then((m) => m.DashboardsComponent),
   },
   { path: '**', redirectTo: '' },
 ];

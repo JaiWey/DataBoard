@@ -113,9 +113,20 @@ namespace DataBoard.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("DataSourceId")
                         .HasColumnType("uuid");
 
+                    b.Property<string>("DefinitionJson")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("definition");
+
                     b.Property<string>("Description")
                         .HasMaxLength(1000)
                         .HasColumnType("character varying(1000)");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("Sql");
 
                     b.Property<string>("Name")
                         .IsRequired()

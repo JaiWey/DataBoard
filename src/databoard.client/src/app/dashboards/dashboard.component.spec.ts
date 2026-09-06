@@ -1,7 +1,6 @@
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
 import { ECHARTS_LOADER } from '../charts/chart.component';
 import { DashboardComponent, parseFilterInput } from './dashboard.component';
 
@@ -62,9 +61,16 @@ describe('DashboardComponent', () => {
   const el = () => fixture.nativeElement as HTMLElement;
   const runUrl = `/api/organizations/${ORG}/dashboards/${DASH}/run`;
 
-  const load = (role: 'Viewer' | 'Editor' | 'Owner', def = dashboard()) => {
+  /** The page decides who may edit and passes it down, so the tests do the same. */
+  const open = (role: 'Viewer' | 'Editor' | 'Owner') => {
+    fixture.componentRef.setInput('orgId', ORG);
+    fixture.componentRef.setInput('dashboardId', DASH);
+    fixture.componentRef.setInput('canEdit', role !== 'Viewer');
     fixture.detectChanges();
-    http.expectOne('/api/organizations').flush([{ id: ORG, name: 'Acme', role }]);
+  };
+
+  const load = (role: 'Viewer' | 'Editor' | 'Owner', def = dashboard()) => {
+    open(role);
     http.expectOne(`/api/organizations/${ORG}/datasets`).flush(datasets);
     http.expectOne(`/api/organizations/${ORG}/dashboards/${DASH}`).flush(def);
     fixture.detectChanges();
@@ -85,8 +91,6 @@ describe('DashboardComponent', () => {
       providers: [
         provideHttpClient(),
         provideHttpClientTesting(),
-        provideRouter([]),
-        { provide: ActivatedRoute, useValue: { snapshot: { paramMap: convertToParamMap({ id: ORG, dashboardId: DASH }) } } },
         // ECharts needs a real canvas; the drawing itself is covered by the chart component's own tests.
         { provide: ECHARTS_LOADER, useValue: async () => ({ init: () => ({ setOption() {}, resize() {}, dispose() {} }) }) },
       ],
@@ -197,13 +201,56 @@ describe('DashboardComponent', () => {
   });
 
   it('shows the API message when the dashboard cannot be loaded', () => {
-    fixture.detectChanges();
-    http.expectOne('/api/organizations').flush([{ id: ORG, name: 'Acme', role: 'Viewer' }]);
+    open('Viewer');
     http.expectOne(`/api/organizations/${ORG}/datasets`).flush(datasets);
     http.expectOne(`/api/organizations/${ORG}/dashboards/${DASH}`).flush(
       { title: 'Not found', detail: 'Dashboard not found.' }, { status: 404, statusText: 'Not Found' });
     fixture.detectChanges();
 
     expect(el().querySelector('[role=alert]')).not.toBeNull();
+  });
+
+  it('tells the page when a change was saved, so its list can show the new chart count', () => {
+    load('Editor');
+    http.expectOne(runUrl).flush({ widgets: [] });
+    const changed: { definition: { widgets: unknown[] } }[] = [];
+    fixture.componentInstance.changed.subscribe((d) => changed.push(d));
+
+    (Array.from(el().querySelectorAll('button')).find((b) => b.textContent?.trim() === 'Remove') as HTMLButtonElement).click();
+    const saved = dashboard();
+    saved.definition.widgets = saved.definition.widgets.slice(1);
+    http.expectOne({ method: 'PUT', url: `/api/organizations/${ORG}/dashboards/${DASH}` }).flush(saved);
+    http.expectOne(runUrl).flush({ widgets: [] });
+
+    expect(changed.length).toBe(1);
+    expect(changed[0].definition.widgets.length).toBe(1);
+  });
+
+  it('asks before deleting and tells the page it is gone', () => {
+    load('Owner');
+    http.expectOne(runUrl).flush({ widgets: [] });
+    const deleted: string[] = [];
+    fixture.componentInstance.deleted.subscribe((id) => deleted.push(id));
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
+
+    buttonByText('Delete dashboard').click();
+    http.expectNone({ method: 'DELETE', url: `/api/organizations/${ORG}/dashboards/${DASH}` });
+
+    confirmSpy.mockReturnValue(true);
+    buttonByText('Delete dashboard').click();
+    http.expectOne({ method: 'DELETE', url: `/api/organizations/${ORG}/dashboards/${DASH}` }).flush(null, { status: 204, statusText: 'No Content' });
+
+    expect(deleted).toEqual([DASH]);
+  });
+
+  it('is hidden while another tab is showing, and keeps what it has', () => {
+    load('Viewer');
+    http.expectOne(runUrl).flush({ widgets: [] });
+
+    fixture.componentRef.setInput('active', false);
+    fixture.detectChanges();
+
+    expect((fixture.nativeElement as HTMLElement).classList.contains('inactive')).toBe(true);
+    expect(el().querySelector('mat-card-title')?.textContent).toContain('Sales overview');
   });
 });

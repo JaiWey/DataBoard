@@ -44,8 +44,10 @@ internal sealed class FakeConnector : IDataSourceConnector
     public Task<DatabaseSchema> GetSchemaAsync(string connectionString, CancellationToken ct = default)
     {
         UsedConnectionStrings.Add(connectionString);
-        return Task.FromResult(new DatabaseSchema([new SchemaNode("public", [])], false));
+        return Task.FromResult(Schema);
     }
+
+    public DatabaseSchema Schema { get; set; } = new([new SchemaNode("public", [])], false);
 
     public ParameterizedQuery? LastQuery { get; private set; }
     public int? LastExecuteMaxRows { get; private set; }
@@ -183,5 +185,19 @@ internal sealed class FakeRenderer : IChartSqlRenderer
         LastDatasetSql = datasetSql;
         LastPlan = plan;
         return new ParameterizedQuery($"RENDERED({datasetSql})", []);
+    }
+}
+
+/// <summary>Writes a recognisable text for a plan, so tests can see what the renderer was given.</summary>
+internal sealed class FakeTableViewRenderer : ITableViewSqlRenderer
+{
+    public DataSourceType Type => DataSourceType.PostgreSql;
+    public TableViewPlan? LastPlan { get; private set; }
+
+    public string Render(TableViewPlan plan)
+    {
+        LastPlan = plan;
+        return "SELECT " + string.Join(", ", plan.Columns.Select(c => $"t{c.Table}.{c.Column} AS {c.Alias}"))
+            + " FROM " + string.Join(" JOIN ", plan.Tables.Select(t => $"{t.Schema}.{t.Name}"));
     }
 }

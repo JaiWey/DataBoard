@@ -10,12 +10,13 @@ import { Dashboard, DashboardSummary, DashboardsService, NEW_ID, WidgetChartType
 import { SqlEditorComponent } from '../sql-editor/sql-editor.component';
 import { SqlResultsComponent } from '../sql-editor/sql-results.component';
 import { DataSourcesService, MAX_PREVIEW_ROWS, QueryPreview, problemMessages } from './data-sources.service';
-import { Aggregation, ChartQuery, ChartResult, Dataset, DatasetsService, TimeGrain } from './datasets.service';
+import { TableViewBuilderComponent } from './table-view-builder.component';
+import { Aggregation, ChartQuery, ChartResult, Dataset, DatasetsService, TableViewDefinition, TimeGrain, emptyTableView } from './datasets.service';
 
 /** One open dataset: its SQL editor and the preview/explore panels. Each tab keeps its own state while hidden. */
 @Component({
   selector: 'app-dataset-tab',
-  imports: [ReactiveFormsModule, RouterLink, MatCardModule, MatFormFieldModule, MatInputModule, MatButtonModule, ChartComponent, SqlEditorComponent, SqlResultsComponent],
+  imports: [ReactiveFormsModule, RouterLink, MatCardModule, MatFormFieldModule, MatInputModule, MatButtonModule, ChartComponent, SqlEditorComponent, SqlResultsComponent, TableViewBuilderComponent],
   template: `
     <mat-card appearance="raised" class="detail">
       <mat-card-header>
@@ -39,7 +40,14 @@ import { Aggregation, ChartQuery, ChartResult, Dataset, DatasetsService, TimeGra
           }
         </p>
 
-        @if (dataset().sql !== null) {
+        @if (isView()) {
+          <app-table-view-builder [orgId]="orgId()" [dataSourceId]="dataset().dataSourceId" [(definition)]="viewDefinition" />
+          <p class="save-row">
+            <button mat-flat-button type="button" class="save" [disabled]="!dirty() || busy()" (click)="saveSql()">Save</button>
+            @if (dirty()) { <small>Unsaved changes</small> }
+          </p>
+          <details class="generated"><summary>Generated SQL</summary><app-sql-editor [value]="dataset().sql ?? ''" [readOnly]="true" label="Generated SQL" /></details>
+        } @else if (dataset().sql !== null) {
           <app-sql-editor [value]="sqlText()" [readOnly]="!canEdit()" (valueChange)="sqlText.set($event)" (save)="saveSql()" (run)="testSql()" />
           @if (canEdit()) {
             <p class="save-row">
@@ -180,6 +188,7 @@ import { Aggregation, ChartQuery, ChartResult, Dataset, DatasetsService, TimeGra
     mat-card-content { padding-top: 0.75rem; }
     .desc { margin: 0.25rem 0; color: var(--mat-sys-on-surface-variant); }
     .chips { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+    .generated { margin: 0.5rem 0; }
     .save-row { display: flex; align-items: center; gap: 0.75rem; margin: 0.5rem 0; }
     .explore { margin: 1rem 0 0; }
     .run { margin-top: 0.4rem; }
@@ -207,7 +216,14 @@ export class DatasetTabComponent {
 
   /** The text in the editor; starts from, and resets to, the saved SQL whenever the dataset changes. */
   protected readonly sqlText = linkedSignal(() => this.dataset().sql ?? '');
-  protected readonly dirty = computed(() => this.dataset().sql !== null && this.sqlText() !== this.dataset().sql);
+  /** A table view that this user may edit: built step by step instead of written as SQL. */
+  protected readonly isView = computed(() => this.canEdit() && this.dataset().kind === 'TableView' && this.dataset().definition !== null);
+  /** The table view being edited; starts from, and resets to, the saved definition. */
+  protected readonly viewDefinition = linkedSignal<TableViewDefinition>(() => this.dataset().definition ?? emptyTableView());
+  protected readonly dirty = computed(() =>
+    this.isView()
+      ? JSON.stringify(this.viewDefinition()) !== JSON.stringify(this.dataset().definition)
+      : this.dataset().sql !== null && this.sqlText() !== this.dataset().sql);
   protected readonly sqlErrors = signal<string[]>([]);
   /** Rows from running the editor's current SQL (saved or not) against the dataset's data source. */
   protected readonly testResult = signal<QueryPreview | null>(null);
@@ -273,7 +289,10 @@ export class DatasetTabComponent {
     if (!this.canEdit() || !this.dirty() || this.busy()) return;
     this.busy.set(true);
     this.sqlErrors.set([]);
-    this.api.update(this.orgId(), dataset.id, dataset.name, this.sqlText(), dataset.description).subscribe({
+    const request = this.isView()
+      ? this.api.updateTableView(this.orgId(), dataset.id, dataset.name, this.viewDefinition(), dataset.description)
+      : this.api.update(this.orgId(), dataset.id, dataset.name, this.sqlText(), dataset.description);
+    request.subscribe({
       next: (saved) => {
         this.busy.set(false);
         // The columns may have changed with the query, so any open results no longer describe the dataset.

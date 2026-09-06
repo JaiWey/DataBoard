@@ -17,6 +17,7 @@ public class DatasetHandlerTests
     private readonly FakeCurrentUser _user = new(Guid.NewGuid());
     private readonly FakeConnector _connector = new();
     private readonly FakeValidator _validator = new();
+    private readonly FakeTableViewRenderer _renderer = new();
     private readonly Guid _org = Guid.NewGuid();
     private readonly DataSource _source;
 
@@ -28,15 +29,16 @@ public class DatasetHandlerTests
 
     private OrganizationAccess Access() => new(_orgs, _user);
     private DataSourceConnectors Connectors() => new([_connector]);
+    private TableViewSqlRenderers Renderers() => new([_renderer]);
 
     private void Join(OrganizationRole role, Guid? org = null) =>
         _orgs.Members.Add(OrganizationMember.Create(org ?? _org, _user.UserId!.Value, role, DateTime.UtcNow));
 
     private CreateDatasetHandler Create() =>
-        new(_datasets, _sources, new FakeSecrets(), Connectors(), _validator, _uow, new FixedClock(), Access());
+        new(_datasets, _sources, new FakeSecrets(), Connectors(), Renderers(), _validator, _uow, new FixedClock(), Access());
 
     private UpdateDatasetHandler Update() =>
-        new(_datasets, _sources, new FakeSecrets(), Connectors(), _validator, _uow, new FixedClock(), Access());
+        new(_datasets, _sources, new FakeSecrets(), Connectors(), Renderers(), _validator, _uow, new FixedClock(), Access());
 
     private PreviewDatasetHandler Preview() =>
         new(_datasets, _sources, new FakeSecrets(), Connectors(), _validator, Access());

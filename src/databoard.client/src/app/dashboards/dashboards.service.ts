@@ -87,8 +87,10 @@ export class DashboardsService {
     return this.http.get<Dashboard>(this.url(orgId, `/${id}`));
   }
 
-  create(orgId: string, name: string, definition: DashboardDefinition = { widgets: [], filters: [] }): Observable<Dashboard> {
-    return this.http.post<Dashboard>(this.url(orgId), { name, definition });
+  create(
+    orgId: string, name: string, definition: DashboardDefinition = { widgets: [], filters: [] }, description?: string,
+  ): Observable<Dashboard> {
+    return this.http.post<Dashboard>(this.url(orgId), { name, ...(description ? { description } : {}), definition });
   }
 
   update(orgId: string, dashboard: Dashboard, definition: DashboardDefinition): Observable<Dashboard> {

@@ -63,6 +63,7 @@ public static class DependencyInjection
         services.AddSingleton<ISqlQueryValidator, SqlParserQueryValidator>();
         services.AddSingleton<IDataSourceConnector, PostgresConnector>();
         services.AddSingleton<IChartSqlRenderer, PostgresChartSqlRenderer>();
+        services.AddSingleton<ITableViewSqlRenderer, PostgresTableViewSqlRenderer>();
 
         services.AddScoped<JwtTokenService>();
         services.AddScoped<IIdentityService, IdentityService>();

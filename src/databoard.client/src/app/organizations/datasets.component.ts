@@ -3,12 +3,16 @@ import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatCardModule } from '@angular/material/card';
 import { MatListModule } from '@angular/material/list';
+import { MatMenuModule } from '@angular/material/menu';
 import { ActivatedRoute } from '@angular/router';
+import { TabStripComponent } from '../shared/tab-strip.component';
 import { DatasetTabComponent } from './dataset-tab.component';
 import { NewDatasetTabComponent } from './new-dataset-tab.component';
+import { NewTableViewTabComponent } from './new-table-view-tab.component';
 import { Dataset, DatasetsService } from './datasets.service';
 
 const NEW_PREFIX = 'new:';
+const NEW_VIEW_PREFIX = 'new:view:';
 
 interface Organization {
   id: string;
@@ -19,7 +23,7 @@ interface Organization {
 /** Datasets of an organization: a list on the left, and the datasets opened from it as tabs on the right. */
 @Component({
   selector: 'app-datasets',
-  imports: [MatCardModule, MatListModule, MatButtonModule, DatasetTabComponent, NewDatasetTabComponent],
+  imports: [MatCardModule, MatListModule, MatButtonModule, MatMenuModule, TabStripComponent, DatasetTabComponent, NewDatasetTabComponent, NewTableViewTabComponent],
   template: `
     <h2>{{ organization()?.name }} <small>datasets</small></h2>
 
@@ -28,7 +32,11 @@ interface Organization {
         <mat-card-header>
           <mat-card-title>Datasets</mat-card-title>
           @if (canEdit()) {
-            <button mat-flat-button type="button" class="add" (click)="addDataset()">Add dataset</button>
+            <button mat-flat-button type="button" class="add" [matMenuTriggerFor]="addMenu">Add dataset</button>
+            <mat-menu #addMenu="matMenu">
+              <button mat-menu-item type="button" (click)="addDataset('sql')">SQL dataset</button>
+              <button mat-menu-item type="button" (click)="addDataset('view')">Table view dataset</button>
+            </mat-menu>
           }
         </mat-card-header>
         <mat-card-content>
@@ -39,7 +47,7 @@ interface Organization {
             @for (item of datasets(); track item.id) {
               <button mat-list-item type="button" class="item" [activated]="activeId() === item.id" (click)="open(item)">
                 <span matListItemTitle>{{ item.name }}</span>
-                <span matListItemLine>{{ item.columns.length }} columns</span>
+                <span matListItemLine>{{ item.columns.length }} columns · {{ item.kind === 'TableView' ? 'table view' : 'SQL' }}</span>
               </button>
             }
           </mat-action-list>
@@ -48,21 +56,15 @@ interface Organization {
 
       <section class="workspace">
         @if (tabs().length > 0) {
-          <div class="tabstrip" role="tablist" aria-label="Open datasets">
-            @for (tab of tabs(); track tab.id) {
-              <div class="tab" role="presentation" [class.active]="tab.id === activeId()">
-                <button type="button" role="tab" class="tab-label" [attr.aria-selected]="tab.id === activeId()"
-                        (click)="activeId.set(tab.id)" (auxclick)="$event.button === 1 && close(tab.id)">
-                  {{ tab.name }}@if (dirtyIds().has(tab.id)) { <span class="dot" title="Unsaved changes" aria-label="Unsaved changes"> ●</span> }
-                </button>
-                <button type="button" class="tab-close" [attr.aria-label]="'Close ' + tab.name" (click)="close(tab.id)">×</button>
-              </div>
-            }
-          </div>
+          <app-tab-strip label="Open datasets" [tabs]="tabItems()" [activeId]="activeId()"
+                         (select)="activeId.set($event)" (close)="close($event)" />
           @for (tab of tabs(); track tab.id) {
             @if (tab.dataset; as dataset) {
               <app-dataset-tab [dataset]="dataset" [orgId]="orgId" [canEdit]="canEdit()" [active]="tab.id === activeId()"
                                (updated)="replace($event)" (deleted)="onDeleted($event)" (dirtyChange)="setDirty(tab.id, $event)" />
+            } @else if (tab.id.startsWith(NEW_VIEW_PREFIX)) {
+              <app-new-table-view-tab [orgId]="orgId" [active]="tab.id === activeId()"
+                                      (created)="onCreated(tab.id, $event)" (dirtyChange)="setDirty(tab.id, $event)" />
             } @else {
               <app-new-dataset-tab [orgId]="orgId" [active]="tab.id === activeId()"
                                    (created)="onCreated(tab.id, $event)" (dirtyChange)="setDirty(tab.id, $event)" />
@@ -98,20 +100,10 @@ interface Organization {
     mat-card-content { padding-top: 0.75rem; }
     .placeholder { flex: 1; display: grid; place-items: center; text-align: center; color: var(--mat-sys-on-surface-variant); }
 
-    /* VS Code style tab strip: a scrolling row, the active tab merges into the pane below. */
-    .tabstrip { display: flex; overflow-x: auto; margin-bottom: 0.5rem; flex: none; border-bottom: 1px solid var(--mat-sys-outline-variant); }
-    .tab { display: flex; align-items: center; flex: none; border: 1px solid transparent; border-bottom: 0; border-radius: 6px 6px 0 0;
-           color: var(--mat-sys-on-surface-variant); }
-    .tab.active { background: #fff; border-color: var(--mat-sys-outline-variant); color: var(--mat-sys-on-surface);
-                  box-shadow: inset 0 2px 0 var(--mat-sys-primary); }
-    .tab button { border: 0; background: none; color: inherit; font: var(--mat-sys-label-large); cursor: pointer; }
-    .tab-label { padding: 0.55rem 0.5rem 0.55rem 0.9rem; max-width: 14rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .tab-close { padding: 0 0.6rem; font-size: 1.1rem; line-height: 1; border-radius: 4px; }
-    .tab-close:hover { background: var(--mat-sys-surface-container-high); }
-    .dot { color: var(--mat-sys-primary); }
   `,
 })
 export class DatasetsComponent implements OnInit {
+  protected readonly NEW_VIEW_PREFIX = NEW_VIEW_PREFIX;
   private readonly route = inject(ActivatedRoute);
   private readonly http = inject(HttpClient);
   private readonly api = inject(DatasetsService);
@@ -132,11 +124,12 @@ export class DatasetsComponent implements OnInit {
   /** An open tab is a saved dataset, or an unsaved new one (its id starts with "new:" and it has no dataset). */
   protected readonly tabs = computed(() =>
     this.openIds().flatMap((id): { id: string; name: string; dataset: Dataset | null }[] => {
-      if (id.startsWith(NEW_PREFIX)) return [{ id, name: 'New dataset', dataset: null }];
+      if (id.startsWith(NEW_PREFIX)) return [{ id, name: id.startsWith(NEW_VIEW_PREFIX) ? 'New table view' : 'New dataset', dataset: null }];
       const dataset = this.datasets().find((d) => d.id === id);
       return dataset ? [{ id, name: dataset.name, dataset }] : [];
     }),
   );
+  protected readonly tabItems = computed(() => this.tabs().map((t) => ({ id: t.id, name: t.name, dirty: this.dirtyIds().has(t.id) })));
   private newCount = 0;
 
   ngOnInit(): void {
@@ -179,9 +172,9 @@ export class DatasetsComponent implements OnInit {
     this.reload();
   }
 
-  /** Opens an empty editor in a new tab; the dataset is only created when that tab is saved. */
-  protected addDataset(): void {
-    const id = `${NEW_PREFIX}${++this.newCount}`;
+  /** Opens an empty editor (or the table view builder) in a new tab; the dataset is only created when that tab is saved. */
+  protected addDataset(kind: 'sql' | 'view'): void {
+    const id = kind === 'view' ? `${NEW_VIEW_PREFIX}${++this.newCount}` : `${NEW_PREFIX}sql:${++this.newCount}`;
     this.openIds.update((ids) => [...ids, id]);
     this.activeId.set(id);
   }

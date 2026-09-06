@@ -1,11 +1,9 @@
-import { HttpClient } from '@angular/common/http';
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, input, output, signal } from '@angular/core';
 import { FormBuilder, FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatCardModule } from '@angular/material/card';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
-import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ChartComponent } from '../charts/chart.component';
 import { problemMessages } from '../organizations/data-sources.service';
 import { Dataset, DatasetsService } from '../organizations/datasets.service';
@@ -22,12 +20,6 @@ import {
   WidgetResult,
 } from './dashboards.service';
 
-interface Organization {
-  id: string;
-  name: string;
-  role: 'Viewer' | 'Editor' | 'Owner';
-}
-
 /** In and Between take several values, typed as a comma-separated list; the rest take one. */
 export function parseFilterInput(operator: SharedFilterOperator, text: string): string[] {
   const trimmed = text.trim();
@@ -39,17 +31,17 @@ export function parseFilterInput(operator: SharedFilterOperator, text: string): 
 
 @Component({
   selector: 'app-dashboard',
-  imports: [ReactiveFormsModule, RouterLink, MatCardModule, MatFormFieldModule, MatInputModule, MatButtonModule, ChartComponent],
+  imports: [ReactiveFormsModule, MatCardModule, MatFormFieldModule, MatInputModule, MatButtonModule, ChartComponent],
   template: `
-    <p><a mat-button [routerLink]="['/organizations', orgId, 'dashboards']">&larr; Dashboards</a></p>
-
+    <mat-card appearance="raised" class="detail">
     @if (dashboard(); as d) {
-      <header class="title">
-        <h2>{{ d.name }}</h2>
+      <mat-card-header>
+        <mat-card-title>{{ d.name }}</mat-card-title>
         @if (canEdit()) {
-          <button mat-button type="button" (click)="removeDashboard(d)">Delete dashboard</button>
+          <span class="actions"><button mat-button type="button" (click)="removeDashboard(d)">Delete dashboard</button></span>
         }
-      </header>
+      </mat-card-header>
+      <mat-card-content>
 
       @if (d.definition.filters.length > 0) {
         <form class="filters form-row" [formGroup]="filterForm" (ngSubmit)="apply()">
@@ -138,39 +130,53 @@ export function parseFilterInput(operator: SharedFilterOperator, text: string): 
           <button mat-flat-button type="submit" class="apply" [disabled]="newFilterForm.invalid || busy()">Add filter</button>
         </form>
       }
+      </mat-card-content>
     } @else if (errors().length === 0) {
-      <p><em>Loading...</em></p>
+      <mat-card-content><p><em>Loading...</em></p></mat-card-content>
     }
 
-    @for (message of errors(); track message) {
-      <p class="fail" role="alert">{{ message }}</p>
+    @if (errors().length > 0) {
+      <mat-card-content>
+        @for (message of errors(); track message) {
+          <p class="fail" role="alert">{{ message }}</p>
+        }
+      </mat-card-content>
     }
+    </mat-card>
   `,
   styles: `
-    .title { display: flex; align-items: baseline; gap: 1rem; }
-    .title h2 { margin: 0 0 1rem; }
+    :host { display: block; min-width: 0; }
+    :host(.inactive) { display: none; }
+    /* The card fills the tab's pane; only its content scrolls, so a long dashboard never grows the page. */
+    .detail { --mat-card-elevated-container-color: #fff; height: 100%; }
+    mat-card-title { font: var(--mat-sys-title-medium); }
+    mat-card-header { align-items: center; flex-wrap: wrap; gap: 0.5rem; }
+    .actions { margin-left: auto; }
+    .detail > mat-card-content { flex: 1; min-height: 0; overflow: auto; padding-top: 0.75rem; }
     .filters { margin: 0.5rem 0 1rem; }
     .apply, .remove-filter { margin-top: 0.4rem; }
     .widgets { display: grid; grid-template-columns: repeat(auto-fill, minmax(24rem, 1fr)); gap: 1rem; }
-    mat-card-header { align-items: center; }
+    .widget mat-card-header { align-items: center; }
   `,
+  host: { '[class.inactive]': '!active()' },
 })
 export class DashboardComponent implements OnInit {
-  private readonly route = inject(ActivatedRoute);
-  private readonly router = inject(Router);
-  private readonly http = inject(HttpClient);
   private readonly api = inject(DashboardsService);
   private readonly datasetsApi = inject(DatasetsService);
   private readonly fb = inject(FormBuilder);
 
-  protected orgId = '';
+  readonly orgId = input.required<string>();
+  readonly dashboardId = input.required<string>();
+  readonly canEdit = input(false);
+  /** Only the visible tab is shown; the others stay alive so their filters and results survive. */
+  readonly active = input(true);
+
+  /** The dashboard after it was saved (a chart or filter was added or removed), so the page can update its list. */
+  readonly changed = output<Dashboard>();
+  readonly deleted = output<string>();
+
   protected readonly operators = SHARED_FILTER_OPERATORS;
 
-  protected readonly organization = signal<Organization | null>(null);
-  protected readonly canEdit = computed(() => {
-    const role = this.organization()?.role;
-    return role === 'Editor' || role === 'Owner';
-  });
   protected readonly dashboard = signal<Dashboard | null>(null);
   protected readonly datasets = signal<Dataset[]>([]);
   protected readonly run = signal<DashboardRun | null>(null);
@@ -188,16 +194,8 @@ export class DashboardComponent implements OnInit {
     [...new Set(this.datasets().flatMap((d) => d.columns.map((c) => c.name)))].sort((a, b) => a.localeCompare(b)),
   );
 
-  private dashboardId = '';
-
   ngOnInit(): void {
-    this.orgId = this.route.snapshot.paramMap.get('id') ?? '';
-    this.dashboardId = this.route.snapshot.paramMap.get('dashboardId') ?? '';
-
-    this.http.get<Organization[]>('/api/organizations').subscribe({
-      next: (orgs) => this.organization.set(orgs.find((o) => o.id === this.orgId) ?? null),
-    });
-    this.datasetsApi.list(this.orgId).subscribe({
+    this.datasetsApi.list(this.orgId()).subscribe({
       next: (items) => {
         this.datasets.set(items);
         if (!this.newFilterForm.controls.column.value && this.columnNames().length > 0) {
@@ -205,7 +203,7 @@ export class DashboardComponent implements OnInit {
         }
       },
     });
-    this.api.get(this.orgId, this.dashboardId).subscribe({
+    this.api.get(this.orgId(), this.dashboardId()).subscribe({
       next: (d) => {
         this.show(d);
         this.execute();
@@ -254,8 +252,8 @@ export class DashboardComponent implements OnInit {
 
   protected removeDashboard(d: Dashboard): void {
     if (!confirm(`Delete the dashboard "${d.name}"?`)) return;
-    this.api.remove(this.orgId, d.id).subscribe({
-      next: () => this.router.navigate(['/organizations', this.orgId, 'dashboards']),
+    this.api.remove(this.orgId(), d.id).subscribe({
+      next: () => this.deleted.emit(d.id),
       error: (e) => this.errors.set(problemMessages(e, 'Could not delete the dashboard.')),
     });
   }
@@ -263,10 +261,11 @@ export class DashboardComponent implements OnInit {
   private save(d: Dashboard, definition: DashboardDefinition, done?: () => void): void {
     this.busy.set(true);
     this.errors.set([]);
-    this.api.update(this.orgId, d, definition).subscribe({
+    this.api.update(this.orgId(), d, definition).subscribe({
       next: (saved) => {
         this.busy.set(false);
         this.show(saved);
+        this.changed.emit(saved);
         done?.();
         this.execute();
       },
@@ -300,7 +299,7 @@ export class DashboardComponent implements OnInit {
 
     this.busy.set(true);
     this.errors.set([]);
-    this.api.run(this.orgId, d.id, values).subscribe({
+    this.api.run(this.orgId(), d.id, values).subscribe({
       next: (r) => {
         this.run.set(r);
         this.busy.set(false);

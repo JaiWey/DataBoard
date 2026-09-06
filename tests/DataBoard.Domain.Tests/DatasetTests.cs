@@ -96,4 +96,43 @@ public class DatasetTests
         Assert.Equal("SELECT 1", dataset.Sql);
         Assert.Equal(2, dataset.Columns.Count);
     }
+
+    [Fact]
+    public void A_dataset_is_a_sql_dataset_by_default()
+    {
+        var dataset = New();
+
+        Assert.Equal(DatasetKind.Sql, dataset.Kind);
+        Assert.Null(dataset.DefinitionJson);
+    }
+
+    [Fact]
+    public void A_table_view_keeps_its_definition_and_needs_one()
+    {
+        var view = Dataset.Create(Org, Source, "View", null, "SELECT 1", Columns, User, Now, DatasetKind.TableView, "{\"main\":{}}");
+
+        Assert.Equal(DatasetKind.TableView, view.Kind);
+        Assert.Equal("{\"main\":{}}", view.DefinitionJson);
+        Assert.Throws<ArgumentException>(() =>
+            Dataset.Create(Org, Source, "View", null, "SELECT 1", Columns, User, Now, DatasetKind.TableView, null));
+    }
+
+    [Fact]
+    public void A_sql_dataset_cannot_have_a_definition()
+    {
+        Assert.Throws<ArgumentException>(() =>
+            Dataset.Create(Org, Source, "Plain", null, "SELECT 1", Columns, User, Now, DatasetKind.Sql, "{}"));
+    }
+
+    [Fact]
+    public void Updating_a_table_view_replaces_its_definition_and_keeps_its_kind()
+    {
+        var view = Dataset.Create(Org, Source, "View", null, "SELECT 1", Columns, User, Now, DatasetKind.TableView, "{\"a\":1}");
+
+        view.Update("View", null, "SELECT 2", Columns, Now, "{\"a\":2}");
+
+        Assert.Equal(DatasetKind.TableView, view.Kind);
+        Assert.Equal("{\"a\":2}", view.DefinitionJson);
+        Assert.Throws<ArgumentException>(() => view.Update("View", null, "SELECT 2", Columns, Now, null));
+    }
 }
