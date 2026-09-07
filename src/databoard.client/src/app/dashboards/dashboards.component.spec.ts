@@ -10,6 +10,7 @@ import { DashboardsComponent } from './dashboards.component';
 const ORG = '11111111-1111-1111-1111-111111111111';
 
 const summary = (id: string, name: string, widgetCount = 0) => ({ id, name, description: null, widgetCount, updatedUtc: '' });
+const widget = (id: string) => ({ id, title: id, datasetId: 'x', chartType: 'Table', query: {} });
 const full = (id: string, name: string, widgets: unknown[] = []) => ({
   id, name, description: null, createdUtc: '', updatedUtc: '', definition: { widgets, filters: [] },
 });
@@ -20,10 +21,9 @@ describe('DashboardsComponent', () => {
   let routeParams: Record<string, string>;
   const el = () => fixture.nativeElement as HTMLElement;
 
-  const tabNames = () => Array.from(el().querySelectorAll('[role=tab]')).map((t) => t.textContent?.replace('●', '').trim());
-  const activeTab = () => el().querySelector('.tab.active [role=tab]')?.textContent?.replace('●', '').trim();
   const item = (index: number) => el().querySelectorAll('button.item')[index] as HTMLButtonElement;
   const buttonLabels = () => Array.from(el().querySelectorAll('button')).map((b) => b.textContent?.trim());
+  const button = (text: string) => Array.from(el().querySelectorAll('button')).find((b) => b.textContent?.trim() === text) as HTMLButtonElement;
 
   const start = (role: 'Viewer' | 'Editor' | 'Owner', items: unknown[]) => {
     fixture = TestBed.createComponent(DashboardsComponent);
@@ -33,16 +33,15 @@ describe('DashboardsComponent', () => {
     fixture.detectChanges();
   };
 
-  /** A newly opened tab loads its own data: the datasets, the dashboard, then its run. */
-  const answerTab = (id: string, name: string) => {
+  /** A dashboard picked on the right loads its own data: the datasets, the dashboard, then its run. */
+  const answer = (id: string, name: string, widgets: unknown[] = []) => {
     http.expectOne(`/api/organizations/${ORG}/datasets`).flush([]);
-    http.expectOne({ method: 'GET', url: `/api/organizations/${ORG}/dashboards/${id}` }).flush(full(id, name));
+    http.expectOne({ method: 'GET', url: `/api/organizations/${ORG}/dashboards/${id}` }).flush(full(id, name, widgets));
     http.expectOne(`/api/organizations/${ORG}/dashboards/${id}/run`).flush({ widgets: [] });
     fixture.detectChanges();
   };
 
   beforeEach(() => {
-    localStorage.clear();
     routeParams = { id: ORG };
     TestBed.configureTestingModule({
       providers: [
@@ -66,6 +65,15 @@ describe('DashboardsComponent', () => {
     expect(el().querySelector('.detail')?.textContent).toContain('Select a dashboard to see it.');
   });
 
+  it('has no tabs', () => {
+    start('Viewer', [summary('d1', 'Sales')]);
+    item(0).click();
+    fixture.detectChanges();
+    answer('d1', 'Sales');
+
+    expect(el().querySelector('[role=tablist]')).toBeNull();
+  });
+
   it('tells editors how to start and offers nothing to create to viewers', () => {
     start('Viewer', []);
 
@@ -73,105 +81,53 @@ describe('DashboardsComponent', () => {
     expect(buttonLabels()).not.toContain('New dashboard');
   });
 
-  it('opens a clicked dashboard in a tab and marks it in the list', () => {
+  it('shows the clicked dashboard on the right and marks it in the list', () => {
     start('Viewer', [summary('d1', 'Sales'), summary('d2', 'Costs')]);
 
     item(0).click();
     fixture.detectChanges();
-    answerTab('d1', 'Sales');
+    answer('d1', 'Sales');
 
-    expect(tabNames()).toEqual(['Sales']);
     expect(el().querySelector('app-dashboard mat-card-title')?.textContent).toContain('Sales');
     expect(item(0).classList.contains('mdc-list-item--activated')).toBe(true);
     expect(item(1).classList.contains('mdc-list-item--activated')).toBe(false);
   });
 
-  it('keeps several dashboards open and switches between them', () => {
+  it('replaces the dashboard on the right when another one is clicked', () => {
     start('Viewer', [summary('d1', 'Sales'), summary('d2', 'Costs')]);
     item(0).click();
+    fixture.detectChanges();
+    answer('d1', 'Sales');
+
     item(1).click();
     fixture.detectChanges();
-    http.match(`/api/organizations/${ORG}/datasets`).forEach((r) => r.flush([]));
-    ['d1', 'd2'].forEach((id) => {
-      http.expectOne({ method: 'GET', url: `/api/organizations/${ORG}/dashboards/${id}` }).flush(full(id, id === 'd1' ? 'Sales' : 'Costs'));
-      http.expectOne(`/api/organizations/${ORG}/dashboards/${id}/run`).flush({ widgets: [] });
-    });
-    fixture.detectChanges();
+    answer('d2', 'Costs');
 
-    expect(tabNames()).toEqual(['Sales', 'Costs']);
-    expect(activeTab()).toBe('Costs');
-    expect(el().querySelectorAll('app-dashboard.inactive').length).toBe(1);
-
-    (el().querySelectorAll('[role=tab]')[0] as HTMLButtonElement).click();
-    fixture.detectChanges();
-    expect(activeTab()).toBe('Sales');
-
-    item(1).click();
-    item(0).click();
-    fixture.detectChanges();
-    expect(tabNames()).toEqual(['Sales', 'Costs']); // no duplicate tab
-  });
-
-  it('closes a tab and moves to a neighbour, ending with the empty message', () => {
-    start('Viewer', [summary('d1', 'Sales'), summary('d2', 'Costs')]);
-    item(0).click();
-    item(1).click();
-    fixture.detectChanges();
-    http.match(`/api/organizations/${ORG}/datasets`).forEach((r) => r.flush([]));
-    ['d1', 'd2'].forEach((id) => {
-      http.expectOne({ method: 'GET', url: `/api/organizations/${ORG}/dashboards/${id}` }).flush(full(id, id));
-      http.expectOne(`/api/organizations/${ORG}/dashboards/${id}/run`).flush({ widgets: [] });
-    });
-    fixture.detectChanges();
-
-    (el().querySelector('button[aria-label="Close Costs"]') as HTMLButtonElement).click();
-    fixture.detectChanges();
-    expect(tabNames()).toEqual(['Sales']);
-    expect(activeTab()).toBe('Sales');
-
-    (el().querySelector('button[aria-label="Close Sales"]') as HTMLButtonElement).click();
-    fixture.detectChanges();
-    expect(el().querySelector('[role=tablist]')).toBeNull();
-    expect(el().textContent).toContain('Select a dashboard to see it.');
-  });
-
-  it('remembers the open tabs across a reload', () => {
-    start('Viewer', [summary('d1', 'Sales'), summary('d2', 'Costs')]);
-    item(0).click();
-    fixture.detectChanges();
-    answerTab('d1', 'Sales');
-    fixture.destroy();
-
-    start('Viewer', [summary('d1', 'Sales'), summary('d2', 'Costs')]);
-    answerTab('d1', 'Sales');
-
-    expect(tabNames()).toEqual(['Sales']);
-    expect(activeTab()).toBe('Sales');
+    expect(el().querySelectorAll('app-dashboard').length).toBe(1);
+    expect(el().querySelector('app-dashboard mat-card-title')?.textContent).toContain('Costs');
   });
 
   it('opens the dashboard named in the address', () => {
     routeParams = { id: ORG, dashboardId: 'd2' };
 
     start('Viewer', [summary('d1', 'Sales'), summary('d2', 'Costs')]);
-    answerTab('d2', 'Costs');
+    answer('d2', 'Costs');
 
-    expect(tabNames()).toEqual(['Costs']);
-    expect(activeTab()).toBe('Costs');
+    expect(el().querySelector('app-dashboard mat-card-title')?.textContent).toContain('Costs');
   });
 
-  it('opens the new dashboard dialog and then shows the created dashboard in a tab', () => {
+  it('opens the new dashboard dialog and then shows the created dashboard', () => {
     start('Editor', []);
-    const created = full('d9', 'Fresh');
-    const open = vi.spyOn(TestBed.inject(MatDialog), 'open').mockReturnValue({ afterClosed: () => of(created) } as never);
+    const open = vi.spyOn(TestBed.inject(MatDialog), 'open').mockReturnValue({ afterClosed: () => of(full('d9', 'Fresh')) } as never);
 
-    (Array.from(el().querySelectorAll('button')).find((b) => b.textContent?.trim() === 'New dashboard') as HTMLButtonElement).click();
+    button('New dashboard').click();
 
     expect((open.mock.calls[0][1] as { data: unknown }).data).toEqual({ orgId: ORG });
     fixture.detectChanges();
     http.expectOne({ method: 'GET', url: `/api/organizations/${ORG}/dashboards` }).flush([summary('d9', 'Fresh')]);
-    answerTab('d9', 'Fresh');
+    answer('d9', 'Fresh');
 
-    expect(tabNames()).toEqual(['Fresh']);
+    expect(el().querySelector('app-dashboard mat-card-title')?.textContent).toContain('Fresh');
     expect(el().querySelector('button.item [matListItemLine]')?.textContent).toContain('0 charts');
   });
 
@@ -179,13 +135,9 @@ describe('DashboardsComponent', () => {
     start('Editor', [summary('d1', 'Sales', 2)]);
     item(0).click();
     fixture.detectChanges();
-    http.expectOne(`/api/organizations/${ORG}/datasets`).flush([]);
-    const widget = (id: string) => ({ id, title: id, datasetId: 'x', chartType: 'Table', query: {} });
-    http.expectOne({ method: 'GET', url: `/api/organizations/${ORG}/dashboards/d1` }).flush(full('d1', 'Sales', [widget('w1'), widget('w2')]));
-    http.expectOne(`/api/organizations/${ORG}/dashboards/d1/run`).flush({ widgets: [] });
-    fixture.detectChanges();
+    answer('d1', 'Sales', [widget('w1'), widget('w2')]);
 
-    (Array.from(el().querySelectorAll('button')).find((b) => b.textContent?.trim() === 'Remove') as HTMLButtonElement).click();
+    button('Remove').click();
     http.expectOne({ method: 'PUT', url: `/api/organizations/${ORG}/dashboards/d1` }).flush(full('d1', 'Sales', [widget('w2')]));
     http.expectOne(`/api/organizations/${ORG}/dashboards/d1/run`).flush({ widgets: [] });
     fixture.detectChanges();
@@ -193,19 +145,29 @@ describe('DashboardsComponent', () => {
     expect(el().querySelector('button.item [matListItemLine]')?.textContent).toContain('1 chart');
   });
 
-  it('closes the tab of a deleted dashboard and reloads the list', () => {
+  it('points editors with an empty dashboard to the datasets, where charts are made', () => {
+    start('Editor', [summary('d1', 'Sales')]);
+    item(0).click();
+    fixture.detectChanges();
+    answer('d1', 'Sales');
+
+    const link = Array.from(el().querySelectorAll('app-dashboard a')).find((a) => a.textContent?.includes('Open a dataset'));
+    expect(link?.getAttribute('href')).toBe(`/organizations/${ORG}/datasets`);
+  });
+
+  it('clears the right side and reloads the list when the shown dashboard is deleted', () => {
     start('Owner', [summary('d1', 'Sales')]);
     item(0).click();
     fixture.detectChanges();
-    answerTab('d1', 'Sales');
+    answer('d1', 'Sales');
     vi.spyOn(window, 'confirm').mockReturnValue(true);
 
-    (Array.from(el().querySelectorAll('button')).find((b) => b.textContent?.trim() === 'Delete dashboard') as HTMLButtonElement).click();
+    button('Delete dashboard').click();
     http.expectOne({ method: 'DELETE', url: `/api/organizations/${ORG}/dashboards/d1` }).flush(null, { status: 204, statusText: 'No Content' });
     http.expectOne({ method: 'GET', url: `/api/organizations/${ORG}/dashboards` }).flush([]);
     fixture.detectChanges();
 
-    expect(el().querySelector('[role=tablist]')).toBeNull();
+    expect(el().querySelector('app-dashboard')).toBeNull();
     expect(el().textContent).toContain('No dashboards yet.');
   });
 });

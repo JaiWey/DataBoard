@@ -5,7 +5,6 @@ import { MatCardModule } from '@angular/material/card';
 import { MatDialog } from '@angular/material/dialog';
 import { MatListModule } from '@angular/material/list';
 import { ActivatedRoute } from '@angular/router';
-import { TabStripComponent } from '../shared/tab-strip.component';
 import { DashboardComponent } from './dashboard.component';
 import { NewDashboardDialogComponent, NewDashboardDialogData } from './new-dashboard-dialog.component';
 import { Dashboard, DashboardSummary, DashboardsService } from './dashboards.service';
@@ -16,10 +15,10 @@ interface Organization {
   role: 'Viewer' | 'Editor' | 'Owner';
 }
 
-/** Dashboards of an organization: a list on the left, and the dashboards opened from it as tabs on the right. */
+/** Dashboards of an organization: a list on the left, and the selected dashboard on the right. */
 @Component({
   selector: 'app-dashboards',
-  imports: [MatCardModule, MatListModule, MatButtonModule, TabStripComponent, DashboardComponent],
+  imports: [MatCardModule, MatListModule, MatButtonModule, DashboardComponent],
   template: `
     <h2>{{ organization()?.name }} <small>dashboards</small></h2>
 
@@ -37,7 +36,7 @@ interface Organization {
           }
           <mat-action-list>
             @for (item of dashboards(); track item.id) {
-              <button mat-list-item type="button" class="item" [activated]="activeId() === item.id" (click)="open(item.id)">
+              <button mat-list-item type="button" class="item" [activated]="selectedId() === item.id" (click)="select(item.id)">
                 <span matListItemTitle>{{ item.name }}</span>
                 <span matListItemLine>{{ item.widgetCount }} {{ item.widgetCount === 1 ? 'chart' : 'charts' }}</span>
               </button>
@@ -47,14 +46,10 @@ interface Organization {
       </mat-card>
 
       <section class="workspace">
-        @if (tabs().length > 0) {
-          <app-tab-strip label="Open dashboards" [tabs]="tabs()" [activeId]="activeId()"
-                         (select)="activeId.set($event)" (close)="close($event)" />
-          @for (tab of tabs(); track tab.id) {
-            <app-dashboard [orgId]="orgId" [dashboardId]="tab.id" [canEdit]="canEdit()" [active]="tab.id === activeId()"
-                           (changed)="onChanged($event)" (deleted)="onDeleted($event)" />
-          }
-        } @else {
+        @for (dashboard of selected(); track dashboard.id) {
+          <app-dashboard [orgId]="orgId" [dashboardId]="dashboard.id" [canEdit]="canEdit()"
+                         (changed)="onChanged($event)" (deleted)="onDeleted($event)" />
+        } @empty {
           <mat-card appearance="raised" class="detail empty">
             <mat-card-content class="placeholder">
               <p><em>Select a dashboard to see it.</em></p>
@@ -100,15 +95,12 @@ export class DashboardsComponent implements OnInit {
   protected readonly dashboards = signal<DashboardSummary[]>([]);
   protected readonly loaded = signal(false);
 
-  /** Ids of the open tabs, left to right, and which one is showing. */
-  protected readonly openIds = signal<string[]>([]);
-  protected readonly activeId = signal<string | null>(null);
-  protected readonly tabs = computed(() =>
-    this.openIds().flatMap((id) => {
-      const dashboard = this.dashboards().find((d) => d.id === id);
-      return dashboard ? [{ id, name: dashboard.name }] : [];
-    }),
-  );
+  protected readonly selectedId = signal<string | null>(null);
+  /** Zero or one entries, so the detail is rebuilt (filters and results reset) whenever another dashboard is picked. */
+  protected readonly selected = computed(() => {
+    const dashboard = this.dashboards().find((d) => d.id === this.selectedId());
+    return dashboard ? [dashboard] : [];
+  });
 
   ngOnInit(): void {
     this.orgId = this.route.snapshot.paramMap.get('id') ?? '';
@@ -118,15 +110,8 @@ export class DashboardsComponent implements OnInit {
     this.reload();
   }
 
-  /** Opens a dashboard in a tab, or shows its tab if it is already open. */
-  protected open(id: string): void {
-    if (!this.openIds().includes(id)) this.openIds.update((ids) => [...ids, id]);
-    this.activeId.set(id);
-    this.remember();
-  }
-
-  protected close(id: string): void {
-    this.drop(id);
+  protected select(id: string): void {
+    this.selectedId.set(id);
   }
 
   protected openNewDialog(): void {
@@ -147,7 +132,7 @@ export class DashboardsComponent implements OnInit {
           updatedUtc: created.updatedUtc,
         };
         this.dashboards.update((items) => [...items, entry]);
-        this.open(created.id);
+        this.select(created.id);
         this.reload();
       });
   }
@@ -160,43 +145,8 @@ export class DashboardsComponent implements OnInit {
   }
 
   protected onDeleted(id: string): void {
-    this.drop(id);
+    if (this.selectedId() === id) this.selectedId.set(null);
     this.reload();
-  }
-
-  /** Removes a tab; if it was showing, its right neighbour (or else its left) takes over. */
-  private drop(id: string): void {
-    const ids = this.openIds();
-    const index = ids.indexOf(id);
-    if (index < 0) return;
-    const remaining = ids.filter((i) => i !== id);
-    this.openIds.set(remaining);
-    if (this.activeId() === id) this.activeId.set(remaining[index] ?? remaining[index - 1] ?? null);
-    this.remember();
-  }
-
-  private get storageKey(): string {
-    return `databoard.dashboardTabs.${this.orgId}`;
-  }
-
-  /** Remembers which tabs are open, per organization, so a reload brings them back. */
-  private remember(): void {
-    try {
-      localStorage.setItem(this.storageKey, JSON.stringify({ open: this.openIds(), active: this.activeId() }));
-    } catch {
-      // Storage can be unavailable (private windows, blocked site data); the tabs just are not remembered.
-    }
-  }
-
-  private restore(items: DashboardSummary[]): void {
-    try {
-      const saved = JSON.parse(localStorage.getItem(this.storageKey) ?? 'null') as { open?: string[]; active?: string | null } | null;
-      const open = (saved?.open ?? []).filter((id) => items.some((d) => d.id === id));
-      this.openIds.set(open);
-      this.activeId.set(open.includes(saved?.active ?? '') ? (saved?.active ?? null) : (open[0] ?? null));
-    } catch {
-      // Nothing usable stored.
-    }
   }
 
   private reload(): void {
@@ -205,14 +155,11 @@ export class DashboardsComponent implements OnInit {
         const first = !this.loaded();
         this.dashboards.set(items);
         this.loaded.set(true);
-        if (first) {
-          this.restore(items);
-          // A link to one dashboard (the old per-dashboard address) opens that dashboard.
-          const linked = this.route.snapshot.paramMap.get('dashboardId');
-          if (linked && items.some((d) => d.id === linked)) this.open(linked);
-        }
-        // Tabs of dashboards that no longer exist (deleted elsewhere) go away.
-        this.openIds().filter((id) => !items.some((d) => d.id === id)).forEach((id) => this.drop(id));
+        // A link to one dashboard (the address "Open dashboard" leads to) selects that dashboard.
+        const linked = this.route.snapshot.paramMap.get('dashboardId');
+        if (first && linked && items.some((d) => d.id === linked)) this.select(linked);
+        // A dashboard that no longer exists (deleted elsewhere) is no longer shown.
+        if (this.selectedId() && !items.some((d) => d.id === this.selectedId())) this.selectedId.set(null);
       },
     });
   }

@@ -1,5 +1,6 @@
 import { Component, OnInit, computed, inject, input, output, signal } from '@angular/core';
 import { FormBuilder, FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
+import { RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
 import { MatCardModule } from '@angular/material/card';
 import { MatFormFieldModule } from '@angular/material/form-field';
@@ -31,7 +32,7 @@ export function parseFilterInput(operator: SharedFilterOperator, text: string): 
 
 @Component({
   selector: 'app-dashboard',
-  imports: [ReactiveFormsModule, MatCardModule, MatFormFieldModule, MatInputModule, MatButtonModule, ChartComponent],
+  imports: [ReactiveFormsModule, RouterLink, MatCardModule, MatFormFieldModule, MatInputModule, MatButtonModule, ChartComponent],
   template: `
     <mat-card appearance="raised" class="detail">
     @if (dashboard(); as d) {
@@ -64,7 +65,9 @@ export function parseFilterInput(operator: SharedFilterOperator, text: string): 
 
       @if (d.definition.widgets.length === 0) {
         <p><em>This dashboard has no charts yet.</em>
-          @if (canEdit()) { Open a dataset, choose <strong>Explore</strong>, then <strong>Add to dashboard</strong>. }
+          @if (canEdit()) {
+            <a [routerLink]="['/organizations', orgId(), 'datasets']">Open a dataset</a>, choose <strong>Explore</strong>, then <strong>Add to dashboard</strong>.
+          }
         </p>
       }
 
@@ -146,8 +149,7 @@ export function parseFilterInput(operator: SharedFilterOperator, text: string): 
   `,
   styles: `
     :host { display: block; min-width: 0; }
-    :host(.inactive) { display: none; }
-    /* The card fills the tab's pane; only its content scrolls, so a long dashboard never grows the page. */
+    /* The card fills the pane; only its content scrolls, so a long dashboard never grows the page. */
     .detail { --mat-card-elevated-container-color: #fff; height: 100%; }
     mat-card-title { font: var(--mat-sys-title-medium); }
     mat-card-header { align-items: center; flex-wrap: wrap; gap: 0.5rem; }
@@ -158,7 +160,6 @@ export function parseFilterInput(operator: SharedFilterOperator, text: string): 
     .widgets { display: grid; grid-template-columns: repeat(auto-fill, minmax(24rem, 1fr)); gap: 1rem; }
     .widget mat-card-header { align-items: center; }
   `,
-  host: { '[class.inactive]': '!active()' },
 })
 export class DashboardComponent implements OnInit {
   private readonly api = inject(DashboardsService);
@@ -168,8 +169,6 @@ export class DashboardComponent implements OnInit {
   readonly orgId = input.required<string>();
   readonly dashboardId = input.required<string>();
   readonly canEdit = input(false);
-  /** Only the visible tab is shown; the others stay alive so their filters and results survive. */
-  readonly active = input(true);
 
   /** The dashboard after it was saved (a chart or filter was added or removed), so the page can update its list. */
   readonly changed = output<Dashboard>();

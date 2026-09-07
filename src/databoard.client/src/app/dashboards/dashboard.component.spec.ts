@@ -1,6 +1,7 @@
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { provideRouter } from '@angular/router';
 import { ECHARTS_LOADER } from '../charts/chart.component';
 import { DashboardComponent, parseFilterInput } from './dashboard.component';
 
@@ -91,6 +92,7 @@ describe('DashboardComponent', () => {
       providers: [
         provideHttpClient(),
         provideHttpClientTesting(),
+        provideRouter([]),
         // ECharts needs a real canvas; the drawing itself is covered by the chart component's own tests.
         { provide: ECHARTS_LOADER, useValue: async () => ({ init: () => ({ setOption() {}, resize() {}, dispose() {} }) }) },
       ],
@@ -241,16 +243,5 @@ describe('DashboardComponent', () => {
     http.expectOne({ method: 'DELETE', url: `/api/organizations/${ORG}/dashboards/${DASH}` }).flush(null, { status: 204, statusText: 'No Content' });
 
     expect(deleted).toEqual([DASH]);
-  });
-
-  it('is hidden while another tab is showing, and keeps what it has', () => {
-    load('Viewer');
-    http.expectOne(runUrl).flush({ widgets: [] });
-
-    fixture.componentRef.setInput('active', false);
-    fixture.detectChanges();
-
-    expect((fixture.nativeElement as HTMLElement).classList.contains('inactive')).toBe(true);
-    expect(el().querySelector('mat-card-title')?.textContent).toContain('Sales overview');
   });
 });
