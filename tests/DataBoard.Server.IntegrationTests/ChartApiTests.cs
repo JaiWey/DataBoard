@@ -1,0 +1,264 @@
+using System.Net;
+using System.Net.Http.Json;
+using System.Text.Json;
+using static DataBoard.Server.IntegrationTests.ApiHelpers;
+
+namespace DataBoard.Server.IntegrationTests;
+
+/// <summary>Saved charts over the fixed "orders" table: Auckland 3 orders, Wellington 2, Christchurch 2, Dunedin 1.</summary>
+[Collection(ApiCollection.Name)]
+public class ChartApiTests(ApiFactory factory)
+{
+    private sealed record Fixture(HttpClient Owner, Guid Org, Guid Orders);
+
+    private async Task<Fixture> NewFixtureAsync()
+    {
+        var (client, _, _) = await NewUserAsync(factory);
+        var org = await CreateOrgAsync(client);
+        var source = await client.PostAsJsonAsync($"/api/organizations/{org.Id}/data-sources",
+            new { name = "Shop DB", type = "PostgreSql", connectionString = factory.TargetConnectionString() });
+        source.EnsureSuccessStatusCode();
+        var sourceId = (await source.Content.ReadFromJsonAsync<DataSourceDto>(Json))!.Id;
+        var dataset = await client.PostAsJsonAsync($"/api/organizations/{org.Id}/datasets",
+            new { dataSourceId = sourceId, name = "Orders", sql = "SELECT id, region, product, quantity, price, ordered_on FROM orders" });
+        Assert.True(dataset.IsSuccessStatusCode, await dataset.Content.ReadAsStringAsync());
+        var datasetId = JsonDocument.Parse(await dataset.Content.ReadAsStringAsync()).RootElement.GetProperty("id").GetGuid();
+        return new Fixture(client, org.Id, datasetId);
+    }
+
+    private static string Url(Guid org, string suffix = "") => $"/api/organizations/{org}/charts{suffix}";
+
+    private static object Revenue(Guid dataset, string name = "Revenue by region", string type = "Bar", object? style = null, object? extra = null) => new
+    {
+        name,
+        description = "Money per region",
+        datasetId = dataset,
+        type,
+        definition = new
+        {
+            query = new
+            {
+                dimensions = new[] { new { column = "region" } },
+                measures = new[] { new { aggregation = "Sum", column = "price", alias = "revenue" } },
+                orderBy = new[] { new { field = "revenue", direction = "Desc" } },
+                limit = 10,
+            },
+            style,
+        },
+    };
+
+    private static async Task<JsonElement> ReadAsync(HttpResponseMessage response)
+    {
+        Assert.True(response.IsSuccessStatusCode, await response.Content.ReadAsStringAsync());
+        return JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement.Clone();
+    }
+
+    private async Task<HttpClient> AddMemberAsync(HttpClient owner, Guid org, string role)
+    {
+        var (member, email, _) = await NewUserAsync(factory);
+        (await owner.PostAsJsonAsync($"/api/organizations/{org}/members", new { email, role })).EnsureSuccessStatusCode();
+        return member;
+    }
+
+    // ---- saving -------------------------------------------------------------------------------------------
+
+    [Fact]
+    public async Task Create_round_trips_type_query_and_style()
+    {
+        var f = await NewFixtureAsync();
+
+        var created = await ReadAsync(await f.Owner.PostAsJsonAsync(Url(f.Org),
+            Revenue(f.Orders, style: new { legend = false, labels = true, palette = "warm" })));
+
+        Assert.Equal("Bar", created.GetProperty("type").GetString());
+        Assert.Equal(f.Orders, created.GetProperty("datasetId").GetGuid());
+        var definition = created.GetProperty("definition");
+        Assert.Equal("Sum", definition.GetProperty("query").GetProperty("measures")[0].GetProperty("aggregation").GetString());
+        Assert.Equal(10, definition.GetProperty("query").GetProperty("limit").GetInt32());
+        Assert.False(definition.GetProperty("style").GetProperty("legend").GetBoolean());
+        Assert.True(definition.GetProperty("style").GetProperty("labels").GetBoolean());
+        Assert.Equal("warm", definition.GetProperty("style").GetProperty("palette").GetString());
+
+        var id = created.GetProperty("id").GetGuid();
+        var fetched = await ReadAsync(await f.Owner.GetAsync(Url(f.Org, $"/{id}")));
+        Assert.Equal("Revenue by region", fetched.GetProperty("name").GetString());
+        var list = await ReadAsync(await f.Owner.GetAsync(Url(f.Org)));
+        Assert.Equal(id, list[0].GetProperty("id").GetGuid());
+    }
+
+    [Theory]
+    [InlineData("Table")]
+    [InlineData("Bar")]
+    [InlineData("Line")]
+    [InlineData("Pie")]
+    [InlineData("Area")]
+    [InlineData("BarHorizontal")]
+    [InlineData("Donut")]
+    [InlineData("Number")]
+    public async Task Every_chart_type_can_be_saved(string type)
+    {
+        var f = await NewFixtureAsync();
+
+        var created = await ReadAsync(await f.Owner.PostAsJsonAsync(Url(f.Org), Revenue(f.Orders, type: type)));
+
+        Assert.Equal(type, created.GetProperty("type").GetString());
+    }
+
+    [Fact]
+    public async Task A_missing_style_gets_the_defaults()
+    {
+        var f = await NewFixtureAsync();
+
+        var created = await ReadAsync(await f.Owner.PostAsJsonAsync(Url(f.Org), Revenue(f.Orders)));
+
+        var style = created.GetProperty("definition").GetProperty("style");
+        Assert.True(style.GetProperty("legend").GetBoolean());
+        Assert.False(style.GetProperty("labels").GetBoolean());
+        Assert.Equal("default", style.GetProperty("palette").GetString());
+    }
+
+    [Fact]
+    public async Task Duplicate_names_conflict_ignoring_case()
+    {
+        var f = await NewFixtureAsync();
+        (await f.Owner.PostAsJsonAsync(Url(f.Org), Revenue(f.Orders))).EnsureSuccessStatusCode();
+
+        var duplicate = await f.Owner.PostAsJsonAsync(Url(f.Org), Revenue(f.Orders, name: "REVENUE BY REGION"));
+
+        Assert.Equal(HttpStatusCode.Conflict, duplicate.StatusCode);
+    }
+
+    [Fact]
+    public async Task A_chart_that_could_never_run_is_rejected_with_the_reason()
+    {
+        var f = await NewFixtureAsync();
+        var bad = new
+        {
+            name = "Broken",
+            datasetId = f.Orders,
+            type = "Bar",
+            definition = new { query = new { measures = new[] { new { aggregation = "Sum", column = "region", alias = "x" } } } },
+        };
+
+        var response = await f.Owner.PostAsJsonAsync(Url(f.Org), bad);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("region", await response.Content.ReadAsStringAsync());
+        Assert.Empty((await ReadAsync(await f.Owner.GetAsync(Url(f.Org)))).EnumerateArray());
+    }
+
+    [Fact]
+    public async Task Unknown_datasets_types_and_palettes_are_rejected()
+    {
+        var f = await NewFixtureAsync();
+        var other = await NewFixtureAsync();
+
+        Assert.Equal(HttpStatusCode.BadRequest, (await f.Owner.PostAsJsonAsync(Url(f.Org), Revenue(Guid.NewGuid()))).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await f.Owner.PostAsJsonAsync(Url(f.Org), Revenue(other.Orders, name: "Foreign"))).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await f.Owner.PostAsJsonAsync(Url(f.Org), Revenue(f.Orders, name: "Radar", type: "Radar"))).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest,
+            (await f.Owner.PostAsJsonAsync(Url(f.Org), Revenue(f.Orders, name: "Pal", style: new { palette = "neon" }))).StatusCode);
+    }
+
+    [Fact]
+    public async Task Update_changes_the_chart_and_may_move_it_to_another_dataset()
+    {
+        var f = await NewFixtureAsync();
+        var created = await ReadAsync(await f.Owner.PostAsJsonAsync(Url(f.Org), Revenue(f.Orders)));
+        var id = created.GetProperty("id").GetGuid();
+
+        var updated = await ReadAsync(await f.Owner.PutAsJsonAsync(Url(f.Org, $"/{id}"),
+            Revenue(f.Orders, name: "Revenue v2", type: "Line")));
+
+        Assert.Equal("Revenue v2", updated.GetProperty("name").GetString());
+        Assert.Equal("Line", updated.GetProperty("type").GetString());
+    }
+
+    [Fact]
+    public async Task Update_and_delete_find_only_charts_of_the_organization()
+    {
+        var f = await NewFixtureAsync();
+        var other = await NewFixtureAsync();
+        var foreign = (await ReadAsync(await other.Owner.PostAsJsonAsync(Url(other.Org), Revenue(other.Orders)))).GetProperty("id").GetGuid();
+
+        Assert.Equal(HttpStatusCode.NotFound, (await f.Owner.GetAsync(Url(f.Org, $"/{foreign}"))).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await f.Owner.PutAsJsonAsync(Url(f.Org, $"/{foreign}"), Revenue(f.Orders))).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await f.Owner.DeleteAsync(Url(f.Org, $"/{foreign}"))).StatusCode);
+    }
+
+    [Fact]
+    public async Task Delete_removes_the_chart()
+    {
+        var f = await NewFixtureAsync();
+        var id = (await ReadAsync(await f.Owner.PostAsJsonAsync(Url(f.Org), Revenue(f.Orders)))).GetProperty("id").GetGuid();
+
+        Assert.Equal(HttpStatusCode.NoContent, (await f.Owner.DeleteAsync(Url(f.Org, $"/{id}"))).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await f.Owner.GetAsync(Url(f.Org, $"/{id}"))).StatusCode);
+    }
+
+    // ---- access -------------------------------------------------------------------------------------------
+
+    [Fact]
+    public async Task Viewers_can_list_open_and_run_charts_but_not_change_them()
+    {
+        var f = await NewFixtureAsync();
+        var id = (await ReadAsync(await f.Owner.PostAsJsonAsync(Url(f.Org), Revenue(f.Orders)))).GetProperty("id").GetGuid();
+        var viewer = await AddMemberAsync(f.Owner, f.Org, "Viewer");
+
+        Assert.Equal(HttpStatusCode.OK, (await viewer.GetAsync(Url(f.Org))).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await viewer.GetAsync(Url(f.Org, $"/{id}"))).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await viewer.PostAsync(Url(f.Org, $"/{id}/run"), null)).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await viewer.PostAsJsonAsync(Url(f.Org), Revenue(f.Orders, name: "Mine"))).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await viewer.PutAsJsonAsync(Url(f.Org, $"/{id}"), Revenue(f.Orders))).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await viewer.DeleteAsync(Url(f.Org, $"/{id}"))).StatusCode);
+    }
+
+    [Fact]
+    public async Task Non_members_get_404()
+    {
+        var f = await NewFixtureAsync();
+        var id = (await ReadAsync(await f.Owner.PostAsJsonAsync(Url(f.Org), Revenue(f.Orders)))).GetProperty("id").GetGuid();
+        var (stranger, _, _) = await NewUserAsync(factory);
+
+        Assert.Equal(HttpStatusCode.NotFound, (await stranger.GetAsync(Url(f.Org))).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await stranger.GetAsync(Url(f.Org, $"/{id}"))).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await stranger.PostAsync(Url(f.Org, $"/{id}/run"), null)).StatusCode);
+    }
+
+    // ---- running ------------------------------------------------------------------------------------------
+
+    [Fact]
+    public async Task Run_returns_the_rows_sorted_and_limited_as_saved_and_only_editors_see_the_sql()
+    {
+        var f = await NewFixtureAsync();
+        var id = (await ReadAsync(await f.Owner.PostAsJsonAsync(Url(f.Org), Revenue(f.Orders)))).GetProperty("id").GetGuid();
+        var viewer = await AddMemberAsync(f.Owner, f.Org, "Viewer");
+
+        var asOwner = await ReadAsync(await f.Owner.PostAsync(Url(f.Org, $"/{id}/run"), null));
+        var regions = asOwner.GetProperty("rows").EnumerateArray().Select(r => r[0].GetString()!).ToArray();
+        Assert.Equal(["Auckland", "Wellington", "Christchurch", "Dunedin"], regions); // by revenue, descending: 2480, 1400, 1340, 100
+        Assert.NotEqual(JsonValueKind.Null, asOwner.GetProperty("sql").ValueKind);
+
+        var asViewer = await ReadAsync(await viewer.PostAsync(Url(f.Org, $"/{id}/run"), null));
+        Assert.Equal(JsonValueKind.Null, asViewer.GetProperty("sql").ValueKind);
+    }
+
+    [Fact]
+    public async Task Run_of_an_unknown_chart_is_404()
+    {
+        var f = await NewFixtureAsync();
+
+        Assert.Equal(HttpStatusCode.NotFound, (await f.Owner.PostAsync(Url(f.Org, $"/{Guid.NewGuid()}/run"), null)).StatusCode);
+    }
+
+    [Fact]
+    public async Task Deleting_the_dataset_deletes_its_charts()
+    {
+        var f = await NewFixtureAsync();
+        var id = (await ReadAsync(await f.Owner.PostAsJsonAsync(Url(f.Org), Revenue(f.Orders)))).GetProperty("id").GetGuid();
+
+        (await f.Owner.DeleteAsync($"/api/organizations/{f.Org}/datasets/{f.Orders}")).EnsureSuccessStatusCode();
+
+        Assert.Equal(HttpStatusCode.NotFound, (await f.Owner.GetAsync(Url(f.Org, $"/{id}"))).StatusCode);
+    }
+}

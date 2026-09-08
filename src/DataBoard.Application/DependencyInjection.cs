@@ -36,6 +36,13 @@ public static class DependencyInjection
         services.AddScoped<PreviewTableViewHandler>();
         services.AddScoped<RunChartQueryHandler>();
 
+        services.AddScoped<CreateChartHandler>();
+        services.AddScoped<ListChartsHandler>();
+        services.AddScoped<GetChartHandler>();
+        services.AddScoped<UpdateChartHandler>();
+        services.AddScoped<DeleteChartHandler>();
+        services.AddScoped<RunSavedChartHandler>();
+
         services.AddScoped<CreateDashboardHandler>();
         services.AddScoped<ListDashboardsHandler>();
         services.AddScoped<GetDashboardHandler>();

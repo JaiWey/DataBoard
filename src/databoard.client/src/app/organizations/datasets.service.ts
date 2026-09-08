@@ -9,9 +9,13 @@ export type TimeGrain = 'Day' | 'Week' | 'Month' | 'Quarter' | 'Year';
 
 /** The typed query the API understands. It is a description, never SQL. */
 export interface ChartQuery {
-  dimensions?: { column: string; grain?: TimeGrain; alias?: string }[];
-  measures?: { aggregation: Aggregation; column?: string; alias?: string }[];
-  limit?: number;
+  dimensions?: { column: string; grain?: TimeGrain | null; alias?: string | null }[] | null;
+  measures?: { aggregation: Aggregation; column?: string | null; alias?: string | null }[] | null;
+  /** Conditions on dataset columns. In, NotIn and Between take `values`; the others take `value`; IsNull and IsNotNull take neither. */
+  filters?: { column: string; operator: string; value?: unknown; values?: unknown[] | null }[] | null;
+  /** Sorts by a name in the result (a dimension or metric alias). */
+  orderBy?: { field: string; direction: 'Asc' | 'Desc' }[] | null;
+  limit?: number | null;
 }
 
 export interface ChartResult extends QueryPreview {

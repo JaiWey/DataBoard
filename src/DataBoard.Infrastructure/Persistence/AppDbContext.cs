@@ -1,5 +1,6 @@
 using DataBoard.Application.Abstractions;
 using DataBoard.Application.Common;
+using DataBoard.Domain.Charts;
 using DataBoard.Domain.Dashboards;
 using DataBoard.Domain.DataSources;
 using DataBoard.Domain.Datasets;
@@ -18,6 +19,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<DataSource> DataSources => Set<DataSource>();
     public DbSet<Dataset> Datasets => Set<Dataset>();
     public DbSet<Dashboard> Dashboards => Set<Dashboard>();
+    public DbSet<Chart> Charts => Set<Chart>();
     public DbSet<Organization> Organizations => Set<Organization>();
     public DbSet<OrganizationMember> OrganizationMembers => Set<OrganizationMember>();
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();

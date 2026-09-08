@@ -38,17 +38,28 @@ public class DashboardApiTests(ApiFactory factory)
         return JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement.GetProperty("id").GetGuid();
     }
 
-    private static object RegionRevenueWidget(Guid dataset, string title = "Revenue by region", string chartType = "Bar", string column = "price") => new
+    /// <summary>Saves a chart (revenue by region) and returns it, ready to be placed on a dashboard.</summary>
+    private static async Task<object> RegionRevenueChartAsync(
+        HttpClient client, Guid org, Guid dataset, string title = "Revenue by region", string chartType = "Bar", string column = "price")
     {
-        title,
-        datasetId = dataset,
-        chartType,
-        query = new
+        var response = await client.PostAsJsonAsync($"/api/organizations/{org}/charts", new
         {
-            dimensions = new[] { new { column = "region" } },
-            measures = new[] { new { aggregation = "Sum", column, alias = "revenue" } },
-        },
-    };
+            name = title,
+            datasetId = dataset,
+            type = chartType,
+            definition = new
+            {
+                query = new
+                {
+                    dimensions = new[] { new { column = "region" } },
+                    measures = new[] { new { aggregation = "Sum", column, alias = "revenue" } },
+                },
+            },
+        });
+        Assert.True(response.IsSuccessStatusCode, await response.Content.ReadAsStringAsync());
+        var id = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement.GetProperty("id").GetGuid();
+        return new { chartId = id };
+    }
 
     private static object RegionFilter(string label = "Region", string op = "In") => new { label, column = "region", @operator = op };
 
@@ -79,13 +90,12 @@ public class DashboardApiTests(ApiFactory factory)
     {
         var f = await NewFixtureAsync();
 
-        var created = await ReadAsync(await SaveAsync(f.Owner, f.Org, "Sales overview",
-            [RegionRevenueWidget(f.Orders)], [RegionFilter()]));
+        var chart = await RegionRevenueChartAsync(f.Owner, f.Org, f.Orders);
+        var created = await ReadAsync(await SaveAsync(f.Owner, f.Org, "Sales overview", [chart], [RegionFilter()]));
 
         var widget = created.GetProperty("definition").GetProperty("widgets")[0];
         Assert.NotEqual(Guid.Empty, widget.GetProperty("id").GetGuid());
-        Assert.Equal("Bar", widget.GetProperty("chartType").GetString());
-        Assert.Equal("Sum", widget.GetProperty("query").GetProperty("measures")[0].GetProperty("aggregation").GetString());
+        Assert.NotEqual(Guid.Empty, widget.GetProperty("chartId").GetGuid());
         Assert.Equal("In", created.GetProperty("definition").GetProperty("filters")[0].GetProperty("operator").GetString());
 
         var id = created.GetProperty("id").GetGuid();
@@ -94,6 +104,7 @@ public class DashboardApiTests(ApiFactory factory)
 
         var list = await ReadAsync(await f.Owner.GetAsync($"/api/organizations/{f.Org}/dashboards"));
         Assert.Equal(1, list[0].GetProperty("widgetCount").GetInt32());
+        Assert.Equal(widget.GetProperty("chartId").GetGuid(), list[0].GetProperty("chartIds")[0].GetGuid());
     }
 
     [Fact]
@@ -106,41 +117,57 @@ public class DashboardApiTests(ApiFactory factory)
     }
 
     [Fact]
-    public async Task A_widget_that_could_never_run_is_rejected_with_its_name()
+    public async Task A_widget_must_refer_to_a_chart_that_exists()
     {
         var f = await NewFixtureAsync();
-        var bad = new
-        {
-            title = "Broken",
-            datasetId = f.Orders,
-            chartType = "Bar",
-            query = new { measures = new[] { new { aggregation = "Sum", column = "region", alias = "x" } } },
-        };
 
-        var response = await SaveAsync(f.Owner, f.Org, "Bad", [bad]);
+        var unknown = await SaveAsync(f.Owner, f.Org, "Bad", [new { chartId = Guid.NewGuid() }]);
+        var empty = await SaveAsync(f.Owner, f.Org, "Empty", [new { chartId = Guid.Empty }]);
 
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        Assert.Contains("Broken", await response.Content.ReadAsStringAsync());
+        Assert.Equal(HttpStatusCode.BadRequest, unknown.StatusCode);
+        Assert.Contains("chart was not found", await unknown.Content.ReadAsStringAsync());
+        Assert.Equal(HttpStatusCode.BadRequest, empty.StatusCode);
     }
 
     [Fact]
-    public async Task A_widget_cannot_use_a_dataset_from_another_organization()
+    public async Task A_chart_can_only_be_on_a_dashboard_once()
+    {
+        var f = await NewFixtureAsync();
+        var chart = await RegionRevenueChartAsync(f.Owner, f.Org, f.Orders);
+
+        var response = await SaveAsync(f.Owner, f.Org, "Twice", [chart, chart]);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("only be on a dashboard once", await response.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
+    public async Task A_widget_cannot_use_a_chart_from_another_organization()
     {
         var f = await NewFixtureAsync();
         var other = await NewFixtureAsync();
+        var foreign = await RegionRevenueChartAsync(other.Owner, other.Org, other.Orders);
 
-        var response = await SaveAsync(f.Owner, f.Org, "Sneaky", [RegionRevenueWidget(other.Orders)]);
+        var response = await SaveAsync(f.Owner, f.Org, "Sneaky", [foreign]);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     [Fact]
-    public async Task Unknown_chart_types_and_unsupported_filter_operators_are_rejected()
+    public async Task Several_dashboards_can_show_the_same_chart()
+    {
+        var f = await NewFixtureAsync();
+        var chart = await RegionRevenueChartAsync(f.Owner, f.Org, f.Orders);
+
+        (await SaveAsync(f.Owner, f.Org, "One", [chart])).EnsureSuccessStatusCode();
+        (await SaveAsync(f.Owner, f.Org, "Two", [chart])).EnsureSuccessStatusCode();
+    }
+
+    [Fact]
+    public async Task Unsupported_filter_operators_are_rejected()
     {
         var f = await NewFixtureAsync();
 
-        Assert.Equal(HttpStatusCode.BadRequest,
-            (await SaveAsync(f.Owner, f.Org, "A", [RegionRevenueWidget(f.Orders, chartType: "Radar")])).StatusCode);
         Assert.Equal(HttpStatusCode.BadRequest,
             (await SaveAsync(f.Owner, f.Org, "B", [], [RegionFilter(op: "IsNull")])).StatusCode);
     }
@@ -149,7 +176,7 @@ public class DashboardApiTests(ApiFactory factory)
     public async Task Update_replaces_the_definition_and_delete_removes_it()
     {
         var f = await NewFixtureAsync();
-        var created = await ReadAsync(await SaveAsync(f.Owner, f.Org, "Sales", [RegionRevenueWidget(f.Orders)]));
+        var created = await ReadAsync(await SaveAsync(f.Owner, f.Org, "Sales", [await RegionRevenueChartAsync(f.Owner, f.Org, f.Orders)]));
         var id = created.GetProperty("id").GetGuid();
 
         var updated = await f.Owner.PutAsJsonAsync($"/api/organizations/{f.Org}/dashboards/{id}",
@@ -166,7 +193,7 @@ public class DashboardApiTests(ApiFactory factory)
     public async Task Viewers_can_open_and_run_but_not_change_dashboards()
     {
         var f = await NewFixtureAsync();
-        var id = (await ReadAsync(await SaveAsync(f.Owner, f.Org, "Sales", [RegionRevenueWidget(f.Orders)]))).GetProperty("id").GetGuid();
+        var id = (await ReadAsync(await SaveAsync(f.Owner, f.Org, "Sales", [await RegionRevenueChartAsync(f.Owner, f.Org, f.Orders)]))).GetProperty("id").GetGuid();
         var (viewer, _) = await AddMemberAsync(f.Owner, f.Org, "Viewer");
 
         Assert.Equal(HttpStatusCode.OK, (await viewer.GetAsync($"/api/organizations/{f.Org}/dashboards/{id}")).StatusCode);
@@ -198,7 +225,7 @@ public class DashboardApiTests(ApiFactory factory)
     public async Task Run_returns_each_widgets_rows_and_only_editors_see_the_sql()
     {
         var f = await NewFixtureAsync();
-        var id = (await ReadAsync(await SaveAsync(f.Owner, f.Org, "Sales", [RegionRevenueWidget(f.Orders)]))).GetProperty("id").GetGuid();
+        var id = (await ReadAsync(await SaveAsync(f.Owner, f.Org, "Sales", [await RegionRevenueChartAsync(f.Owner, f.Org, f.Orders)]))).GetProperty("id").GetGuid();
         var (viewer, _) = await AddMemberAsync(f.Owner, f.Org, "Viewer");
 
         var asOwner = Widgets(await ReadAsync(await RunAsync(f.Owner, f.Org, id)))[0];
@@ -216,16 +243,19 @@ public class DashboardApiTests(ApiFactory factory)
         var f = await NewFixtureAsync();
         var sales = await CreateDatasetAsync(f.Owner, f.Org, f.Source, "Sales", SalesSql);
         var noRegion = await CreateDatasetAsync(f.Owner, f.Org, f.Source, "No region", NoRegionSql);
-        var noRegionWidget = new
+        var countResponse = await f.Owner.PostAsJsonAsync($"/api/organizations/{f.Org}/charts", new
         {
-            title = "Order count",
+            name = "Order count",
             datasetId = noRegion,
-            chartType = "Table",
-            query = new { measures = new[] { new { aggregation = "Count", alias = "n" } } },
-        };
+            type = "Table",
+            definition = new { query = new { measures = new[] { new { aggregation = "Count", alias = "n" } } } },
+        });
+        var noRegionWidget = new { chartId = (await ReadAsync(countResponse)).GetProperty("id").GetGuid() };
 
         var created = await ReadAsync(await SaveAsync(f.Owner, f.Org, "Everything",
-            [RegionRevenueWidget(f.Orders), RegionRevenueWidget(sales, "Sales by region", column: "amount"), noRegionWidget], [RegionFilter()]));
+            [await RegionRevenueChartAsync(f.Owner, f.Org, f.Orders),
+             await RegionRevenueChartAsync(f.Owner, f.Org, sales, "Sales by region", column: "amount"),
+             noRegionWidget], [RegionFilter()]));
         var id = created.GetProperty("id").GetGuid();
         var filterId = created.GetProperty("definition").GetProperty("filters")[0].GetProperty("id").GetGuid();
 
@@ -246,7 +276,7 @@ public class DashboardApiTests(ApiFactory factory)
     public async Task Without_filter_values_nothing_is_filtered()
     {
         var f = await NewFixtureAsync();
-        var created = await ReadAsync(await SaveAsync(f.Owner, f.Org, "Sales", [RegionRevenueWidget(f.Orders)], [RegionFilter()]));
+        var created = await ReadAsync(await SaveAsync(f.Owner, f.Org, "Sales", [await RegionRevenueChartAsync(f.Owner, f.Org, f.Orders)], [RegionFilter()]));
         var id = created.GetProperty("id").GetGuid();
         var filterId = created.GetProperty("definition").GetProperty("filters")[0].GetProperty("id").GetGuid();
 
@@ -261,7 +291,7 @@ public class DashboardApiTests(ApiFactory factory)
         var f = await NewFixtureAsync();
         var numeric = new { label = "Quantity", column = "quantity", @operator = "Gte" };
         var created = await ReadAsync(await SaveAsync(f.Owner, f.Org, "Sales",
-            [RegionRevenueWidget(f.Orders)], [numeric]));
+            [await RegionRevenueChartAsync(f.Owner, f.Org, f.Orders)], [numeric]));
         var id = created.GetProperty("id").GetGuid();
         var filterId = created.GetProperty("definition").GetProperty("filters")[0].GetProperty("id").GetGuid();
 
@@ -277,7 +307,7 @@ public class DashboardApiTests(ApiFactory factory)
     public async Task Filter_values_are_data_never_sql()
     {
         var f = await NewFixtureAsync();
-        var created = await ReadAsync(await SaveAsync(f.Owner, f.Org, "Sales", [RegionRevenueWidget(f.Orders)], [RegionFilter(op: "Eq")]));
+        var created = await ReadAsync(await SaveAsync(f.Owner, f.Org, "Sales", [await RegionRevenueChartAsync(f.Owner, f.Org, f.Orders)], [RegionFilter(op: "Eq")]));
         var id = created.GetProperty("id").GetGuid();
         var filterId = created.GetProperty("definition").GetProperty("filters")[0].GetProperty("id").GetGuid();
 
@@ -291,18 +321,57 @@ public class DashboardApiTests(ApiFactory factory)
     }
 
     [Fact]
-    public async Task A_deleted_dataset_breaks_its_widget_but_not_the_dashboard()
+    public async Task A_deleted_dataset_takes_its_chart_with_it_but_the_dashboard_still_runs()
     {
         var f = await NewFixtureAsync();
         var sales = await CreateDatasetAsync(f.Owner, f.Org, f.Source, "Sales", SalesSql);
         var created = await ReadAsync(await SaveAsync(f.Owner, f.Org, "Both",
-            [RegionRevenueWidget(f.Orders), RegionRevenueWidget(sales, "Sales by region", column: "amount")]));
+            [await RegionRevenueChartAsync(f.Owner, f.Org, f.Orders),
+             await RegionRevenueChartAsync(f.Owner, f.Org, sales, "Sales by region", column: "amount")]));
         var id = created.GetProperty("id").GetGuid();
 
         (await f.Owner.DeleteAsync($"/api/organizations/{f.Org}/datasets/{sales}")).EnsureSuccessStatusCode();
         var widgets = Widgets(await ReadAsync(await RunAsync(f.Owner, f.Org, id)));
 
         Assert.Equal(4, Regions(widgets[0]).Length);
-        Assert.Contains("no longer exists", widgets[1].GetProperty("error").GetString());
+        Assert.Contains("was deleted", widgets[1].GetProperty("error").GetString());
+    }
+
+    [Fact]
+    public async Task Deleting_a_chart_takes_it_off_every_dashboard_that_showed_it()
+    {
+        var f = await NewFixtureAsync();
+        var keep = await RegionRevenueChartAsync(f.Owner, f.Org, f.Orders, "Keep");
+        var drop = await RegionRevenueChartAsync(f.Owner, f.Org, f.Orders, "Drop");
+        var one = (await ReadAsync(await SaveAsync(f.Owner, f.Org, "One", [keep, drop]))).GetProperty("id").GetGuid();
+        var two = (await ReadAsync(await SaveAsync(f.Owner, f.Org, "Two", [drop]))).GetProperty("id").GetGuid();
+        var dropId = JsonSerializer.SerializeToElement(drop).GetProperty("chartId").GetGuid();
+
+        (await f.Owner.DeleteAsync($"/api/organizations/{f.Org}/charts/{dropId}")).EnsureSuccessStatusCode();
+
+        var first = await ReadAsync(await f.Owner.GetAsync($"/api/organizations/{f.Org}/dashboards/{one}"));
+        var second = await ReadAsync(await f.Owner.GetAsync($"/api/organizations/{f.Org}/dashboards/{two}"));
+        Assert.Equal(1, first.GetProperty("definition").GetProperty("widgets").GetArrayLength());
+        Assert.Equal(0, second.GetProperty("definition").GetProperty("widgets").GetArrayLength());
+    }
+
+    [Fact]
+    public async Task Changing_a_chart_changes_every_dashboard_that_shows_it()
+    {
+        var f = await NewFixtureAsync();
+        var chart = await RegionRevenueChartAsync(f.Owner, f.Org, f.Orders, "Revenue");
+        var chartId = JsonSerializer.SerializeToElement(chart).GetProperty("chartId").GetGuid();
+        var id = (await ReadAsync(await SaveAsync(f.Owner, f.Org, "Sales", [chart]))).GetProperty("id").GetGuid();
+
+        (await f.Owner.PutAsJsonAsync($"/api/organizations/{f.Org}/charts/{chartId}", new
+        {
+            name = "Revenue",
+            datasetId = f.Orders,
+            type = "Bar",
+            definition = new { query = new { dimensions = new[] { new { column = "product" } }, measures = new[] { new { aggregation = "Count", alias = "n" } } } },
+        })).EnsureSuccessStatusCode();
+
+        var rows = Widgets(await ReadAsync(await RunAsync(f.Owner, f.Org, id)))[0].GetProperty("result").GetProperty("columns");
+        Assert.Equal("product", rows[0].GetProperty("name").GetString());
     }
 }

@@ -4,7 +4,6 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { MatDialog } from '@angular/material/dialog';
 import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
 import { of } from 'rxjs';
-import { ECHARTS_LOADER } from '../charts/chart.component';
 import { fakeMonaco } from '../sql-editor/fake-monaco.testing';
 import { MONACO_LOADER } from '../sql-editor/sql-editor.component';
 import { DatasetsComponent } from './datasets.component';
@@ -65,7 +64,6 @@ describe('DatasetsComponent', () => {
         provideRouter([]),
         { provide: ActivatedRoute, useValue: { snapshot: { paramMap: convertToParamMap({ id: ORG }) } } },
         { provide: MONACO_LOADER, useValue: monaco.loader },
-        { provide: ECHARTS_LOADER, useValue: async () => ({ init: () => ({ setOption() {}, resize() {}, dispose() {} }) }) },
       ],
     });
     fixture = TestBed.createComponent(DatasetsComponent);
@@ -97,9 +95,12 @@ describe('DatasetsComponent', () => {
   it('opens each clicked dataset in its own tab and keeps the earlier one as it was', () => {
     const second = { ...dataset(null), id: '55555555-5555-5555-5555-555555555555', name: 'Customers' };
     load('Viewer', [dataset(null), second]);
-    (Array.from(el().querySelectorAll('.detail button')).find((b) => b.textContent?.trim() === 'Explore') as HTMLButtonElement).click();
+    (Array.from(el().querySelectorAll('.detail button')).find((b) => b.textContent?.trim() === 'Preview') as HTMLButtonElement).click();
+    http.expectOne(`/api/organizations/${ORG}/datasets/${dataset(null).id}/preview`).flush({
+      columns: [{ name: 'region', dataType: 'text' }], rows: [['Auckland']], truncated: false,
+    });
     fixture.detectChanges();
-    expect(el().querySelector('form.explore')).not.toBeNull();
+    expect(el().querySelector('tbody td')?.textContent).toBe('Auckland');
 
     itemButton(1).click();
     fixture.detectChanges();
@@ -111,7 +112,7 @@ describe('DatasetsComponent', () => {
     (el().querySelectorAll('[role=tab]')[0] as HTMLButtonElement).click();
     fixture.detectChanges();
     expect(activeTab()).toBe('Orders');
-    expect(el().querySelector('app-dataset-tab:not(.inactive) form.explore')).not.toBeNull(); // still open, as it was left
+    expect(el().querySelector('app-dataset-tab:not(.inactive) tbody td')?.textContent).toBe('Auckland'); // still open, as it was left
   });
 
   it('shows the tab of a dataset that is already open instead of opening it twice', () => {
@@ -513,7 +514,7 @@ describe('DatasetsComponent', () => {
 
     expect(el().textContent).not.toContain('Step 1');
     expect(monaco.editors.length).toBe(0);
-    expect(buttonText()).toEqual(['Preview', 'Explore']);
+    expect(buttonText()).toEqual(['Preview']);
   });
 
   it('shows columns as dimensions or measures', () => {
@@ -528,7 +529,7 @@ describe('DatasetsComponent', () => {
     load('Viewer', [dataset(null)]);
 
     expect(monaco.editors.length).toBe(0);
-    expect(buttonText()).toEqual(['Preview', 'Explore']);
+    expect(buttonText()).toEqual(['Preview']);
   });
 
   it('shows the SQL in an editor, with delete and save, to editors', async () => {
@@ -537,7 +538,7 @@ describe('DatasetsComponent', () => {
 
     expect(monaco.editors[0].value).toBe('SELECT region, amount FROM sales');
     expect(monaco.editors[0].readOnly).toBe(false);
-    expect(buttonText()).toEqual(['Preview', 'Explore', 'Delete', 'Save', 'Run query']);
+    expect(buttonText()).toEqual(['Preview', 'Delete', 'Save', 'Run query']);
   });
 
   it('shows the SQL read-only to a viewer who is allowed to see it', async () => {
@@ -545,7 +546,7 @@ describe('DatasetsComponent', () => {
     await settle();
 
     expect(monaco.editors[0].readOnly).toBe(true);
-    expect(buttonText()).toEqual(['Preview', 'Explore']);
+    expect(buttonText()).toEqual(['Preview']);
   });
 
   // ---- editing the SQL ----
@@ -726,195 +727,5 @@ describe('DatasetsComponent', () => {
     await settle();
 
     expect(buttonText()).not.toContain('Run query');
-  });
-
-  // ---- explore ----
-
-  const withDates = () => ({
-    ...dataset('SELECT 1'),
-    columns: [
-      { name: 'region', dataType: 'text', role: 'Dimension' },
-      { name: 'ordered_on', dataType: 'date', role: 'Dimension' },
-      { name: 'amount', dataType: 'numeric(10, 2)', role: 'Measure' },
-    ],
-  });
-
-  const pick = (label: string, value: string) => {
-    const select = el().querySelector(`select[aria-label="${label}"]`) as HTMLSelectElement;
-    select.value = value;
-    select.dispatchEvent(new Event('change'));
-    fixture.detectChanges();
-  };
-
-  const open = () => {
-    (Array.from(el().querySelectorAll('button')).find((b) => b.textContent === 'Explore') as HTMLButtonElement).click();
-    fixture.detectChanges();
-  };
-
-  const run = () => {
-    (el().querySelector('form.explore button[type=submit]') as HTMLButtonElement).click();
-  };
-
-  const url = `/api/organizations/${ORG}/datasets/${dataset(null).id}/query`;
-
-  it('runs a grouped count and draws a bar per row', () => {
-    load('Viewer', [withDates()]);
-    open();
-    pick('Group by', 'region');
-
-    run();
-    const req = http.expectOne(url);
-    expect(req.request.body).toEqual({
-      dimensions: [{ column: 'region' }],
-      measures: [{ aggregation: 'Count', alias: 'count' }],
-      limit: 100,
-    });
-    req.flush({
-      columns: [{ name: 'region', dataType: 'text' }, { name: 'count', dataType: 'bigint' }],
-      rows: [['Auckland', 3], ['Wellington', 2]],
-      truncated: false,
-      sql: null,
-    });
-    fixture.detectChanges();
-
-    const bars = Array.from(el().querySelectorAll('.bar')).map((b) => parseFloat((b as HTMLElement).style.width));
-    expect(bars[0]).toBe(100);
-    expect(bars[1]).toBeCloseTo(66.67, 1);
-    expect(el().textContent).not.toContain('Generated SQL'); // viewers never receive it
-  });
-
-  it('offers a time grain only for date and timestamp columns and sends it', () => {
-    load('Editor', [withDates()]);
-    open();
-
-    pick('Group by', 'region');
-    expect(el().querySelector('select[aria-label="Time grain"]')).toBeNull();
-
-    pick('Group by', 'ordered_on');
-    pick('Time grain', 'Month');
-    pick('Aggregation', 'Sum');
-    pick('Measure column', 'amount');
-    run();
-
-    const req = http.expectOne(url);
-    expect(req.request.body.dimensions).toEqual([{ column: 'ordered_on', grain: 'Month' }]);
-    expect(req.request.body.measures).toEqual([{ aggregation: 'Sum', column: 'amount', alias: 'value' }]);
-    req.flush({ columns: [], rows: [], truncated: false, sql: 'SELECT 1' });
-    fixture.detectChanges();
-
-    expect(el().textContent).toContain('Generated SQL'); // editors get it
-  });
-
-  it('only offers numeric columns for sum and average', () => {
-    load('Editor', [withDates()]);
-    open();
-
-    pick('Aggregation', 'Sum');
-    const options = () =>
-      Array.from(el().querySelectorAll('select[aria-label="Measure column"] option')).map((o) => o.textContent?.trim());
-    expect(options()).toEqual(['amount']);
-
-    pick('Aggregation', 'CountDistinct');
-    expect(options()).toEqual(['region', 'ordered_on', 'amount']);
-  });
-
-  it('shows the API message when the query is rejected', () => {
-    load('Viewer', [withDates()]);
-    open();
-
-    run();
-    http.expectOne(url).flush({ errors: { Limit: ['Limit must be between 1 and 1000.'] } }, { status: 400, statusText: 'Bad Request' });
-    fixture.detectChanges();
-
-    expect(el().querySelector('[role=alert]')?.textContent).toContain('Limit must be between 1 and 1000.');
-  });
-
-  // ---- charts and dashboards ----
-
-  const grouped = {
-    columns: [{ name: 'region', dataType: 'text' }, { name: 'count', dataType: 'bigint' }],
-    rows: [['Auckland', 3], ['Wellington', 2]],
-    truncated: false,
-    sql: null,
-  };
-
-  it('draws a chart instead of bars when a chart type is chosen', () => {
-    load('Viewer', [withDates()]);
-    open();
-    pick('Group by', 'region');
-    pick('Chart type', 'Pie');
-
-    run();
-    http.expectOne(url).flush(grouped);
-    fixture.detectChanges();
-
-    expect(el().querySelector('app-chart')).not.toBeNull();
-    expect(el().querySelectorAll('.bar').length).toBe(0);
-    expect(el().querySelectorAll('tbody td').length).toBeGreaterThan(0); // the table stays for exact numbers
-  });
-
-  it('shows the table with bars by default', () => {
-    load('Viewer', [withDates()]);
-    open();
-    pick('Group by', 'region');
-
-    run();
-    http.expectOne(url).flush(grouped);
-    fixture.detectChanges();
-
-    expect(el().querySelector('app-chart')).toBeNull();
-    expect(el().querySelectorAll('.bar').length).toBe(2);
-  });
-
-  it('does not offer adding to a dashboard to viewers', () => {
-    load('Viewer', [withDates()]);
-    open();
-    run();
-    http.expectOne(url).flush(grouped);
-    fixture.detectChanges();
-
-    expect(Array.from(el().querySelectorAll('button')).some((b) => b.textContent?.trim() === 'Add to dashboard')).toBe(false);
-  });
-
-  it('adds the explored chart to a dashboard as a new widget', () => {
-    load('Editor', [withDates()]);
-    open();
-    pick('Group by', 'region');
-    pick('Chart type', 'Bar');
-    run();
-    http.expectOne(url).flush(grouped);
-    fixture.detectChanges();
-
-    (Array.from(el().querySelectorAll('button')).find((b) => b.textContent?.trim() === 'Add to dashboard') as HTMLButtonElement).click();
-    http.expectOne({ method: 'GET', url: `/api/organizations/${ORG}/dashboards` }).flush([
-      { id: 'd1', name: 'Sales', description: null, widgetCount: 0, updatedUtc: '' },
-    ]);
-    fixture.detectChanges();
-
-    const title = el().querySelector('input[aria-label="Chart title"]') as HTMLInputElement;
-    title.value = 'Orders by region';
-    title.dispatchEvent(new Event('input'));
-    fixture.detectChanges();
-    (el().querySelector('form.add-widget button[type=submit]') as HTMLButtonElement).click();
-
-    http.expectOne({ method: 'GET', url: `/api/organizations/${ORG}/dashboards/d1` }).flush({
-      id: 'd1', name: 'Sales', description: 'All sales', createdUtc: '', updatedUtc: '',
-      definition: { widgets: [], filters: [{ id: 'f1', label: 'Region', column: 'region', operator: 'In' }] },
-    });
-    const put = http.expectOne({ method: 'PUT', url: `/api/organizations/${ORG}/dashboards/d1` });
-    expect(put.request.body.name).toBe('Sales');
-    expect(put.request.body.description).toBe('All sales');
-    expect(put.request.body.definition.filters.length).toBe(1); // existing filters are kept
-    expect(put.request.body.definition.widgets).toEqual([{
-      id: '00000000-0000-0000-0000-000000000000',
-      title: 'Orders by region',
-      datasetId: dataset(null).id,
-      chartType: 'Bar',
-      query: { dimensions: [{ column: 'region' }], measures: [{ aggregation: 'Count', alias: 'count' }], limit: 100 },
-    }]);
-    put.flush({ id: 'd1', name: 'Sales', description: null, createdUtc: '', updatedUtc: '', definition: { widgets: [], filters: [] } });
-    fixture.detectChanges();
-
-    expect(el().textContent).toContain('Added to "Sales"');
   });
 });

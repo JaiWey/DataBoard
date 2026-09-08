@@ -1,6 +1,7 @@
 using DataBoard.Application.Abstractions;
 using DataBoard.Application.Charts;
 using DataBoard.Application.DataSources;
+using DataBoard.Application.Charts;
 using DataBoard.Application.Dashboards;
 using DataBoard.Application.Datasets;
 using DataBoard.Application.Identity;
@@ -33,6 +34,7 @@ public static class DependencyInjection
         services.AddScoped<IOrganizationRepository, OrganizationRepository>();
         services.AddScoped<IDatasetRepository, DatasetRepository>();
         services.AddScoped<IDashboardRepository, DashboardRepository>();
+        services.AddScoped<IChartRepository, ChartRepository>();
 
         services.AddDataProtection();
         services.AddSingleton<ISecretProtector, DataProtectionSecretProtector>();

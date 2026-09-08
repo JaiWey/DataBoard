@@ -1,9 +1,8 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
-import { ChartQuery, ChartResult } from '../organizations/datasets.service';
+import { ChartResult } from '../organizations/datasets.service';
 
-export type WidgetChartType = 'Table' | 'Bar' | 'Line' | 'Pie';
 export type SharedFilterOperator = 'Eq' | 'NotEq' | 'In' | 'Contains' | 'StartsWith' | 'Gte' | 'Lte' | 'Between';
 
 export const SHARED_FILTER_OPERATORS: { value: SharedFilterOperator; label: string }[] = [
@@ -17,12 +16,10 @@ export const SHARED_FILTER_OPERATORS: { value: SharedFilterOperator; label: stri
   { value: 'Between', label: 'between' },
 ];
 
+/** A saved chart placed on a dashboard. The chart itself (dataset, type, query, style) is shared by every dashboard that shows it. */
 export interface DashboardWidget {
   id: string;
-  title: string;
-  datasetId: string;
-  chartType: WidgetChartType;
-  query: ChartQuery;
+  chartId: string;
 }
 
 export interface DashboardFilter {
@@ -43,6 +40,8 @@ export interface DashboardSummary {
   description: string | null;
   widgetCount: number;
   updatedUtc: string;
+  /** The charts on the dashboard, so a chart can show which dashboards use it. */
+  chartIds?: string[];
 }
 
 export interface Dashboard {

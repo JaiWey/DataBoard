@@ -1,0 +1,561 @@
+import { CdkDrag, CdkDragDrop, CdkDropList, moveItemInArray } from '@angular/cdk/drag-drop';
+import { HttpClient } from '@angular/common/http';
+import { Component, DestroyRef, OnInit, computed, effect, inject, signal, untracked } from '@angular/core';
+import { MatButtonModule } from '@angular/material/button';
+import { MatButtonToggleModule } from '@angular/material/button-toggle';
+import { MatCheckboxModule } from '@angular/material/checkbox';
+import { MatMenuModule } from '@angular/material/menu';
+import { MatTabsModule } from '@angular/material/tabs';
+import { ActivatedRoute, Router } from '@angular/router';
+import { Subscription } from 'rxjs';
+import { problemMessages } from '../organizations/data-sources.service';
+import { ChartResult, Dataset, DatasetColumn, DatasetsService } from '../organizations/datasets.service';
+import {
+  AGGREGATIONS,
+  EditorState,
+  FILTER_OPERATORS,
+  FilterOperator,
+  TIME_GRAINS,
+  aggregationsFor,
+  defaultZone,
+  dimensionFor,
+  emptyEditorState,
+  fieldBadge,
+  filterFor,
+  fromChart,
+  metricFor,
+  problemsOf,
+  resultNames,
+  rowCountMetric,
+  toQuery,
+  toSaveChart,
+} from './chart-editor-model';
+import { ChartViewComponent } from './chart-view.component';
+import { CHART_TYPES, ChartType, ChartsService, PALETTE_NAMES } from './charts.service';
+
+type Zone = 'dimensions' | 'metrics' | 'filters';
+
+interface Organization {
+  id: string;
+  name: string;
+  role: 'Viewer' | 'Editor' | 'Owner';
+}
+
+/**
+ * The chart editor: the dataset's fields on the left, what the chart shows in the middle (Data, Style, Settings), and the
+ * chart type and a live preview on the right. Fields are dragged into Dimensions, Metrics and Filters, or clicked.
+ */
+@Component({
+  selector: 'app-chart-editor',
+  imports: [CdkDropList, CdkDrag, MatButtonModule, MatButtonToggleModule, MatCheckboxModule, MatMenuModule, MatTabsModule, ChartViewComponent],
+  template: `
+    <header class="top">
+      <button type="button" class="back" aria-label="Back to dashboards" (click)="back()">←</button>
+      <input class="name" aria-label="Chart name" placeholder="Name this chart" [value]="state().name"
+             (input)="patch({ name: $any($event.target).value })" />
+      <span class="status">
+        @if (savedMessage()) { <span class="ok" role="status">{{ savedMessage() }}</span> }
+        @else if (dirty()) { Unsaved changes }
+      </span>
+      <button mat-flat-button type="button" class="save" [disabled]="!canSave()" (click)="save()">Save</button>
+    </header>
+
+    @if (!canEdit() && organizationLoaded()) {
+      <p class="notice" role="status">You can look at this chart, but changing charts needs Editor access.</p>
+    }
+    @for (message of saveErrors(); track message) {
+      <p class="fail notice" role="alert">{{ message }}</p>
+    }
+
+    <div class="editor">
+      <aside class="fields" aria-label="Fields">
+        <label class="dataset">
+          <span>Dataset</span>
+          <select aria-label="Dataset" [disabled]="!canEdit()" (change)="chooseDataset($any($event.target).value)">
+            <option value="" [selected]="!state().datasetId">Choose a dataset…</option>
+            @for (d of datasets(); track d.id) { <option [value]="d.id" [selected]="d.id === state().datasetId">{{ d.name }}</option> }
+          </select>
+        </label>
+
+        <div cdkDropList id="field-list" class="field-list" cdkDropListSortingDisabled
+             [cdkDropListConnectedTo]="['zone-dimensions', 'zone-metrics', 'zone-filters']">
+          @for (column of columns(); track column.name) {
+            <div cdkDrag [cdkDragData]="column" class="field" [class.measure]="column.role === 'Measure'" [title]="column.dataType">
+              <button type="button" class="field-main" [attr.aria-label]="'Add ' + column.name" (click)="addField(defaultZoneOf(column), column)">
+                <span class="badge">{{ badge(column) }}</span>
+                <span class="field-name">{{ column.name }}</span>
+              </button>
+              <button type="button" class="field-more" [matMenuTriggerFor]="addMenu" [matMenuTriggerData]="{ column }"
+                      [attr.aria-label]="'More ways to add ' + column.name">⋮</button>
+            </div>
+          } @empty {
+            <p class="hint"><em>{{ state().datasetId ? 'This dataset has no fields.' : 'Choose a dataset to see its fields.' }}</em></p>
+          }
+        </div>
+        <mat-menu #addMenu="matMenu">
+          <ng-template matMenuContent let-column="column">
+            <button mat-menu-item type="button" (click)="addField('dimensions', column)">Add to Dimensions</button>
+            <button mat-menu-item type="button" (click)="addField('metrics', column)">Add to Metrics</button>
+            <button mat-menu-item type="button" (click)="addField('filters', column)">Add to Filters</button>
+          </ng-template>
+        </mat-menu>
+      </aside>
+
+      <section class="config">
+        <mat-tab-group animationDuration="0ms">
+          <mat-tab label="Data">
+            <div class="tab">
+              <h3>Dimensions</h3>
+              <div cdkDropList id="zone-dimensions" class="zone" (cdkDropListDropped)="dropped('dimensions', $event)">
+                @for (item of state().dimensions; track $index) {
+                  <div cdkDrag class="item dimension">
+                    <span class="item-name">{{ item.column }}</span>
+                    @if (isDate(item.dataType)) {
+                      <select class="small" [attr.aria-label]="'Group ' + item.column + ' by'" (change)="setGrain($index, $any($event.target).value)">
+                        <option value="" [selected]="!item.grain">exact value</option>
+                        @for (g of grains; track g) { <option [value]="g" [selected]="g === item.grain">{{ g }}</option> }
+                      </select>
+                    }
+                    <button type="button" class="remove" [attr.aria-label]="'Remove ' + item.column + ' from Dimensions'" (click)="remove('dimensions', $index)">×</button>
+                  </div>
+                } @empty {
+                  <p class="drop-hint">Drag a field here</p>
+                }
+              </div>
+
+              <h3>Metrics</h3>
+              <div cdkDropList id="zone-metrics" class="zone" (cdkDropListDropped)="dropped('metrics', $event)">
+                @for (item of state().metrics; track $index) {
+                  <div cdkDrag class="item metric">
+                    <select class="small" [attr.aria-label]="'Aggregation of metric ' + ($index + 1)" (change)="setAggregation($index, $any($event.target).value)">
+                      @for (a of aggregationOptions(item.dataType, item.column); track a.value) {
+                        <option [value]="a.value" [selected]="a.value === item.aggregation">{{ a.label }}</option>
+                      }
+                    </select>
+                    <span class="item-name">{{ item.column ?? 'rows' }}</span>
+                    <button type="button" class="remove" [attr.aria-label]="'Remove metric ' + ($index + 1)" (click)="remove('metrics', $index)">×</button>
+                  </div>
+                } @empty {
+                  <p class="drop-hint">Drag a field here</p>
+                }
+              </div>
+              <button mat-button type="button" class="add-count" (click)="addRowCount()">Add row count</button>
+
+              <h3>Filters</h3>
+              <div cdkDropList id="zone-filters" class="zone" (cdkDropListDropped)="dropped('filters', $event)">
+                @for (item of state().filters; track $index) {
+                  <div cdkDrag class="item filter">
+                    <span class="item-name">{{ item.column }}</span>
+                    <select class="small" [attr.aria-label]="'Condition of filter ' + ($index + 1)" (change)="setOperator($index, $any($event.target).value)">
+                      @for (op of operators; track op.value) { <option [value]="op.value" [selected]="op.value === item.operator">{{ op.label }}</option> }
+                    </select>
+                    @if (needsValue(item.operator)) {
+                      <input class="value" [attr.aria-label]="'Value of filter ' + ($index + 1)" [value]="item.value"
+                             [placeholder]="listOperator(item.operator) ? 'a, b, c' : 'value'" (input)="setFilterValue($index, $any($event.target).value)" />
+                    }
+                    <button type="button" class="remove" [attr.aria-label]="'Remove filter ' + ($index + 1)" (click)="remove('filters', $index)">×</button>
+                  </div>
+                } @empty {
+                  <p class="drop-hint">Drag a field here</p>
+                }
+              </div>
+            </div>
+          </mat-tab>
+
+          <mat-tab label="Style">
+            <div class="tab">
+              <mat-checkbox [checked]="state().style.legend" (change)="patchStyle({ legend: $event.checked })">Show legend</mat-checkbox>
+              <mat-checkbox [checked]="state().style.labels" (change)="patchStyle({ labels: $event.checked })">Show value labels</mat-checkbox>
+              <label class="row">
+                <span>Colours</span>
+                <select aria-label="Colour palette" (change)="patchStyle({ palette: $any($event.target).value })">
+                  @for (p of palettes; track p) { <option [value]="p" [selected]="p === state().style.palette">{{ p }}</option> }
+                </select>
+              </label>
+            </div>
+          </mat-tab>
+
+          <mat-tab label="Settings">
+            <div class="tab">
+              <label class="row">
+                <span>Row limit</span>
+                <input type="number" min="1" max="1000" aria-label="Row limit" placeholder="100" [value]="state().limit ?? ''"
+                       (input)="setLimit($any($event.target).value)" />
+              </label>
+              <label class="row">
+                <span>Sort by</span>
+                <select aria-label="Sort by" (change)="patch({ sortBy: $any($event.target).value })">
+                  <option value="" [selected]="!state().sortBy">No sorting</option>
+                  @for (name of sortOptions(); track name) { <option [value]="name" [selected]="name === state().sortBy">{{ name }}</option> }
+                </select>
+              </label>
+              <label class="row">
+                <span>Direction</span>
+                <select aria-label="Sort direction" [disabled]="!state().sortBy" (change)="patch({ sortDirection: $any($event.target).value })">
+                  <option value="Desc" [selected]="state().sortDirection === 'Desc'">Highest first</option>
+                  <option value="Asc" [selected]="state().sortDirection === 'Asc'">Lowest first</option>
+                </select>
+              </label>
+              <label class="row">
+                <span>Description</span>
+                <input aria-label="Description" [value]="state().description" (input)="patch({ description: $any($event.target).value })" />
+              </label>
+            </div>
+          </mat-tab>
+        </mat-tab-group>
+      </section>
+
+      <section class="preview">
+        <div class="types" role="group" aria-label="Chart type">
+          @for (t of chartTypes; track t.value) {
+            <button type="button" class="type" [class.selected]="state().type === t.value" [attr.aria-pressed]="state().type === t.value"
+                    [attr.aria-label]="t.label" [title]="t.label" (click)="patch({ type: t.value })">
+              <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                @switch (t.value) {
+                  @case ('Table') { <rect x="3" y="4" width="18" height="16" rx="1.5" /><path d="M3 10h18M3 15h18M9 4v16" /> }
+                  @case ('Bar') { <path d="M5 20V11M12 20V5M19 20v-8" stroke-width="3.2" /> }
+                  @case ('BarHorizontal') { <path d="M4 5h11M4 12h16M4 19h8" stroke-width="3.2" /> }
+                  @case ('Line') { <path d="M3 17l5-6 4 3 8-9" /><path d="M3 21h18" /> }
+                  @case ('Area') { <path d="M3 18l5-7 4 3 8-8v12z" fill="currentColor" fill-opacity="0.25" /><path d="M3 18l5-7 4 3 8-8" /> }
+                  @case ('Pie') { <circle cx="12" cy="12" r="8" /><path d="M12 12V4M12 12l6.5 4.5" /> }
+                  @case ('Donut') { <circle cx="12" cy="12" r="8" /><circle cx="12" cy="12" r="3.5" /> }
+                  @case ('Number') { <text x="2.5" y="16" font-size="11" font-weight="700" fill="currentColor" stroke="none">123</text> }
+                }
+              </svg>
+            </button>
+          }
+        </div>
+
+        <div class="preview-box">
+          <mat-button-toggle-group class="views" aria-label="Preview" [value]="view()" (change)="view.set($event.value)">
+            <mat-button-toggle value="chart">Chart</mat-button-toggle>
+            <mat-button-toggle value="table">Table</mat-button-toggle>
+            @if (result()?.sql) { <mat-button-toggle value="sql">SQL</mat-button-toggle> }
+          </mat-button-toggle-group>
+
+          @for (message of previewErrors(); track message) { <p class="fail" role="alert">{{ message }}</p> }
+          @if (problems().length > 0) {
+            <ul class="problems">@for (p of problems(); track p) { <li>{{ p }}</li> }</ul>
+          } @else if (result(); as r) {
+            @switch (view()) {
+              @case ('sql') { <pre class="sql">{{ r.sql }}</pre> }
+              @case ('table') { <app-chart-view type="Table" [result]="r" label="Result table" /> }
+              @default { <app-chart-view [type]="state().type" [result]="r" [chartStyle]="state().style" [label]="state().name || 'Chart preview'" /> }
+            }
+            @if (r.truncated) { <p class="hint"><small>Showing the first {{ r.rows.length }} rows.</small></p> }
+          } @else if (previewing()) {
+            <p class="hint"><em>Loading…</em></p>
+          }
+        </div>
+      </section>
+    </div>
+  `,
+  styles: `
+    :host { display: block; background: #fff; border-radius: 12px; overflow: hidden; }
+    .top { display: flex; align-items: center; gap: 0.75rem; padding: 0.6rem 1rem; border-bottom: 1px solid var(--mat-sys-outline-variant); }
+    .back { border: 0; background: none; font-size: 1.5rem; cursor: pointer; padding: 0 0.5rem; color: inherit; }
+    .name { flex: 1; max-width: 28rem; border: 0; font: var(--mat-sys-title-large); padding: 0.25rem 0.4rem; background: transparent; }
+    .name:focus { outline: 2px solid var(--mat-sys-primary); border-radius: 4px; }
+    .status { margin-left: auto; color: var(--mat-sys-on-surface-variant); }
+    .notice { margin: 0.5rem 1rem; }
+    .editor { display: grid; grid-template-columns: 16rem 24rem 1fr; height: calc(100vh - 15rem); min-height: 28rem; }
+    .fields, .config, .preview { min-height: 0; overflow: auto; padding: 0.75rem 1rem; }
+    .fields, .config { border-right: 1px solid var(--mat-sys-outline-variant); }
+    .dataset { display: grid; gap: 0.25rem; margin-bottom: 0.5rem; font: var(--mat-sys-label-medium); }
+    select, input.value, .row input { font: inherit; padding: 0.35rem 0.4rem; border: 1px solid var(--mat-sys-outline); border-radius: 4px; background: #fff; }
+    .field-list { display: grid; gap: 0.15rem; }
+    .field { display: flex; align-items: center; border-radius: 4px; background: var(--mat-sys-surface-container-low); }
+    .field:hover { background: var(--mat-sys-surface-container); }
+    .field-main { flex: 1; display: flex; align-items: center; gap: 0.5rem; border: 0; background: none; padding: 0.4rem 0.5rem; cursor: grab; text-align: left; font: inherit; color: inherit; }
+    .field-more { border: 0; background: none; cursor: pointer; padding: 0.3rem 0.5rem; font-size: 1.1rem; color: inherit; }
+    .badge { min-width: 2.2rem; font: var(--mat-sys-label-small); color: var(--mat-sys-primary); }
+    .measure .badge { color: #2b8a3e; }
+    .tab { padding: 0.5rem 0; display: grid; gap: 0.5rem; }
+    h3 { margin: 0.5rem 0 0; font: var(--mat-sys-title-small); }
+    .config { overflow-x: hidden; }
+    mat-tab-group { min-width: 0; }
+    .zone { min-width: 0; min-height: 3.2rem; display: grid; gap: 0.35rem; padding: 0.4rem; background: var(--mat-sys-surface-container); border-radius: 6px; align-content: start; }
+    .zone.cdk-drop-list-dragging, .zone.cdk-drop-list-receiving { outline: 2px dashed var(--mat-sys-primary); }
+    .drop-hint { margin: 0.6rem 0; text-align: center; color: var(--mat-sys-on-surface-variant); }
+    .item { min-width: 0; display: flex; align-items: center; gap: 0.4rem; padding: 0.3rem 0.5rem; background: #fff; border: 1px solid var(--mat-sys-outline-variant); border-radius: 4px; }
+    .item-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .small { font-size: 0.85rem; max-width: 7.5rem; min-width: 0; }
+    .value { flex: 1; min-width: 0; width: 100%; }
+    .remove { border: 0; background: none; cursor: pointer; font-size: 1.1rem; color: inherit; }
+    .row { display: grid; gap: 0.25rem; font: var(--mat-sys-label-medium); }
+    .row input { font: var(--mat-sys-body-medium); }
+    .types { display: flex; flex-wrap: wrap; gap: 0.35rem; padding-bottom: 0.75rem; border-bottom: 1px solid var(--mat-sys-outline-variant); }
+    .type { width: 2.7rem; height: 2.7rem; display: grid; place-items: center; border: 0; border-radius: 6px; background: var(--mat-sys-surface-container); color: var(--mat-sys-on-surface-variant); cursor: pointer; }
+    .type.selected { background: var(--mat-sys-primary); color: var(--mat-sys-on-primary); }
+    .preview-box { padding-top: 0.75rem; }
+    .views { margin-bottom: 0.5rem; }
+    .problems { margin: 0.5rem 0; padding-left: 1.2rem; color: var(--mat-sys-on-surface-variant); }
+    .hint { color: var(--mat-sys-on-surface-variant); }
+    .sql { white-space: pre-wrap; background: var(--mat-sys-surface-container); padding: 0.75rem; border-radius: 6px; }
+    @media (max-width: 70rem) {
+      .editor { grid-template-columns: 1fr; height: auto; }
+      .fields, .config { border-right: 0; border-bottom: 1px solid var(--mat-sys-outline-variant); }
+    }
+  `,
+})
+export class ChartEditorComponent implements OnInit {
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private readonly http = inject(HttpClient);
+  private readonly datasetsApi = inject(DatasetsService);
+  private readonly chartsApi = inject(ChartsService);
+
+  protected orgId = '';
+  /** Null until the chart has been saved once. */
+  protected readonly chartId = signal<string | null>(null);
+  protected readonly organization = signal<Organization | null>(null);
+  protected readonly organizationLoaded = signal(false);
+  protected readonly canEdit = computed(() => this.organization()?.role === 'Editor' || this.organization()?.role === 'Owner');
+
+  protected readonly datasets = signal<Dataset[]>([]);
+  protected readonly state = signal<EditorState>(emptyEditorState());
+  private readonly savedJson = signal<string>('');
+  protected readonly dataset = computed(() => this.datasets().find((d) => d.id === this.state().datasetId));
+  protected readonly columns = computed<DatasetColumn[]>(() => this.dataset()?.columns ?? []);
+
+  protected readonly chartTypes = CHART_TYPES;
+  protected readonly palettes = PALETTE_NAMES;
+  protected readonly operators = FILTER_OPERATORS;
+  protected readonly grains = TIME_GRAINS;
+
+  protected readonly problems = computed(() => problemsOf(this.state()));
+  protected readonly dirty = computed(() => JSON.stringify(toSaveChart(this.state())) !== this.savedJson());
+  protected readonly canSave = computed(() => this.canEdit() && !this.saving() && problemsOf(this.state(), { forSave: true }).length === 0);
+  protected readonly sortOptions = computed(() => {
+    const names = resultNames(this.state());
+    return [...names.dimensions, ...names.metrics];
+  });
+
+  protected readonly view = signal<'chart' | 'table' | 'sql'>('chart');
+  protected readonly result = signal<ChartResult | null>(null);
+  protected readonly previewErrors = signal<string[]>([]);
+  protected readonly previewing = signal(false);
+  protected readonly saving = signal(false);
+  protected readonly saveErrors = signal<string[]>([]);
+  protected readonly savedMessage = signal('');
+
+  private previewTimer: ReturnType<typeof setTimeout> | undefined;
+  private previewRequest: Subscription | undefined;
+
+  constructor() {
+    inject(DestroyRef).onDestroy(() => {
+      clearTimeout(this.previewTimer);
+      this.previewRequest?.unsubscribe();
+    });
+
+    // Whenever what the chart shows changes, look again (a moment after the last change).
+    effect(() => {
+      const state = this.state();
+      untracked(() => this.schedulePreview(state));
+    });
+  }
+
+  ngOnInit(): void {
+    this.orgId = this.route.snapshot.paramMap.get('id') ?? '';
+    const param = this.route.snapshot.paramMap.get('chartId');
+    const existing = param && param !== 'new' ? param : null;
+    this.chartId.set(existing);
+
+    this.http.get<Organization[]>('/api/organizations').subscribe({
+      next: (orgs) => {
+        this.organization.set(orgs.find((o) => o.id === this.orgId) ?? null);
+        this.organizationLoaded.set(true);
+      },
+    });
+
+    this.datasetsApi.list(this.orgId).subscribe({
+      next: (items) => {
+        this.datasets.set(items);
+        if (existing) {
+          this.chartsApi.get(this.orgId, existing).subscribe({
+            next: (chart) => this.load(fromChart(chart, items.find((d) => d.id === chart.datasetId))),
+            error: (e) => this.saveErrors.set(problemMessages(e, 'Could not load the chart.')),
+          });
+        } else {
+          const wanted = this.route.snapshot.queryParamMap.get('dataset');
+          const first = items.find((d) => d.id === wanted) ?? items[0];
+          this.load(emptyEditorState(first?.id ?? ''));
+        }
+      },
+      error: (e) => this.saveErrors.set(problemMessages(e, 'Could not load the datasets.')),
+    });
+  }
+
+  /** Puts a chart in the editor as the starting point: nothing is unsaved yet. */
+  private load(state: EditorState): void {
+    this.state.set(state);
+    this.savedJson.set(JSON.stringify(toSaveChart(state)));
+  }
+
+  // ---- what the template asks ---------------------------------------------------------------------------
+
+  protected badge(column: DatasetColumn): string {
+    return fieldBadge(column);
+  }
+
+  protected defaultZoneOf(column: DatasetColumn): Zone {
+    return defaultZone(column);
+  }
+
+  protected isDate(dataType: string): boolean {
+    return /^(date|timestamp)/i.test(dataType);
+  }
+
+  protected aggregationOptions(dataType: string, column: string | null) {
+    const role = this.columns().find((c) => c.name === column)?.role ?? null;
+    const allowed = aggregationsFor(column === null ? null : dataType, role);
+    return AGGREGATIONS.filter((a) => allowed.includes(a.value));
+  }
+
+  protected needsValue(operator: FilterOperator): boolean {
+    return operator !== 'IsNull' && operator !== 'IsNotNull';
+  }
+
+  protected listOperator(operator: FilterOperator): boolean {
+    return operator === 'In' || operator === 'NotIn' || operator === 'Between';
+  }
+
+  // ---- editing --------------------------------------------------------------------------------------------
+
+  protected patch(changes: Partial<EditorState>): void {
+    this.savedMessage.set('');
+    this.state.update((s) => ({ ...s, ...changes }));
+  }
+
+  protected patchStyle(changes: Partial<EditorState['style']>): void {
+    this.patch({ style: { ...this.state().style, ...changes } });
+  }
+
+  /** Another dataset has other fields, so everything chosen from the old one is cleared. */
+  protected chooseDataset(id: string): void {
+    if (id === this.state().datasetId) return;
+    this.patch({ datasetId: id, dimensions: [], metrics: [], filters: [], sortBy: '' });
+  }
+
+  protected addField(zone: Zone, column: DatasetColumn): void {
+    const s = this.state();
+    switch (zone) {
+      case 'dimensions':
+        return this.patch({ dimensions: [...s.dimensions, dimensionFor(column)] });
+      case 'metrics':
+        return this.patch({ metrics: [...s.metrics, metricFor(column)] });
+      case 'filters':
+        return this.patch({ filters: [...s.filters, filterFor(column)] });
+    }
+  }
+
+  protected addRowCount(): void {
+    this.patch({ metrics: [...this.state().metrics, rowCountMetric()] });
+  }
+
+  /** A field dragged from the list is added; an item dragged within its own zone is moved. */
+  protected dropped(zone: Zone, event: CdkDragDrop<unknown>): void {
+    if (event.previousContainer === event.container) {
+      const items = [...this.state()[zone]];
+      moveItemInArray(items, event.previousIndex, event.currentIndex);
+      this.patch({ [zone]: items } as Partial<EditorState>);
+      return;
+    }
+    const column = event.item.data as DatasetColumn | undefined;
+    if (column) this.addField(zone, column);
+  }
+
+  protected remove(zone: Zone, index: number): void {
+    const items = this.state()[zone].filter((_, i) => i !== index);
+    const changes: Partial<EditorState> = { [zone]: items };
+    // A sort on something that is no longer in the result is dropped with it.
+    const next = { ...this.state(), ...changes } as EditorState;
+    const names = resultNames(next);
+    if (this.state().sortBy && ![...names.dimensions, ...names.metrics].includes(this.state().sortBy)) changes.sortBy = '';
+    this.patch(changes);
+  }
+
+  protected setGrain(index: number, value: string): void {
+    this.patch({ dimensions: this.state().dimensions.map((d, i) => (i === index ? { ...d, grain: value as never } : d)) });
+  }
+
+  protected setAggregation(index: number, value: string): void {
+    this.patch({ metrics: this.state().metrics.map((m, i) => (i === index ? { ...m, aggregation: value as never } : m)) });
+  }
+
+  protected setOperator(index: number, value: string): void {
+    this.patch({ filters: this.state().filters.map((f, i) => (i === index ? { ...f, operator: value as FilterOperator } : f)) });
+  }
+
+  protected setFilterValue(index: number, value: string): void {
+    this.patch({ filters: this.state().filters.map((f, i) => (i === index ? { ...f, value } : f)) });
+  }
+
+  protected setLimit(text: string): void {
+    this.patch({ limit: text.trim() === '' ? null : Number(text) });
+  }
+
+  // ---- the preview ----------------------------------------------------------------------------------------
+
+  private schedulePreview(state: EditorState): void {
+    clearTimeout(this.previewTimer);
+    this.previewRequest?.unsubscribe();
+    this.previewErrors.set([]);
+
+    if (problemsOf(state).length > 0) {
+      this.result.set(null);
+      this.previewing.set(false);
+      return;
+    }
+    this.previewing.set(true);
+    this.previewTimer = setTimeout(() => {
+      this.previewRequest = this.datasetsApi.query(this.orgId, state.datasetId, toQuery(state)).subscribe({
+        next: (r) => {
+          this.previewing.set(false);
+          this.result.set(r);
+          if (this.view() === 'sql' && !r.sql) this.view.set('chart');
+        },
+        error: (e) => {
+          this.previewing.set(false);
+          this.result.set(null);
+          this.previewErrors.set(problemMessages(e, 'The preview failed.'));
+        },
+      });
+    }, 300);
+  }
+
+  // ---- saving and leaving ---------------------------------------------------------------------------------
+
+  protected save(): void {
+    if (!this.canSave()) return;
+    const state = this.state();
+    const payload = toSaveChart(state);
+    const id = this.chartId();
+    this.saving.set(true);
+    this.saveErrors.set([]);
+
+    const request = id ? this.chartsApi.update(this.orgId, id, payload) : this.chartsApi.create(this.orgId, payload);
+    request.subscribe({
+      next: (chart) => {
+        this.saving.set(false);
+        this.savedJson.set(JSON.stringify(payload));
+        this.savedMessage.set('Saved');
+        if (!id) {
+          this.chartId.set(chart.id);
+          // From now on this address names the chart, so a reload or a shared link opens it.
+          void this.router.navigate(['/organizations', this.orgId, 'charts', chart.id], { replaceUrl: true });
+        }
+      },
+      error: (e) => {
+        this.saving.set(false);
+        this.saveErrors.set(problemMessages(e, 'Could not save the chart.'));
+      },
+    });
+  }
+
+  protected back(): void {
+    if (this.dirty() && !confirm('This chart has unsaved changes. Leave without saving?')) return;
+    const id = this.chartId();
+    void this.router.navigate(['/organizations', this.orgId, 'dashboards'], { queryParams: id ? { view: 'charts', chart: id } : { view: 'charts' } });
+  }
+}

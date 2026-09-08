@@ -3,10 +3,8 @@ using DataBoard.Application.Charts;
 
 namespace DataBoard.Application.Dashboards;
 
-public enum ChartType { Table, Bar, Line, Pie }
-
-/// <summary>One chart on a dashboard: a title, the dataset it reads, how to draw it, and the query that feeds it.</summary>
-public sealed record DashboardWidget(Guid Id, string Title, Guid DatasetId, ChartType ChartType, ChartQuery Query);
+/// <summary>One chart placed on a dashboard. The chart itself (dataset, type, query, style) is a saved chart, shared by every dashboard that shows it.</summary>
+public sealed record DashboardWidget(Guid Id, Guid ChartId);
 
 /// <summary>
 /// A filter shared by the whole dashboard. Viewers pick values; the filter then applies to every widget whose dataset
@@ -18,7 +16,9 @@ public sealed record DashboardDefinition(IReadOnlyList<DashboardWidget> Widgets,
 
 public sealed record SaveDashboardRequest(string Name, string? Description, DashboardDefinition? Definition);
 
-public sealed record DashboardSummaryDto(Guid Id, string Name, string? Description, int WidgetCount, DateTime UpdatedUtc);
+/// <param name="ChartIds">The charts on the dashboard, so a chart can show which dashboards use it.</param>
+public sealed record DashboardSummaryDto(
+    Guid Id, string Name, string? Description, int WidgetCount, DateTime UpdatedUtc, IReadOnlyList<Guid>? ChartIds = null);
 
 public sealed record DashboardDto(
     Guid Id, string Name, string? Description, DashboardDefinition Definition, DateTime CreatedUtc, DateTime UpdatedUtc);

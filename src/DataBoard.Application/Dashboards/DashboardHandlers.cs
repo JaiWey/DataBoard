@@ -31,8 +31,8 @@ internal static class DashboardMapping
 }
 
 /// <summary>
-/// Checks a dashboard definition before it is saved: sizes, ids, filter operators, and that every widget's query
-/// plans cleanly against its dataset. A dashboard that could never run is rejected up front, with the widget named.
+/// Checks a dashboard definition before it is saved: sizes, ids, filter operators, and that every widget refers to a
+/// chart of the organization (a chart was already checked when it was saved).
 /// </summary>
 internal static class DashboardValidator
 {
@@ -44,8 +44,12 @@ internal static class DashboardValidator
         [FilterOperator.Eq, FilterOperator.NotEq, FilterOperator.In, FilterOperator.Contains, FilterOperator.StartsWith,
          FilterOperator.Gte, FilterOperator.Lte, FilterOperator.Between];
 
+    /// <param name="existingWidgetIds">
+    /// Widgets the dashboard already has. If one of their charts has since been deleted it is simply dropped; a new
+    /// widget that names a missing chart is an error.
+    /// </param>
     public static async Task<DashboardDefinition> NormalizeAsync(
-        DashboardDefinition? definition, IDatasetRepository datasets, Guid organizationId, CancellationToken ct)
+        DashboardDefinition? definition, IChartRepository charts, Guid organizationId, IReadOnlySet<Guid> existingWidgetIds, CancellationToken ct)
     {
         definition ??= new DashboardDefinition([], []);
         var errors = new Dictionary<string, string[]>();
@@ -74,44 +78,29 @@ internal static class DashboardValidator
         if (normalizedFilters.Select(f => f.Id).Distinct().Count() != normalizedFilters.Count)
             Fail("Filters", "Filter ids must be unique.");
 
-        var cache = new Dictionary<Guid, Domain.Datasets.Dataset?>();
         var normalizedWidgets = new List<DashboardWidget>();
         for (var i = 0; i < widgets.Count; i++)
         {
             var w = widgets[i];
             var field = $"Widgets[{i}]";
-            if (w is null || string.IsNullOrWhiteSpace(w.Title) || w.Title.Trim().Length > MaxTitleLength)
+            if (w is null || w.ChartId == Guid.Empty)
             {
-                Fail(field, "A widget needs a title of at most 200 characters.");
+                Fail(field, "A widget needs a chart.");
                 continue;
             }
-            if (!Enum.IsDefined(w.ChartType))
+            if (await charts.GetAsync(organizationId, w.ChartId, ct) is null)
             {
-                Fail(field, "Unknown chart type.");
-                continue;
-            }
-            if (!cache.TryGetValue(w.DatasetId, out var dataset))
-                cache[w.DatasetId] = dataset = await datasets.GetAsync(organizationId, w.DatasetId, ct);
-            if (dataset is null)
-            {
-                Fail(field, $"The dataset for '{w.Title.Trim()}' was not found.");
+                if (w.Id != Guid.Empty && existingWidgetIds.Contains(w.Id)) continue; // its chart was deleted
+                Fail(field, "The chart was not found.");
                 continue;
             }
 
-            try
-            {
-                ChartQueryPlanner.Plan(dataset.Columns, w.Query ?? new ChartQuery());
-            }
-            catch (ValidationException ex)
-            {
-                Fail(field, $"'{w.Title.Trim()}': " + string.Join(" ", ex.Errors.SelectMany(e => e.Value)));
-                continue;
-            }
-
-            normalizedWidgets.Add(w with { Id = w.Id == Guid.Empty ? Guid.NewGuid() : w.Id, Title = w.Title.Trim(), Query = w.Query ?? new ChartQuery() });
+            normalizedWidgets.Add(w with { Id = w.Id == Guid.Empty ? Guid.NewGuid() : w.Id });
         }
         if (normalizedWidgets.Select(w => w.Id).Distinct().Count() != normalizedWidgets.Count)
             Fail("Widgets", "Widget ids must be unique.");
+        if (normalizedWidgets.Select(w => w.ChartId).Distinct().Count() != normalizedWidgets.Count)
+            Fail("Widgets", "A chart can only be on a dashboard once.");
 
         if (errors.Count > 0) throw new ValidationException(errors);
         return new DashboardDefinition(normalizedWidgets, normalizedFilters);
@@ -119,7 +108,7 @@ internal static class DashboardValidator
 }
 
 public sealed class CreateDashboardHandler(
-    IDashboardRepository dashboards, IDatasetRepository datasets, IUnitOfWork unitOfWork, IClock clock, OrganizationAccess access)
+    IDashboardRepository dashboards, IChartRepository charts, IUnitOfWork unitOfWork, IClock clock, OrganizationAccess access)
 {
     public async Task<DashboardDto> HandleAsync(Guid organizationId, SaveDashboardRequest request, CancellationToken ct = default)
     {
@@ -129,7 +118,7 @@ public sealed class CreateDashboardHandler(
         if (await dashboards.NameExistsAsync(organizationId, request.Name?.Trim() ?? string.Empty, null, ct))
             throw new ConflictException("A dashboard with that name already exists.");
 
-        var definition = await DashboardValidator.NormalizeAsync(request.Definition, datasets, organizationId, ct);
+        var definition = await DashboardValidator.NormalizeAsync(request.Definition, charts, organizationId, new HashSet<Guid>(), ct);
         var dashboard = DatasetQuery.Guard(() => Dashboard.Create(
             organizationId, request.Name!, request.Description, DashboardJson.Serialize(definition), userId, clock.UtcNow));
 
@@ -147,7 +136,8 @@ public sealed class ListDashboardsHandler(IDashboardRepository dashboards, Organ
         var items = await dashboards.ListByOrganizationAsync(organizationId, ct);
         return items
             .Select(d => new DashboardSummaryDto(
-                d.Id, d.Name, d.Description, DashboardJson.Deserialize(d.DefinitionJson).Widgets.Count, d.UpdatedUtc))
+                d.Id, d.Name, d.Description, DashboardJson.Deserialize(d.DefinitionJson).Widgets.Count, d.UpdatedUtc,
+                DashboardJson.Deserialize(d.DefinitionJson).Widgets.Select(w => w.ChartId).ToList()))
             .ToList();
     }
 }
@@ -164,7 +154,7 @@ public sealed class GetDashboardHandler(IDashboardRepository dashboards, Organiz
 }
 
 public sealed class UpdateDashboardHandler(
-    IDashboardRepository dashboards, IDatasetRepository datasets, IUnitOfWork unitOfWork, IClock clock, OrganizationAccess access)
+    IDashboardRepository dashboards, IChartRepository charts, IUnitOfWork unitOfWork, IClock clock, OrganizationAccess access)
 {
     public async Task<DashboardDto> HandleAsync(Guid organizationId, Guid dashboardId, SaveDashboardRequest request, CancellationToken ct = default)
     {
@@ -175,7 +165,8 @@ public sealed class UpdateDashboardHandler(
         if (await dashboards.NameExistsAsync(organizationId, request.Name?.Trim() ?? string.Empty, dashboard.Id, ct))
             throw new ConflictException("A dashboard with that name already exists.");
 
-        var definition = await DashboardValidator.NormalizeAsync(request.Definition, datasets, organizationId, ct);
+        var existing = DashboardJson.Deserialize(dashboard.DefinitionJson).Widgets.Select(w => w.Id).ToHashSet();
+        var definition = await DashboardValidator.NormalizeAsync(request.Definition, charts, organizationId, existing, ct);
         DatasetQuery.Guard(() =>
         {
             dashboard.Update(request.Name!, request.Description, DashboardJson.Serialize(definition), clock.UtcNow);
@@ -205,7 +196,7 @@ public sealed class DeleteDashboardHandler(IDashboardRepository dashboards, IUni
 /// rules apply to each widget (planner, validated SQL, read-only execution). One broken widget does not fail the page.
 /// </summary>
 public sealed class RunDashboardHandler(
-    IDashboardRepository dashboards, IDatasetRepository datasets, RunChartQueryHandler runner, OrganizationAccess access)
+    IDashboardRepository dashboards, IChartRepository charts, IDatasetRepository datasets, RunChartQueryHandler runner, OrganizationAccess access)
 {
     public async Task<DashboardRunResult> HandleAsync(
         Guid organizationId, Guid dashboardId, RunDashboardRequest? request, CancellationToken ct = default)
@@ -221,15 +212,23 @@ public sealed class RunDashboardHandler(
         var results = new List<WidgetResult>();
         foreach (var widget in definition.Widgets)
         {
-            var dataset = await datasets.GetAsync(organizationId, widget.DatasetId, ct);
+            var chart = await charts.GetAsync(organizationId, widget.ChartId, ct);
+            if (chart is null)
+            {
+                results.Add(new WidgetResult(widget.Id, null, "This chart was deleted.", []));
+                continue;
+            }
+
+            var query = ChartDefinition.FromJson(chart.DefinitionJson).Query;
+            var dataset = await datasets.GetAsync(organizationId, chart.DatasetId, ct);
             if (dataset is null)
             {
-                results.Add(new WidgetResult(widget.Id, null, "The dataset for this widget no longer exists.", []));
+                results.Add(new WidgetResult(widget.Id, null, "The dataset for this chart no longer exists.", []));
                 continue;
             }
 
             var applied = new List<Guid>();
-            var filters = (widget.Query.Filters ?? []).ToList();
+            var filters = (query.Filters ?? []).ToList();
             foreach (var filter in active)
             {
                 if (!dataset.Columns.Any(c => c.Name == filter.Column)) continue;
@@ -242,7 +241,7 @@ public sealed class RunDashboardHandler(
 
             try
             {
-                var result = await runner.HandleAsync(organizationId, widget.DatasetId, widget.Query with { Filters = filters }, ct);
+                var result = await runner.HandleAsync(organizationId, chart.DatasetId, query with { Filters = filters }, ct);
                 results.Add(new WidgetResult(widget.Id, result, null, applied));
             }
             catch (ValidationException ex)

@@ -1,5 +1,5 @@
 import { Component, DestroyRef, ElementRef, InjectionToken, effect, inject, input, viewChild } from '@angular/core';
-import { ChartKind, ResultShape, buildChartOption } from './chart-option';
+import { ChartKind, ChartStyleOptions, ResultShape, buildChartOption } from './chart-option';
 
 /** The slice of ECharts this component uses, so tests can stand in for it. */
 export interface ChartInstance {
@@ -53,6 +53,7 @@ export const ECHARTS_LOADER = new InjectionToken<() => Promise<EchartsApi>>('ECH
 export class ChartComponent {
   readonly kind = input.required<ChartKind>();
   readonly result = input.required<ResultShape>();
+  readonly chartStyle = input<ChartStyleOptions>({});
   /** Text alternative announced by screen readers. */
   readonly label = input('Chart');
 
@@ -70,7 +71,7 @@ export class ChartComponent {
     });
 
     effect(() => {
-      const option = buildChartOption(this.kind(), this.result());
+      const option = buildChartOption(this.kind(), this.result(), this.chartStyle());
       void this.draw(option);
     });
   }

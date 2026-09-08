@@ -3,10 +3,13 @@ import { FormBuilder, FormControl, FormGroup, ReactiveFormsModule, Validators } 
 import { RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
 import { MatCardModule } from '@angular/material/card';
+import { MatDialog } from '@angular/material/dialog';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
-import { ChartComponent } from '../charts/chart.component';
+import { ChartViewComponent } from '../charts/chart-view.component';
+import { Chart, ChartsService } from '../charts/charts.service';
 import { problemMessages } from '../organizations/data-sources.service';
+import { AddChartsDialogComponent, AddChartsDialogData } from './add-charts-dialog.component';
 import { Dataset, DatasetsService } from '../organizations/datasets.service';
 import {
   Dashboard,
@@ -32,14 +35,17 @@ export function parseFilterInput(operator: SharedFilterOperator, text: string): 
 
 @Component({
   selector: 'app-dashboard',
-  imports: [ReactiveFormsModule, RouterLink, MatCardModule, MatFormFieldModule, MatInputModule, MatButtonModule, ChartComponent],
+  imports: [ReactiveFormsModule, RouterLink, MatCardModule, MatFormFieldModule, MatInputModule, MatButtonModule, ChartViewComponent],
   template: `
     <mat-card appearance="raised" class="detail">
     @if (dashboard(); as d) {
       <mat-card-header>
         <mat-card-title>{{ d.name }}</mat-card-title>
         @if (canEdit()) {
-          <span class="actions"><button mat-button type="button" (click)="removeDashboard(d)">Delete dashboard</button></span>
+          <span class="actions">
+            <button mat-stroked-button type="button" (click)="addCharts(d)">Add chart</button>
+            <button mat-button type="button" (click)="removeDashboard(d)">Delete dashboard</button>
+          </span>
         }
       </mat-card-header>
       <mat-card-content>
@@ -65,47 +71,47 @@ export function parseFilterInput(operator: SharedFilterOperator, text: string): 
 
       @if (d.definition.widgets.length === 0) {
         <p><em>This dashboard has no charts yet.</em>
-          @if (canEdit()) {
-            <a [routerLink]="['/organizations', orgId(), 'datasets']">Open a dataset</a>, choose <strong>Explore</strong>, then <strong>Add to dashboard</strong>.
-          }
+          @if (canEdit()) { Use <strong>Add chart</strong> to put charts on it, or <a [routerLink]="['/organizations', orgId(), 'charts', 'new']">create a new chart</a>. }
         </p>
       }
 
       <div class="widgets">
         @for (widget of d.definition.widgets; track widget.id) {
           <mat-card appearance="outlined" class="widget">
-            <mat-card-header>
-              <mat-card-title>{{ widget.title }}</mat-card-title>
-              <mat-card-subtitle>{{ datasetName(widget.datasetId) }}</mat-card-subtitle>
-              @if (canEdit()) {
-                <button mat-button type="button" class="actions" (click)="removeWidget(d, widget.id)">Remove</button>
-              }
-            </mat-card-header>
-            <mat-card-content>
-              @if (resultFor(widget.id); as r) {
-                @if (r.error) {
-                  <p class="fail" role="alert">{{ r.error }}</p>
-                } @else if (r.result; as result) {
-                  @if (widget.chartType === 'Table') {
-                    <div class="results">
-                      <table>
-                        <thead><tr>@for (c of result.columns; track $index) { <th>{{ c.name }}</th> }</tr></thead>
-                        <tbody>
-                          @for (row of result.rows; track $index) {
-                            <tr>@for (cell of row; track $index) { <td>{{ cell === null ? '∅' : cell }}</td> }</tr>
-                          }
-                        </tbody>
-                      </table>
-                    </div>
-                  } @else {
-                    <app-chart [kind]="widget.chartType" [result]="result" [label]="widget.title" />
-                  }
-                  @if (result.truncated) { <p><small>Showing the first {{ result.rows.length }} rows.</small></p> }
+            @if (chartFor(widget.chartId); as chart) {
+              <mat-card-header>
+                <mat-card-title>{{ chart.name }}</mat-card-title>
+                <mat-card-subtitle>{{ datasetName(chart.datasetId) }}</mat-card-subtitle>
+                @if (canEdit()) {
+                  <span class="widget-actions">
+                    <a mat-button [routerLink]="['/organizations', orgId(), 'charts', chart.id]">Edit chart</a>
+                    <button mat-button type="button" class="remove-widget" (click)="removeWidget(d, widget.id)">Remove</button>
+                  </span>
                 }
-              } @else {
-                <p><em>Loading...</em></p>
-              }
-            </mat-card-content>
+              </mat-card-header>
+              <mat-card-content>
+                @if (resultFor(widget.id); as r) {
+                  @if (r.error) {
+                    <p class="fail" role="alert">{{ r.error }}</p>
+                  } @else if (r.result; as result) {
+                    <app-chart-view [type]="chart.type" [result]="result" [chartStyle]="chart.definition.style" [label]="chart.name" />
+                    @if (result.truncated) { <p><small>Showing the first {{ result.rows.length }} rows.</small></p> }
+                  }
+                } @else {
+                  <p><em>Loading...</em></p>
+                }
+              </mat-card-content>
+            } @else {
+              <mat-card-header>
+                <mat-card-title>Chart not found</mat-card-title>
+                @if (canEdit()) {
+                  <span class="widget-actions">
+                    <button mat-button type="button" class="remove-widget" (click)="removeWidget(d, widget.id)">Remove</button>
+                  </span>
+                }
+              </mat-card-header>
+              <mat-card-content><p class="fail" role="alert">This chart was deleted.</p></mat-card-content>
+            }
           </mat-card>
         }
       </div>
@@ -153,7 +159,8 @@ export function parseFilterInput(operator: SharedFilterOperator, text: string): 
     .detail { --mat-card-elevated-container-color: #fff; height: 100%; }
     mat-card-title { font: var(--mat-sys-title-medium); }
     mat-card-header { align-items: center; flex-wrap: wrap; gap: 0.5rem; }
-    .actions { margin-left: auto; }
+    .actions { margin-left: auto; display: flex; gap: 0.4rem; }
+    .widget-actions { margin-left: auto; display: flex; }
     .detail > mat-card-content { flex: 1; min-height: 0; overflow: auto; padding-top: 0.75rem; }
     .filters { margin: 0.5rem 0 1rem; }
     .apply, .remove-filter { margin-top: 0.4rem; }
@@ -164,6 +171,8 @@ export function parseFilterInput(operator: SharedFilterOperator, text: string): 
 export class DashboardComponent implements OnInit {
   private readonly api = inject(DashboardsService);
   private readonly datasetsApi = inject(DatasetsService);
+  private readonly chartsApi = inject(ChartsService);
+  private readonly dialog = inject(MatDialog);
   private readonly fb = inject(FormBuilder);
 
   readonly orgId = input.required<string>();
@@ -178,6 +187,7 @@ export class DashboardComponent implements OnInit {
 
   protected readonly dashboard = signal<Dashboard | null>(null);
   protected readonly datasets = signal<Dataset[]>([]);
+  protected readonly charts = signal<Chart[]>([]);
   protected readonly run = signal<DashboardRun | null>(null);
   protected readonly errors = signal<string[]>([]);
   protected readonly busy = signal(false);
@@ -194,6 +204,7 @@ export class DashboardComponent implements OnInit {
   );
 
   ngOnInit(): void {
+    this.chartsApi.list(this.orgId()).subscribe({ next: (items) => this.charts.set(items) });
     this.datasetsApi.list(this.orgId()).subscribe({
       next: (items) => {
         this.datasets.set(items);
@@ -213,6 +224,36 @@ export class DashboardComponent implements OnInit {
 
   protected operatorLabel(operator: SharedFilterOperator): string {
     return this.operators.find((o) => o.value === operator)?.label ?? operator;
+  }
+
+  protected chartFor(id: string): Chart | undefined {
+    return this.charts().find((c) => c.id === id);
+  }
+
+  /** Lets the editor pick saved charts to put on this dashboard (or go and make a new one). */
+  protected addCharts(d: Dashboard): void {
+    const placed = new Set(d.definition.widgets.map((w) => w.chartId));
+    const names: Record<string, string> = {};
+    for (const dataset of this.datasets()) names[dataset.id] = dataset.name;
+
+    // The list may have grown since the dashboard opened (a chart was made in the editor and we came back).
+    this.chartsApi.list(this.orgId()).subscribe({
+      next: (items) => {
+        this.charts.set(items);
+        this.dialog
+          .open<AddChartsDialogComponent, AddChartsDialogData, string[]>(AddChartsDialogComponent, {
+            data: { orgId: this.orgId(), charts: items.filter((c) => !placed.has(c.id)), datasetNames: names },
+            width: '30rem',
+            maxWidth: '95vw',
+          })
+          .afterClosed()
+          .subscribe((ids) => {
+            if (!ids || ids.length === 0) return;
+            this.save(d, { ...d.definition, widgets: [...d.definition.widgets, ...ids.map((chartId) => ({ id: NEW_ID, chartId }))] });
+          });
+      },
+      error: (e) => this.errors.set(problemMessages(e, 'Could not load the charts.')),
+    });
   }
 
   protected datasetName(id: string): string {

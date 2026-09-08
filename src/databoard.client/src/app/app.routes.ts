@@ -37,5 +37,11 @@ export const routes: Routes = [
     // The same page; it opens that dashboard in a tab (this is the address "Open dashboard" links to).
     loadComponent: () => import('./dashboards/dashboards.component').then((m) => m.DashboardsComponent),
   },
+  {
+    // "new" starts an empty chart; otherwise the chart with that id is opened.
+    path: 'organizations/:id/charts/:chartId',
+    canActivate: [authGuard],
+    loadComponent: () => import('./charts/chart-editor.component').then((m) => m.ChartEditorComponent),
+  },
   { path: '**', redirectTo: '' },
 ];

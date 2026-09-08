@@ -1,13 +1,18 @@
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { MatDialog } from '@angular/material/dialog';
 import { provideRouter } from '@angular/router';
+import { of } from 'rxjs';
 import { ECHARTS_LOADER } from '../charts/chart.component';
 import { DashboardComponent, parseFilterInput } from './dashboard.component';
 
 const ORG = '11111111-1111-1111-1111-111111111111';
 const DASH = '44444444-4444-4444-4444-444444444444';
 const DATASET = '33333333-3333-3333-3333-333333333333';
+const C_BAR = 'c0000000-0000-0000-0000-000000000001';
+const C_TABLE = 'c0000000-0000-0000-0000-000000000002';
+const C_SPARE = 'c0000000-0000-0000-0000-000000000003';
 const W_BAR = 'a0000000-0000-0000-0000-000000000001';
 const W_TABLE = 'a0000000-0000-0000-0000-000000000002';
 const F_REGION = 'b0000000-0000-0000-0000-000000000001';
@@ -19,13 +24,16 @@ const dashboard = (withFilter = true) => ({
   createdUtc: '2026-10-07T00:00:00Z',
   updatedUtc: '2026-10-07T00:00:00Z',
   definition: {
-    widgets: [
-      { id: W_BAR, title: 'Revenue by region', datasetId: DATASET, chartType: 'Bar', query: { measures: [{ aggregation: 'Count' }] } },
-      { id: W_TABLE, title: 'Orders', datasetId: DATASET, chartType: 'Table', query: { measures: [{ aggregation: 'Count' }] } },
-    ],
+    widgets: [{ id: W_BAR, chartId: C_BAR }, { id: W_TABLE, chartId: C_TABLE }],
     filters: withFilter ? [{ id: F_REGION, label: 'Region', column: 'region', operator: 'In' }] : [],
   },
 });
+
+const chart = (id: string, name: string, type: string) => ({
+  id, name, description: null, datasetId: DATASET, type, createdUtc: '', updatedUtc: '',
+  definition: { query: { measures: [{ aggregation: 'Count' }] }, style: { legend: true, labels: false, palette: 'default' } },
+});
+const charts = [chart(C_BAR, 'Revenue by region', 'Bar'), chart(C_TABLE, 'Orders', 'Table'), chart(C_SPARE, 'Spare', 'Pie')];
 
 const datasets = [
   {
@@ -61,8 +69,9 @@ describe('DashboardComponent', () => {
 
   const el = () => fixture.nativeElement as HTMLElement;
   const runUrl = `/api/organizations/${ORG}/dashboards/${DASH}/run`;
+  const dashboardUrl = `/api/organizations/${ORG}/dashboards/${DASH}`;
 
-  /** The page decides who may edit and passes it down, so the tests do the same. */
+  /** A dashboard on the right asks for the charts, the datasets and the dashboard itself. */
   const open = (role: 'Viewer' | 'Editor' | 'Owner') => {
     fixture.componentRef.setInput('orgId', ORG);
     fixture.componentRef.setInput('dashboardId', DASH);
@@ -72,8 +81,9 @@ describe('DashboardComponent', () => {
 
   const load = (role: 'Viewer' | 'Editor' | 'Owner', def = dashboard()) => {
     open(role);
+    http.expectOne(`/api/organizations/${ORG}/charts`).flush(charts);
     http.expectOne(`/api/organizations/${ORG}/datasets`).flush(datasets);
-    http.expectOne(`/api/organizations/${ORG}/dashboards/${DASH}`).flush(def);
+    http.expectOne(dashboardUrl).flush(def);
     fixture.detectChanges();
   };
 
@@ -103,7 +113,7 @@ describe('DashboardComponent', () => {
 
   afterEach(() => http.verify());
 
-  it('runs the dashboard on open and draws a chart or a table per widget', async () => {
+  it('runs the dashboard on open and draws each chart the way it was saved', () => {
     load('Viewer');
     const run = http.expectOne(runUrl);
     expect(run.request.body).toEqual({ filters: {} });
@@ -115,9 +125,17 @@ describe('DashboardComponent', () => {
     });
     fixture.detectChanges();
 
-    expect(el().querySelectorAll('app-chart').length).toBe(1);
+    expect(Array.from(el().querySelectorAll('.widget mat-card-title')).map((t) => t.textContent?.trim())).toEqual(['Revenue by region', 'Orders']);
+    expect(el().querySelectorAll('app-chart').length).toBe(1); // the bar chart
     const cells = Array.from(el().querySelectorAll('tbody td')).map((c) => c.textContent);
-    expect(cells).toEqual(['Auckland', '3', 'Dunedin', '1']);
+    expect(cells).toEqual(['Auckland', '3', 'Dunedin', '1']); // the table
+  });
+
+  it('shows the dataset each chart reads from', () => {
+    load('Viewer');
+    http.expectOne(runUrl).flush({ widgets: [] });
+
+    expect(el().querySelector('.widget mat-card-subtitle')?.textContent).toContain('Orders');
   });
 
   it('sends the filter values typed by the viewer when applying', () => {
@@ -141,7 +159,7 @@ describe('DashboardComponent', () => {
     expect((el().querySelector('input[aria-label="Region"]') as HTMLInputElement).value).toBe('');
   });
 
-  it('shows a widget error in place without hiding the other widgets', () => {
+  it('shows a chart error in place without hiding the other charts', () => {
     load('Viewer');
     http.expectOne(runUrl).flush({
       widgets: [
@@ -155,6 +173,18 @@ describe('DashboardComponent', () => {
     expect(el().querySelectorAll('tbody td').length).toBe(2);
   });
 
+  it('says so when a chart on the dashboard no longer exists', () => {
+    open('Editor');
+    http.expectOne(`/api/organizations/${ORG}/charts`).flush([charts[1]]); // the bar chart is gone
+    http.expectOne(`/api/organizations/${ORG}/datasets`).flush(datasets);
+    http.expectOne(dashboardUrl).flush(dashboard());
+    http.expectOne(runUrl).flush({ widgets: [] });
+    fixture.detectChanges();
+
+    expect(el().textContent).toContain('Chart not found');
+    expect(el().textContent).toContain('This chart was deleted.');
+  });
+
   it('hides editing controls from viewers', () => {
     load('Viewer');
     http.expectOne(runUrl).flush({ widgets: [] });
@@ -162,22 +192,73 @@ describe('DashboardComponent', () => {
     const buttons = Array.from(el().querySelectorAll('button')).map((b) => b.textContent?.trim());
     expect(buttons).toEqual(['Apply filters', 'Clear']);
     expect(el().textContent).not.toContain('Add a shared filter');
+    expect(el().querySelector('.widget a')).toBeNull(); // no "Edit chart"
   });
 
-  it('lets editors remove a widget by saving the dashboard without it', () => {
+  it('lets editors remove a chart from the dashboard by saving it without that widget', () => {
     load('Editor');
     http.expectOne(runUrl).flush({ widgets: [] });
 
-    (Array.from(el().querySelectorAll('button')).find((b) => b.textContent?.trim() === 'Remove') as HTMLButtonElement).click();
-    const put = http.expectOne({ method: 'PUT', url: `/api/organizations/${ORG}/dashboards/${DASH}` });
+    (el().querySelector('button.remove-widget') as HTMLButtonElement).click();
+    const put = http.expectOne({ method: 'PUT', url: dashboardUrl });
     expect(put.request.body.name).toBe('Sales overview');
-    expect(put.request.body.definition.widgets.map((w: { id: string }) => w.id)).toEqual([W_TABLE]);
+    expect(put.request.body.definition.widgets).toEqual([{ id: W_TABLE, chartId: C_TABLE }]);
     expect(put.request.body.definition.filters.length).toBe(1);
 
     const saved = dashboard();
     saved.definition.widgets = saved.definition.widgets.slice(1);
     put.flush(saved);
     http.expectOne(runUrl).flush({ widgets: [] });
+  });
+
+  it('links each chart to the chart editor for editors', () => {
+    load('Editor');
+    http.expectOne(runUrl).flush({ widgets: [] });
+
+    const links = Array.from(el().querySelectorAll('.widget a')).map((a) => a.getAttribute('href'));
+    expect(links).toEqual([`/organizations/${ORG}/charts/${C_BAR}`, `/organizations/${ORG}/charts/${C_TABLE}`]);
+  });
+
+  it('offers only the charts that are not on the dashboard yet, and adds the chosen ones', () => {
+    load('Editor');
+    http.expectOne(runUrl).flush({ widgets: [] });
+    const open = vi.spyOn(TestBed.inject(MatDialog), 'open').mockReturnValue({ afterClosed: () => of([C_SPARE]) } as never);
+
+    buttonByText('Add chart').click();
+    http.expectOne(`/api/organizations/${ORG}/charts`).flush(charts); // the list is refreshed when the dialog opens
+
+    const data = (open.mock.calls[0][1] as { data: { charts: { id: string }[]; orgId: string } }).data;
+    expect(data.orgId).toBe(ORG);
+    expect(data.charts.map((c) => c.id)).toEqual([C_SPARE]);
+
+    const put = http.expectOne({ method: 'PUT', url: dashboardUrl });
+    expect(put.request.body.definition.widgets).toEqual([
+      { id: W_BAR, chartId: C_BAR },
+      { id: W_TABLE, chartId: C_TABLE },
+      { id: '00000000-0000-0000-0000-000000000000', chartId: C_SPARE },
+    ]);
+    put.flush(dashboard());
+    http.expectOne(runUrl).flush({ widgets: [] });
+  });
+
+  it('does nothing when the add chart dialog is cancelled', () => {
+    load('Editor');
+    http.expectOne(runUrl).flush({ widgets: [] });
+    vi.spyOn(TestBed.inject(MatDialog), 'open').mockReturnValue({ afterClosed: () => of(undefined) } as never);
+
+    buttonByText('Add chart').click();
+    http.expectOne(`/api/organizations/${ORG}/charts`).flush(charts);
+
+    http.expectNone({ method: 'PUT', url: dashboardUrl });
+  });
+
+  it('tells editors of an empty dashboard how to put charts on it', () => {
+    load('Editor', { ...dashboard(), definition: { widgets: [], filters: [] } });
+    http.expectOne(runUrl).flush({ widgets: [] });
+
+    expect(el().textContent).toContain('This dashboard has no charts yet.');
+    const link = Array.from(el().querySelectorAll('a')).find((a) => a.textContent?.includes('create a new chart'));
+    expect(link?.getAttribute('href')).toBe(`/organizations/${ORG}/charts/new`);
   });
 
   it('lets editors add a shared filter on a column of the organization datasets', () => {
@@ -194,7 +275,7 @@ describe('DashboardComponent', () => {
     fixture.detectChanges();
     (el().querySelector('form button[type=submit]') as HTMLButtonElement).click();
 
-    const put = http.expectOne({ method: 'PUT', url: `/api/organizations/${ORG}/dashboards/${DASH}` });
+    const put = http.expectOne({ method: 'PUT', url: dashboardUrl });
     expect(put.request.body.definition.filters).toEqual([
       { id: '00000000-0000-0000-0000-000000000000', label: 'Region', column: 'region', operator: 'In' },
     ]);
@@ -204,9 +285,9 @@ describe('DashboardComponent', () => {
 
   it('shows the API message when the dashboard cannot be loaded', () => {
     open('Viewer');
+    http.expectOne(`/api/organizations/${ORG}/charts`).flush(charts);
     http.expectOne(`/api/organizations/${ORG}/datasets`).flush(datasets);
-    http.expectOne(`/api/organizations/${ORG}/dashboards/${DASH}`).flush(
-      { title: 'Not found', detail: 'Dashboard not found.' }, { status: 404, statusText: 'Not Found' });
+    http.expectOne(dashboardUrl).flush({ title: 'Not found', detail: 'Dashboard not found.' }, { status: 404, statusText: 'Not Found' });
     fixture.detectChanges();
 
     expect(el().querySelector('[role=alert]')).not.toBeNull();
@@ -218,10 +299,10 @@ describe('DashboardComponent', () => {
     const changed: { definition: { widgets: unknown[] } }[] = [];
     fixture.componentInstance.changed.subscribe((d) => changed.push(d));
 
-    (Array.from(el().querySelectorAll('button')).find((b) => b.textContent?.trim() === 'Remove') as HTMLButtonElement).click();
+    (el().querySelector('button.remove-widget') as HTMLButtonElement).click();
     const saved = dashboard();
     saved.definition.widgets = saved.definition.widgets.slice(1);
-    http.expectOne({ method: 'PUT', url: `/api/organizations/${ORG}/dashboards/${DASH}` }).flush(saved);
+    http.expectOne({ method: 'PUT', url: dashboardUrl }).flush(saved);
     http.expectOne(runUrl).flush({ widgets: [] });
 
     expect(changed.length).toBe(1);
@@ -236,11 +317,11 @@ describe('DashboardComponent', () => {
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
 
     buttonByText('Delete dashboard').click();
-    http.expectNone({ method: 'DELETE', url: `/api/organizations/${ORG}/dashboards/${DASH}` });
+    http.expectNone({ method: 'DELETE', url: dashboardUrl });
 
     confirmSpy.mockReturnValue(true);
     buttonByText('Delete dashboard').click();
-    http.expectOne({ method: 'DELETE', url: `/api/organizations/${ORG}/dashboards/${DASH}` }).flush(null, { status: 204, statusText: 'No Content' });
+    http.expectOne({ method: 'DELETE', url: dashboardUrl }).flush(null, { status: 204, statusText: 'No Content' });
 
     expect(deleted).toEqual([DASH]);
   });
