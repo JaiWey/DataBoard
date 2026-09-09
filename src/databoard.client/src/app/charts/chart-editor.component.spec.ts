@@ -442,7 +442,7 @@ describe('ChartEditorComponent', () => {
     saveButton().click();
 
     const req = http.expectOne({ method: 'POST', url: `/api/organizations/${ORG}/charts` });
-    expect(req.request.body.definition.style).toEqual({ legend: false, labels: true, palette: 'cool' });
+    expect(req.request.body.definition.style).toEqual({ legend: false, labels: true, palette: 'cool', stack: false });
     req.flush({ ...saved(), id: 'new-id' });
   });
 
@@ -472,7 +472,7 @@ describe('ChartEditorComponent', () => {
           dimensions: [{ column: 'region', alias: 'region' }],
           measures: [{ aggregation: 'Sum', column: 'price', alias: 'sum_price' }],
         },
-        style: { legend: true, labels: false, palette: 'default' },
+        style: { legend: true, labels: false, palette: 'default', stack: false },
       },
     });
     req.flush({ ...saved(), id: 'c9' });
@@ -508,7 +508,7 @@ describe('ChartEditorComponent', () => {
     const req = http.expectOne({ method: 'PUT', url: `/api/organizations/${ORG}/charts/c1` });
     expect(req.request.body.name).toBe('Revenue (2026)');
     expect(req.request.body.definition.query.limit).toBe(20);
-    expect(req.request.body.definition.style).toEqual({ legend: false, labels: true, palette: 'warm' });
+    expect(req.request.body.definition.style).toEqual({ legend: false, labels: true, palette: 'warm', stack: false });
     req.flush(saved());
     fixture.detectChanges();
 
@@ -589,5 +589,78 @@ describe('ChartEditorComponent', () => {
     fixture.detectChanges();
 
     expect(el().querySelector('.notice[role=alert]')?.textContent).toContain('Chart not found.');
+  });
+
+  // ---- several series ----
+
+  it('names the first dimension the X-axis and the next ones the series, for charts that have an axis', () => {
+    open();
+    click('Add region');
+    click('Add ordered_on');
+
+    expect(Array.from(el().querySelectorAll('#zone-dimensions .role')).map((r) => r.textContent)).toEqual(['X-axis', 'Series']);
+    expect(el().textContent).toContain('Add a second one to draw one series per value');
+  });
+
+  it('does not talk about axes for a table, a number or a pie', () => {
+    open();
+    click('Add region');
+
+    for (const type of ['Table', 'Number', 'Pie', 'Donut']) {
+      click(type);
+      expect(el().querySelector('#zone-dimensions .role')).toBeNull();
+      expect(el().querySelector('.zone-hint')).toBeNull();
+    }
+  });
+
+  it('keeps a stack choice only for charts that can stack, and saves it', () => {
+    open();
+    click('Add region');
+    click('Add price');
+    typeInto('Chart name', 'Revenue');
+    openTab(1);
+    const stack = () => el().querySelector('mat-checkbox:nth-of-type(3) input') as HTMLInputElement;
+    expect(Array.from(el().querySelectorAll('mat-checkbox')).map((c) => c.textContent?.trim())).toContain('Stack series');
+    expect(stack().disabled).toBe(false);
+
+    stack().click();
+    fixture.detectChanges();
+    vi.advanceTimersByTime(300);
+    http.expectOne({ method: 'POST', url: queryUrl() }).flush(result());
+    saveButton().click();
+
+    const req = http.expectOne({ method: 'POST', url: `/api/organizations/${ORG}/charts` });
+    expect(req.request.body.definition.style.stack).toBe(true);
+    req.flush({ ...saved(), id: 'c7' });
+  });
+
+  it('offers a series limit once there are two dimensions on an axis chart, and sends it', () => {
+    open();
+    click('Add region');
+    click('Add price');
+    openTab(2);
+    expect(byLabel('Series limit')).toBeNull();
+
+    click('Add ordered_on');
+    expect(byLabel('Series limit')).not.toBeNull();
+    http.match({ method: 'POST', url: queryUrl() });
+
+    typeInto('Series limit', '5');
+    vi.advanceTimersByTime(300);
+    const req = http.expectOne({ method: 'POST', url: queryUrl() });
+    expect(req.request.body.seriesLimit).toBe(5);
+    req.flush(result());
+  });
+
+  it('disables stacking for a pie', () => {
+    open();
+    click('Add region');
+    click('Add price');
+    click('Pie');
+    openTab(1);
+
+    const box = Array.from(el().querySelectorAll('mat-checkbox')).find((c) => c.textContent?.includes('Stack series'))!.querySelector('input') as HTMLInputElement;
+    expect(box.disabled).toBe(true);
+    preview();
   });
 });

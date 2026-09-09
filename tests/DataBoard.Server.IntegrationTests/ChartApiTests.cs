@@ -68,7 +68,7 @@ public class ChartApiTests(ApiFactory factory)
         var f = await NewFixtureAsync();
 
         var created = await ReadAsync(await f.Owner.PostAsJsonAsync(Url(f.Org),
-            Revenue(f.Orders, style: new { legend = false, labels = true, palette = "warm" })));
+            Revenue(f.Orders, style: new { legend = false, labels = true, palette = "warm", stack = true })));
 
         Assert.Equal("Bar", created.GetProperty("type").GetString());
         Assert.Equal(f.Orders, created.GetProperty("datasetId").GetGuid());
@@ -78,6 +78,7 @@ public class ChartApiTests(ApiFactory factory)
         Assert.False(definition.GetProperty("style").GetProperty("legend").GetBoolean());
         Assert.True(definition.GetProperty("style").GetProperty("labels").GetBoolean());
         Assert.Equal("warm", definition.GetProperty("style").GetProperty("palette").GetString());
+        Assert.True(definition.GetProperty("style").GetProperty("stack").GetBoolean());
 
         var id = created.GetProperty("id").GetGuid();
         var fetched = await ReadAsync(await f.Owner.GetAsync(Url(f.Org, $"/{id}")));
@@ -115,6 +116,7 @@ public class ChartApiTests(ApiFactory factory)
         Assert.True(style.GetProperty("legend").GetBoolean());
         Assert.False(style.GetProperty("labels").GetBoolean());
         Assert.Equal("default", style.GetProperty("palette").GetString());
+        Assert.False(style.GetProperty("stack").GetBoolean());
     }
 
     [Fact]

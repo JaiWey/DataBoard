@@ -15,6 +15,8 @@ namespace DataBoard.Infrastructure.DataSources;
 internal sealed class PostgresChartSqlRenderer : IChartSqlRenderer
 {
     private const string DatasetAlias = "databoard_dataset";
+    private const string BaseAlias = "databoard_base";
+    private const string TopAlias = "databoard_top_series";
 
     public DataSourceType Type => DataSourceType.PostgreSql;
 
@@ -32,6 +34,10 @@ internal sealed class PostgresChartSqlRenderer : IChartSqlRenderer
             .Concat(plan.Measures.Select(m => $"{MeasureExpression(m)} AS {Quote(m.Alias)}"));
 
         var sql = new StringBuilder();
+        // With a series limit the grouped query becomes a CTE, so the top series can be picked from its rows.
+        var limitSeries = plan.SeriesLimit is not null && plan.Dimensions.Count >= 2 && plan.Measures.Count > 0;
+        if (limitSeries) sql.Append("WITH ").Append(Quote(BaseAlias)).Append(" AS (\n");
+
         sql.Append("SELECT ").AppendJoin(", ", select);
         // The dataset's SQL goes in verbatim, on its own lines so a trailing "-- comment" cannot swallow the parenthesis.
         sql.Append("\nFROM (\n").Append(datasetSql).Append("\n) AS ").Append(Quote(DatasetAlias));
@@ -47,6 +53,20 @@ internal sealed class PostgresChartSqlRenderer : IChartSqlRenderer
             .Select(f => Condition(MeasureExpression(f.Measure), f.Operator, f.Values.Cast<object>().ToList(), Bind)).ToList();
         if (having.Count > 0)
             sql.Append("\nHAVING ").AppendJoin(" AND ", having);
+
+        if (limitSeries)
+        {
+            // The series is the second dimension. Series are ranked by their total of the first measure; a NULL
+            // series is still a series, hence IS NOT DISTINCT FROM. The outer SELECT lists the same columns in the
+            // same order, so the ORDER BY positions below still apply.
+            var series = Quote(plan.Dimensions[1].Alias);
+            sql.Append("\n), ").Append(Quote(TopAlias)).Append(" AS (\n")
+                .Append("SELECT ").Append(series).Append(" FROM ").Append(Quote(BaseAlias))
+                .Append(" GROUP BY 1 ORDER BY SUM(").Append(Quote(plan.Measures[0].Alias)).Append(") DESC NULLS LAST, 1")
+                .Append(" LIMIT ").Append(plan.SeriesLimit)
+                .Append("\n)\nSELECT b.* FROM ").Append(Quote(BaseAlias)).Append(" AS b WHERE EXISTS (SELECT 1 FROM ")
+                .Append(Quote(TopAlias)).Append(" AS t WHERE t.").Append(series).Append(" IS NOT DISTINCT FROM b.").Append(series).Append(')');
+        }
 
         if (plan.OrderBy.Count > 0)
         {

@@ -22,6 +22,7 @@ public static partial class ChartQueryPlanner
     public const int MaxPatternLength = 200;
     public const int DefaultLimit = 100;
     public const int MaxLimit = 1_000;
+    public const int MaxSeriesLimit = 100;
     public const int MaxAliasLength = 63; // PostgreSQL silently cuts longer identifiers, which could make two aliases collide
 
     [GeneratedRegex("^[A-Za-z_][A-Za-z0-9_]{0,62}$")]
@@ -196,8 +197,19 @@ public static partial class ChartQueryPlanner
         if (limit < 1 || limit > MaxLimit)
             errors.Add("Limit", $"Limit must be between 1 and {MaxLimit}.");
 
+        // The series is the second dimension; the series are ranked by the first measure, so it has to be a number.
+        if (query.SeriesLimit is { } seriesLimit)
+        {
+            if (seriesLimit < 1 || seriesLimit > MaxSeriesLimit)
+                errors.Add("SeriesLimit", $"The series limit must be between 1 and {MaxSeriesLimit}.");
+            else if (dimensions.Count < 2)
+                errors.Add("SeriesLimit", "A series limit needs a second dimension to split the chart into series.");
+            else if (measures.Count == 0 || !IsNumericResult(measures[0], byName))
+                errors.Add("SeriesLimit", "A series limit ranks the series by the first measure, which has to be a number.");
+        }
+
         errors.ThrowIfAny();
-        return new ChartQueryPlan(dimensions, measures, filters, measureFilters, orders, limit);
+        return new ChartQueryPlan(dimensions, measures, filters, measureFilters, orders, limit, query.SeriesLimit);
     }
 
     // ---- helpers ---------------------------------------------------------------------------------------------

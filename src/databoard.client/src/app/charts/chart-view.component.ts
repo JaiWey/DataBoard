@@ -30,7 +30,7 @@ import { ChartType } from './charts.service';
         <span class="caption">{{ numberCaption() }}</span>
       </div>
     } @else {
-      <app-chart [kind]="kind()" [result]="result()" [chartStyle]="chartStyle()" [label]="label()" />
+      <app-chart [kind]="kind()" [result]="result()" [chartStyle]="chartStyle()" [dimensions]="dimensions()" [label]="label()" />
     }
   `,
   styles: `
@@ -45,6 +45,8 @@ export class ChartViewComponent {
   readonly type = input.required<ChartType>();
   readonly result = input.required<ResultShape>();
   readonly chartStyle = input<ChartStyleOptions>({});
+  /** How many leading result columns are dimensions (the query's dimension count); see `buildChartOption`. */
+  readonly dimensions = input<number | undefined>(undefined);
   /** Text alternative announced by screen readers. */
   readonly label = input('Chart');
 

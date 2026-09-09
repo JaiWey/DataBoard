@@ -118,6 +118,15 @@ describe('toQuery', () => {
     ]);
   });
 
+  it('sends a series limit only for a chart with an axis and a second dimension', () => {
+    const two = { dimensions: [dimensionFor(ordered), dimensionFor(region)], metrics: [metricFor(price)], seriesLimit: 5 };
+
+    expect(toQuery(state({ ...two, type: 'Line' })).seriesLimit).toBe(5);
+    expect(toQuery(state({ ...two, type: 'Pie' })).seriesLimit).toBeUndefined();
+    expect(toQuery(state({ ...two, type: 'Line', dimensions: [dimensionFor(ordered)] })).seriesLimit).toBeUndefined();
+    expect(toQuery(state({ ...two, type: 'Line', seriesLimit: null })).seriesLimit).toBeUndefined();
+  });
+
   it('skips filters that were added but not filled in yet', () => {
     const query = toQuery(state({ metrics: [rowCountMetric()], filters: [{ ...filterFor(region), value: '  ' }] }));
 
@@ -133,7 +142,7 @@ describe('toSaveChart', () => {
     expect(save.description).toBeNull();
     expect(save.type).toBe('Donut');
     expect(save.datasetId).toBe('ds-1');
-    expect(save.definition.style).toEqual({ legend: true, labels: false, palette: 'default' });
+    expect(save.definition.style).toEqual({ legend: true, labels: false, palette: 'default', stack: false });
   });
 });
 
@@ -142,7 +151,7 @@ describe('fromChart', () => {
     id: 'c1', name: 'Revenue', description: 'Per region', datasetId: 'ds-1', type: 'Line',
     createdUtc: '', updatedUtc: '',
     definition: {
-      style: { legend: false, labels: true, palette: 'cool' },
+      style: { legend: false, labels: true, palette: 'cool', stack: false },
       query: {
         dimensions: [{ column: 'region', alias: 'region', grain: null }, { column: 'ordered_on', alias: 'ordered_on', grain: 'Year' }],
         measures: [{ aggregation: 'Sum', column: 'price', alias: 'sum_price' }, { aggregation: 'Count', column: null, alias: 'count' }],
@@ -164,7 +173,15 @@ describe('fromChart', () => {
     expect(s.sortBy).toBe('count');
     expect(s.sortDirection).toBe('Asc');
     expect(s.limit).toBe(50);
-    expect(s.style).toEqual({ legend: false, labels: true, palette: 'cool' });
+    expect(s.style).toEqual({ legend: false, labels: true, palette: 'cool', stack: false });
+  });
+
+  it('brings back the series limit', () => {
+    const chart = saved();
+    chart.definition.query.seriesLimit = 7;
+
+    expect(fromChart(chart, dataset()).seriesLimit).toBe(7);
+    expect(toQuery(fromChart(chart, dataset())).seriesLimit).toBe(7);
   });
 
   it('round-trips: saving what was loaded gives the same query', () => {
@@ -200,7 +217,7 @@ describe('fromChart', () => {
     const chart = saved();
     (chart.definition as { style: unknown }).style = {};
 
-    expect(fromChart(chart, dataset()).style).toEqual({ legend: true, labels: false, palette: 'default' });
+    expect(fromChart(chart, dataset()).style).toEqual({ legend: true, labels: false, palette: 'default', stack: false });
   });
 });
 
@@ -242,5 +259,14 @@ describe('problemsOf', () => {
     expect(problemsOf({ ...s, limit: 0 })).toHaveLength(1);
     expect(problemsOf({ ...s, limit: 1001 })).toHaveLength(1);
     expect(problemsOf({ ...s, limit: 2.5 })).toHaveLength(1);
+  });
+
+  it('keeps the series limit within what the server accepts', () => {
+    const s = state({ metrics: [rowCountMetric()] });
+
+    expect(problemsOf({ ...s, seriesLimit: 100 })).toEqual([]);
+    expect(problemsOf({ ...s, seriesLimit: 0 })).toHaveLength(1);
+    expect(problemsOf({ ...s, seriesLimit: 101 })).toHaveLength(1);
+    expect(problemsOf({ ...s, seriesLimit: 1.5 })).toHaveLength(1);
   });
 });

@@ -94,7 +94,8 @@ export function parseFilterInput(operator: SharedFilterOperator, text: string): 
                   @if (r.error) {
                     <p class="fail" role="alert">{{ r.error }}</p>
                   } @else if (r.result; as result) {
-                    <app-chart-view [type]="chart.type" [result]="result" [chartStyle]="chart.definition.style" [label]="chart.name" />
+                    <app-chart-view [type]="chart.type" [result]="result" [chartStyle]="chart.definition.style"
+                                    [dimensions]="chart.definition.query.dimensions?.length ?? 0" [label]="chart.name" />
                     @if (result.truncated) { <p><small>Showing the first {{ result.rows.length }} rows.</small></p> }
                   }
                 } @else {

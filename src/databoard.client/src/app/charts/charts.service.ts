@@ -23,9 +23,11 @@ export interface ChartStyle {
   legend: boolean;
   labels: boolean;
   palette: string;
+  /** Series are piled on top of each other (bars, lines and areas). */
+  stack: boolean;
 }
 
-export const defaultChartStyle = (): ChartStyle => ({ legend: true, labels: false, palette: 'default' });
+export const defaultChartStyle = (): ChartStyle => ({ legend: true, labels: false, palette: 'default', stack: false });
 
 /** The stored part of a chart: its query (row limit and sorting included) and style. */
 export interface ChartDefinition {

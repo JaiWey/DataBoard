@@ -16,6 +16,8 @@ export interface ChartQuery {
   /** Sorts by a name in the result (a dimension or metric alias). */
   orderBy?: { field: string; direction: 'Asc' | 'Desc' }[] | null;
   limit?: number | null;
+  /** Keeps only this many series (the second dimension), ranked by the first metric's total. */
+  seriesLimit?: number | null;
 }
 
 export interface ChartResult extends QueryPreview {

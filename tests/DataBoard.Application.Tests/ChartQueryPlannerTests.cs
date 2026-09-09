@@ -326,6 +326,35 @@ public class ChartQueryPlannerTests
     public void Limits_inside_the_range_are_accepted(int limit) =>
         Assert.Equal(limit, Plan(new ChartQuery(Measures: [new(Aggregation.Count)], Limit: limit)).Limit);
 
+    private static ChartQuery Series(int? seriesLimit, int dimensions = 2, string measureColumn = "quantity", Aggregation aggregation = Aggregation.Sum) =>
+        new(
+            Dimensions: new DimensionSpec[] { new("region"), new("product"), new("paid") }.Take(dimensions).ToList(),
+            Measures: [new MeasureSpec(aggregation, measureColumn)],
+            SeriesLimit: seriesLimit);
+
+    [Fact]
+    public void A_series_limit_is_carried_into_the_plan() =>
+        Assert.Equal(5, Plan(Series(5)).SeriesLimit);
+
+    [Fact]
+    public void Without_a_series_limit_the_plan_has_none() =>
+        Assert.Null(Plan(Series(null)).SeriesLimit);
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-3)]
+    [InlineData(ChartQueryPlanner.MaxSeriesLimit + 1)]
+    public void A_series_limit_outside_the_allowed_range_is_rejected(int seriesLimit) =>
+        Assert.Contains("SeriesLimit", Rejects(Series(seriesLimit)).Errors.Keys);
+
+    [Fact]
+    public void A_series_limit_needs_a_second_dimension() =>
+        Assert.Contains("SeriesLimit", Rejects(Series(5, dimensions: 1)).Errors.Keys);
+
+    [Fact]
+    public void A_series_limit_needs_the_first_measure_to_be_a_number() =>
+        Assert.Contains("SeriesLimit", Rejects(Series(5, measureColumn: "region", aggregation: Aggregation.Max)).Errors.Keys);
+
     [Fact]
     public void Every_problem_is_reported_at_once_with_its_location()
     {

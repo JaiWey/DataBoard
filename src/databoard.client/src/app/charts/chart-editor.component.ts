@@ -23,6 +23,7 @@ import {
   fieldBadge,
   filterFor,
   fromChart,
+  isAxisType,
   metricFor,
   problemsOf,
   resultNames,
@@ -106,9 +107,13 @@ interface Organization {
           <mat-tab label="Data">
             <div class="tab">
               <h3>Dimensions</h3>
+              @if (axisChart()) {
+                <p class="zone-hint">The first dimension is the X-axis. Add a second one to draw one series per value, like one line per name.</p>
+              }
               <div cdkDropList id="zone-dimensions" class="zone" (cdkDropListDropped)="dropped('dimensions', $event)">
                 @for (item of state().dimensions; track $index) {
                   <div cdkDrag class="item dimension">
+                    @if (axisChart()) { <span class="role">{{ $index === 0 ? 'X-axis' : 'Series' }}</span> }
                     <span class="item-name">{{ item.column }}</span>
                     @if (isDate(item.dataType)) {
                       <select class="small" [attr.aria-label]="'Group ' + item.column + ' by'" (change)="setGrain($index, $any($event.target).value)">
@@ -166,6 +171,7 @@ interface Organization {
             <div class="tab">
               <mat-checkbox [checked]="state().style.legend" (change)="patchStyle({ legend: $event.checked })">Show legend</mat-checkbox>
               <mat-checkbox [checked]="state().style.labels" (change)="patchStyle({ labels: $event.checked })">Show value labels</mat-checkbox>
+              <mat-checkbox [checked]="state().style.stack" [disabled]="!axisChart()" (change)="patchStyle({ stack: $event.checked })">Stack series</mat-checkbox>
               <label class="row">
                 <span>Colours</span>
                 <select aria-label="Colour palette" (change)="patchStyle({ palette: $any($event.target).value })">
@@ -182,6 +188,14 @@ interface Organization {
                 <input type="number" min="1" max="1000" aria-label="Row limit" placeholder="100" [value]="state().limit ?? ''"
                        (input)="setLimit($any($event.target).value)" />
               </label>
+              @if (axisChart() && state().dimensions.length >= 2) {
+                <label class="row">
+                  <span>Series limit</span>
+                  <input type="number" min="1" max="100" aria-label="Series limit" placeholder="All series" [value]="state().seriesLimit ?? ''"
+                         (input)="setSeriesLimit($any($event.target).value)" />
+                </label>
+                <p class="zone-hint">Keeps the series with the largest total of the first metric.</p>
+              }
               <label class="row">
                 <span>Sort by</span>
                 <select aria-label="Sort by" (change)="patch({ sortBy: $any($event.target).value })">
@@ -240,7 +254,8 @@ interface Organization {
             @switch (view()) {
               @case ('sql') { <pre class="sql">{{ r.sql }}</pre> }
               @case ('table') { <app-chart-view type="Table" [result]="r" label="Result table" /> }
-              @default { <app-chart-view [type]="state().type" [result]="r" [chartStyle]="state().style" [label]="state().name || 'Chart preview'" /> }
+              @default { <app-chart-view [type]="state().type" [result]="r" [chartStyle]="state().style"
+                                              [dimensions]="state().dimensions.length" [label]="state().name || 'Chart preview'" /> }
             }
             @if (r.truncated) { <p class="hint"><small>Showing the first {{ r.rows.length }} rows.</small></p> }
           } @else if (previewing()) {
@@ -276,6 +291,8 @@ interface Organization {
     mat-tab-group { min-width: 0; }
     .zone { min-width: 0; min-height: 3.2rem; display: grid; gap: 0.35rem; padding: 0.4rem; background: var(--mat-sys-surface-container); border-radius: 6px; align-content: start; }
     .zone.cdk-drop-list-dragging, .zone.cdk-drop-list-receiving { outline: 2px dashed var(--mat-sys-primary); }
+    .zone-hint { margin: 0; font: var(--mat-sys-body-small); color: var(--mat-sys-on-surface-variant); }
+    .role { font: var(--mat-sys-label-small); color: var(--mat-sys-primary); min-width: 3.2rem; }
     .drop-hint { margin: 0.6rem 0; text-align: center; color: var(--mat-sys-on-surface-variant); }
     .item { min-width: 0; display: flex; align-items: center; gap: 0.4rem; padding: 0.3rem 0.5rem; background: #fff; border: 1px solid var(--mat-sys-outline-variant); border-radius: 4px; }
     .item-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -323,6 +340,8 @@ export class ChartEditorComponent implements OnInit {
   protected readonly operators = FILTER_OPERATORS;
   protected readonly grains = TIME_GRAINS;
 
+  /** Charts with an X axis (not a table, number or round chart): the ones where a second dimension makes series. */
+  protected readonly axisChart = computed(() => isAxisType(this.state().type));
   protected readonly problems = computed(() => problemsOf(this.state()));
   protected readonly dirty = computed(() => JSON.stringify(toSaveChart(this.state())) !== this.savedJson());
   protected readonly canSave = computed(() => this.canEdit() && !this.saving() && problemsOf(this.state(), { forSave: true }).length === 0);
@@ -489,6 +508,10 @@ export class ChartEditorComponent implements OnInit {
 
   protected setFilterValue(index: number, value: string): void {
     this.patch({ filters: this.state().filters.map((f, i) => (i === index ? { ...f, value } : f)) });
+  }
+
+  protected setSeriesLimit(text: string): void {
+    this.patch({ seriesLimit: text.trim() === '' ? null : Number(text) });
   }
 
   protected setLimit(text: string): void {

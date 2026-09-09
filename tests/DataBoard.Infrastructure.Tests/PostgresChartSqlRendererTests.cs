@@ -11,8 +11,8 @@ public class PostgresChartSqlRendererTests
 
     private static ChartQueryPlan Plan(
         PlannedDimension[]? dims = null, PlannedMeasure[]? measures = null, PlannedFilter[]? filters = null,
-        PlannedMeasureFilter[]? having = null, PlannedOrder[]? order = null, int limit = 100) =>
-        new(dims ?? [], measures ?? [], filters ?? [], having ?? [], order ?? [], limit);
+        PlannedMeasureFilter[]? having = null, PlannedOrder[]? order = null, int limit = 100, int? seriesLimit = null) =>
+        new(dims ?? [], measures ?? [], filters ?? [], having ?? [], order ?? [], limit, seriesLimit);
 
     private static PlannedDimension Dim(string column, string type = "text", TimeGrain? grain = null, string? alias = null) =>
         new(column, type, grain, alias ?? column);
@@ -50,6 +50,40 @@ public class PostgresChartSqlRendererTests
             query.Sql);
         Assert.Equal(new object[] { "Auckland", "Wellington", 3m, 1000m }, query.Parameters);
     }
+
+    [Fact]
+    public void A_series_limit_keeps_only_the_top_series_by_the_first_measure()
+    {
+        var plan = Plan(
+            dims: [Dim("at", "date", TimeGrain.Month, "month"), Dim("region")],
+            measures: [Measure(Aggregation.Sum, "price", "revenue")],
+            filters: [new("quantity", FilterOperator.Gte, [3m])],
+            order: [new(1, SortDirection.Asc)],
+            limit: 10,
+            seriesLimit: 5);
+
+        var query = _renderer.Render(Dataset, plan);
+
+        Assert.Equal(
+            "WITH \"databoard_base\" AS (\n" +
+            "SELECT date_trunc('month', \"at\"::timestamp) AS \"month\", \"region\" AS \"region\", SUM(\"price\") AS \"revenue\"\n" +
+            "FROM (\nSELECT * FROM sales\n) AS \"databoard_dataset\"\n" +
+            "WHERE \"quantity\" >= @databoard_p0\n" +
+            "GROUP BY 1, 2\n" +
+            "), \"databoard_top_series\" AS (\n" +
+            "SELECT \"region\" FROM \"databoard_base\" GROUP BY 1 ORDER BY SUM(\"revenue\") DESC NULLS LAST, 1 LIMIT 5\n" +
+            ")\n" +
+            "SELECT b.* FROM \"databoard_base\" AS b WHERE EXISTS (SELECT 1 FROM \"databoard_top_series\" AS t WHERE t.\"region\" IS NOT DISTINCT FROM b.\"region\")\n" +
+            "ORDER BY 1 ASC\n" +
+            "LIMIT 11",
+            query.Sql);
+        Assert.Equal(new object[] { 3m }, query.Parameters);
+    }
+
+    [Fact]
+    public void Without_a_series_limit_there_is_no_cte() =>
+        Assert.DoesNotContain("WITH", _renderer.Render(Dataset,
+            Plan(dims: [Dim("a"), Dim("b")], measures: [Measure(Aggregation.Count, null, "n")])).Sql);
 
     [Fact]
     public void Only_measures_means_no_group_by_and_no_where_or_having()

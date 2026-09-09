@@ -303,6 +303,41 @@ public class ChartQueryApiTests(ApiFactory factory)
         Assert.True(result.Truncated);
     }
 
+    [Fact]
+    public async Task A_series_limit_keeps_the_biggest_series_and_breaks_ties_by_name()
+    {
+        var f = await NewFixtureAsync();
+        object Query(int seriesLimit) => new
+        {
+            dimensions = new[] { new { column = "product" }, new { column = "region" } },
+            measures = new object[] { new { aggregation = "Count", alias = "n" } },
+            seriesLimit,
+        };
+
+        var top2 = await RunAsync(f.Owner, f, Query(2));
+        var all = await RunAsync(f.Owner, f, Query(10));
+
+        // Auckland has 3 orders; Wellington and Christchurch tie on 2, and Christchurch comes first alphabetically.
+        Assert.Equal(["Auckland", "Christchurch"], top2.Rows.Select(r => r[1].GetString()).Distinct().Order());
+        Assert.Equal(["Auckland", "Christchurch", "Dunedin", "Wellington"], all.Rows.Select(r => r[1].GetString()).Distinct().Order());
+        Assert.Equal(5, top2.Rows.Sum(r => r[2].GetInt64()));
+    }
+
+    [Fact]
+    public async Task A_series_limit_without_a_second_dimension_is_rejected()
+    {
+        var f = await NewFixtureAsync();
+
+        var response = await QueryAsync(f.Owner, f, new
+        {
+            dimensions = new[] { new { column = "region" } },
+            measures = new object[] { new { aggregation = "Count" } },
+            seriesLimit = 2,
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
     // ---- awkward datasets ------------------------------------------------------------------------------------
 
     [Fact]

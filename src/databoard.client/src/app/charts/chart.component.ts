@@ -54,6 +54,8 @@ export class ChartComponent {
   readonly kind = input.required<ChartKind>();
   readonly result = input.required<ResultShape>();
   readonly chartStyle = input<ChartStyleOptions>({});
+  /** How many leading result columns are dimensions; see `buildChartOption`. Left out, it is worked out from the columns. */
+  readonly dimensions = input<number | undefined>(undefined);
   /** Text alternative announced by screen readers. */
   readonly label = input('Chart');
 
@@ -71,7 +73,7 @@ export class ChartComponent {
     });
 
     effect(() => {
-      const option = buildChartOption(this.kind(), this.result(), this.chartStyle());
+      const option = buildChartOption(this.kind(), this.result(), this.chartStyle(), this.dimensions());
       void this.draw(option);
     });
   }

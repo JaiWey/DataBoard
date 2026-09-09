@@ -35,7 +35,8 @@ import { DashboardSummary } from './dashboards.service';
           <p class="fail" role="alert">{{ message }}</p>
         }
         @if (result(); as r) {
-          <app-chart-view [type]="chart().type" [result]="r" [chartStyle]="chart().definition.style" [label]="chart().name" />
+          <app-chart-view [type]="chart().type" [result]="r" [chartStyle]="chart().definition.style"
+                          [dimensions]="chart().definition.query.dimensions?.length ?? 0" [label]="chart().name" />
           @if (r.truncated) { <p><small>Showing the first {{ r.rows.length }} rows.</small></p> }
         } @else if (errors().length === 0) {
           <p><em>Loading...</em></p>

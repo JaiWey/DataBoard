@@ -64,6 +64,8 @@ export interface EditorState {
   style: ChartStyle;
   /** Null leaves the server's default. */
   limit: number | null;
+  /** How many series to keep when there are two dimensions; null keeps them all. */
+  seriesLimit: number | null;
   /** The name of a dimension or metric in the result, or empty for no sorting. */
   sortBy: string;
   sortDirection: 'Asc' | 'Desc';
@@ -79,13 +81,17 @@ export const emptyEditorState = (datasetId = ''): EditorState => ({
   filters: [],
   style: defaultChartStyle(),
   limit: null,
+  seriesLimit: null,
   sortBy: '',
   sortDirection: 'Desc',
 });
 
 // ---- looking at fields --------------------------------------------------------------------------------------
 
-export const isDateType = (dataType: string): boolean => /^(date|timestamp)/i.test(dataType);
+/** Charts with an X-axis: the first dimension is the axis and the next ones split the data into series. */
+export const isAxisType = (type: ChartType): boolean => ['Bar', 'BarHorizontal', 'Line', 'Area'].includes(type);
+
+export const isDateType =(dataType: string): boolean => /^(date|timestamp)/i.test(dataType);
 const isNumberType = (column: Pick<DatasetColumn, 'role'>): boolean => column.role === 'Measure';
 
 /** The short badge shown beside a field: text, number or date. */
@@ -184,6 +190,8 @@ export function toQuery(state: EditorState): ChartQuery {
 
   if (state.sortBy) query.orderBy = [{ field: state.sortBy, direction: state.sortDirection }];
   if (state.limit !== null) query.limit = state.limit;
+  // Only meaningful when there are series to cut down; otherwise a stale value would make the server reject the query.
+  if (state.seriesLimit !== null && isAxisType(state.type) && state.dimensions.length >= 2) query.seriesLimit = state.seriesLimit;
   return query;
 }
 
@@ -234,6 +242,7 @@ export function fromChart(chart: Chart, dataset: Dataset | undefined): EditorSta
     filters,
     style: { ...defaultChartStyle(), ...chart.definition.style },
     limit: query.limit ?? null,
+    seriesLimit: query.seriesLimit ?? null,
     sortBy: known ? order.field : '',
     sortDirection: known ? order.direction : 'Desc',
   };
@@ -260,6 +269,9 @@ export function problemsOf(state: EditorState, options: { forSave: boolean } = {
 
   if (state.limit !== null && (!Number.isInteger(state.limit) || state.limit < 1 || state.limit > 1000)) {
     problems.push('The row limit must be a whole number from 1 to 1000.');
+  }
+  if (state.seriesLimit !== null && (!Number.isInteger(state.seriesLimit) || state.seriesLimit < 1 || state.seriesLimit > 100)) {
+    problems.push('The series limit must be a whole number from 1 to 100.');
   }
   return problems;
 }

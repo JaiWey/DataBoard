@@ -39,7 +39,8 @@ public sealed record ChartQuery(
     IReadOnlyList<FilterSpec>? Filters = null,
     IReadOnlyList<FilterSpec>? MeasureFilters = null,
     IReadOnlyList<OrderSpec>? OrderBy = null,
-    int? Limit = null);
+    int? Limit = null,
+    int? SeriesLimit = null);
 
 // ---- the validated, typed form the SQL renderer works from ---------------------------------------------------
 
@@ -61,7 +62,8 @@ public sealed record ChartQueryPlan(
     IReadOnlyList<PlannedFilter> Filters,
     IReadOnlyList<PlannedMeasureFilter> MeasureFilters,
     IReadOnlyList<PlannedOrder> OrderBy,
-    int Limit);
+    int Limit,
+    int? SeriesLimit = null);
 
 // ---- rendering and results -----------------------------------------------------------------------------------
 
