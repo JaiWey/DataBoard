@@ -20,6 +20,8 @@ export const SHARED_FILTER_OPERATORS: { value: SharedFilterOperator; label: stri
 export interface DashboardWidget {
   id: string;
   chartId: string;
+  /** Where the widget sits on the 12-column grid. Dashboards saved before layouts existed have none; the page places those. */
+  layout?: { x: number; y: number; w: number; h: number } | null;
 }
 
 export interface DashboardFilter {

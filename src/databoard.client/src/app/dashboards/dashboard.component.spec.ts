@@ -202,7 +202,8 @@ describe('DashboardComponent', () => {
     (el().querySelector('button.remove-widget') as HTMLButtonElement).click();
     const put = http.expectOne({ method: 'PUT', url: dashboardUrl });
     expect(put.request.body.name).toBe('Sales overview');
-    expect(put.request.body.definition.widgets).toEqual([{ id: W_TABLE, chartId: C_TABLE }]);
+    // The widget left behind is written down with its place (it had none saved, so it takes the first free spot).
+    expect(put.request.body.definition.widgets).toEqual([{ id: W_TABLE, chartId: C_TABLE, layout: { x: 0, y: 0, w: 6, h: 5 } }]);
     expect(put.request.body.definition.filters.length).toBe(1);
 
     const saved = dashboard();
@@ -232,10 +233,11 @@ describe('DashboardComponent', () => {
     expect(data.charts.map((c) => c.id)).toEqual([C_SPARE]);
 
     const put = http.expectOne({ method: 'PUT', url: dashboardUrl });
+    // Widgets that had no place get one: side by side first, then on the next row. The new one has no id yet.
     expect(put.request.body.definition.widgets).toEqual([
-      { id: W_BAR, chartId: C_BAR },
-      { id: W_TABLE, chartId: C_TABLE },
-      { id: '00000000-0000-0000-0000-000000000000', chartId: C_SPARE },
+      { id: W_BAR, chartId: C_BAR, layout: { x: 0, y: 0, w: 6, h: 5 } },
+      { id: W_TABLE, chartId: C_TABLE, layout: { x: 6, y: 0, w: 6, h: 5 } },
+      { id: '00000000-0000-0000-0000-000000000000', chartId: C_SPARE, layout: { x: 0, y: 5, w: 6, h: 5 } },
     ]);
     put.flush(dashboard());
     http.expectOne(runUrl).flush({ widgets: [] });
@@ -250,6 +252,126 @@ describe('DashboardComponent', () => {
     http.expectOne(`/api/organizations/${ORG}/charts`).flush(charts);
 
     http.expectNone({ method: 'PUT', url: dashboardUrl });
+  });
+
+  describe('layout', () => {
+    const cell = (index: number) => el().querySelectorAll('app-dashboard-grid .cell')[index] as HTMLElement;
+    const handle = (index: number) => cell(index).querySelector('.handle') as HTMLElement;
+    const press = (target: Element, key: string, shiftKey = false) => {
+      target.dispatchEvent(new KeyboardEvent('keydown', { key, shiftKey, bubbles: true, cancelable: true }));
+      fixture.detectChanges();
+    };
+
+    it('places widgets that were saved without a place, side by side', () => {
+      load('Viewer');
+      http.expectOne(runUrl).flush({ widgets: [] });
+
+      expect([0, 1].map((i) => [cell(i).style.getPropertyValue('--x'), cell(i).style.getPropertyValue('--y'), cell(i).style.getPropertyValue('--w')]))
+        .toEqual([['0', '0', '6'], ['6', '0', '6']]);
+    });
+
+    it('uses the place a widget was saved with', () => {
+      const saved = dashboard();
+      saved.definition.widgets = [
+        { id: W_BAR, chartId: C_BAR, layout: { x: 0, y: 0, w: 12, h: 4 } },
+        { id: W_TABLE, chartId: C_TABLE, layout: { x: 3, y: 4, w: 6, h: 3 } },
+      ] as never;
+      load('Viewer', saved);
+      http.expectOne(runUrl).flush({ widgets: [] });
+
+      expect(cell(0).style.getPropertyValue('--w')).toBe('12');
+      expect([cell(1).style.getPropertyValue('--x'), cell(1).style.getPropertyValue('--y'), cell(1).style.getPropertyValue('--h')]).toEqual(['3', '4', '3']);
+    });
+
+    it('is arranged only by editors', () => {
+      load('Viewer');
+      http.expectOne(runUrl).flush({ widgets: [] });
+
+      expect(buttonByText('Edit layout')).toBeUndefined();
+      expect(el().querySelector('.handle')).toBeNull();
+    });
+
+    it('can be changed with the keyboard and is saved without running the charts again', () => {
+      load('Editor');
+      http.expectOne(runUrl).flush({ widgets: [] });
+
+      buttonByText('Edit layout').click();
+      fixture.detectChanges();
+      expect(buttonByText('Save layout').disabled).toBe(true); // nothing has changed yet
+
+      press(handle(0), 'ArrowDown', true); // Shift resizes: one row taller
+      expect(buttonByText('Save layout').disabled).toBe(false);
+      expect(cell(0).style.getPropertyValue('--h')).toBe('6');
+
+      buttonByText('Save layout').click();
+      const put = http.expectOne({ method: 'PUT', url: dashboardUrl });
+      expect(put.request.body.definition.widgets).toEqual([
+        { id: W_BAR, chartId: C_BAR, layout: { x: 0, y: 0, w: 6, h: 6 } },
+        { id: W_TABLE, chartId: C_TABLE, layout: { x: 6, y: 0, w: 6, h: 5 } },
+      ]);
+      put.flush({ ...dashboard(), definition: { ...dashboard().definition, widgets: put.request.body.definition.widgets } });
+      fixture.detectChanges();
+
+      http.expectNone(runUrl); // moving a widget does not change what it shows
+      expect(el().querySelector('.handle')).toBeNull(); // back to viewing
+      expect(buttonByText('Edit layout')).toBeDefined();
+    });
+
+    it('pushes a widget down when another one is moved or grown over it', () => {
+      load('Editor');
+      http.expectOne(runUrl).flush({ widgets: [] });
+      buttonByText('Edit layout').click();
+      fixture.detectChanges();
+
+      press(handle(0), 'ArrowRight', true); // the bar chart gets one column wider and reaches the table
+
+      expect(cell(0).style.getPropertyValue('--w')).toBe('7');
+      expect(cell(1).style.getPropertyValue('--y')).toBe('5'); // the table moved below it
+    });
+
+    it('can be changed by dragging the corner of a widget', () => {
+      load('Editor');
+      http.expectOne(runUrl).flush({ widgets: [] });
+      buttonByText('Edit layout').click();
+      fixture.detectChanges();
+      // jsdom has no layout: pretend the grid is 1200px wide, so one column is about 101px including its gap.
+      const grid = el().querySelector('app-dashboard-grid .grid') as HTMLElement;
+      vi.spyOn(grid, 'getBoundingClientRect').mockReturnValue({ width: 1200 } as DOMRect);
+
+      const corner = cell(0).querySelector('.resize') as HTMLElement;
+      corner.dispatchEvent(new MouseEvent('pointerdown', { clientX: 500, clientY: 300, button: 0, bubbles: true, cancelable: true }));
+      document.dispatchEvent(new MouseEvent('pointermove', { clientX: 500 - 101, clientY: 300 + 96 * 2 }));
+      document.dispatchEvent(new MouseEvent('pointerup'));
+      fixture.detectChanges();
+
+      expect(cell(0).style.getPropertyValue('--w')).toBe('5'); // one column narrower
+      expect(cell(0).style.getPropertyValue('--h')).toBe('7'); // two rows taller
+
+      document.dispatchEvent(new MouseEvent('pointermove', { clientX: 0, clientY: 0 })); // the drag is over: no effect
+      fixture.detectChanges();
+      expect(cell(0).style.getPropertyValue('--w')).toBe('5');
+    });
+
+    it('drops the changes when cancelled', () => {
+      load('Editor');
+      http.expectOne(runUrl).flush({ widgets: [] });
+      buttonByText('Edit layout').click();
+      fixture.detectChanges();
+      press(handle(0), 'ArrowDown', true);
+
+      buttonByText('Cancel').click();
+      fixture.detectChanges();
+
+      expect(cell(0).style.getPropertyValue('--h')).toBe('5');
+      http.expectNone({ method: 'PUT', url: dashboardUrl });
+    });
+
+    it('does not offer layout editing for an empty dashboard', () => {
+      load('Editor', { ...dashboard(), definition: { widgets: [], filters: [] } });
+      http.expectOne(runUrl).flush({ widgets: [] });
+
+      expect(buttonByText('Edit layout')).toBeUndefined();
+    });
   });
 
   it('tells editors of an empty dashboard how to put charts on it', () => {

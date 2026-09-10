@@ -129,6 +129,47 @@ public class DashboardApiTests(ApiFactory factory)
         Assert.Equal(HttpStatusCode.BadRequest, empty.StatusCode);
     }
 
+    private static object Placed(object chart, int x, int y, int w, int h) =>
+        new { chartId = (Guid)((dynamic)chart).chartId, layout = new { x, y, w, h } };
+
+    [Fact]
+    public async Task A_widgets_place_on_the_grid_is_saved_and_a_widget_without_one_stays_unplaced()
+    {
+        var f = await NewFixtureAsync();
+        var revenue = await RegionRevenueChartAsync(f.Owner, f.Org, f.Orders);
+        var units = await RegionRevenueChartAsync(f.Owner, f.Org, f.Orders, "Units by region", "Line", "quantity");
+
+        var created = await ReadAsync(await SaveAsync(f.Owner, f.Org, "Grid", [Placed(revenue, 0, 0, 8, 5), units]));
+
+        var widgets = created.GetProperty("definition").GetProperty("widgets");
+        var layout = widgets[0].GetProperty("layout");
+        Assert.Equal([0, 0, 8, 5], [layout.GetProperty("x").GetInt32(), layout.GetProperty("y").GetInt32(), layout.GetProperty("w").GetInt32(), layout.GetProperty("h").GetInt32()]);
+        Assert.Equal(JsonValueKind.Null, widgets[1].GetProperty("layout").ValueKind);
+
+        var id = created.GetProperty("id").GetGuid();
+        var fetched = await ReadAsync(await f.Owner.GetAsync($"/api/organizations/{f.Org}/dashboards/{id}"));
+        Assert.Equal(8, fetched.GetProperty("definition").GetProperty("widgets")[0].GetProperty("layout").GetProperty("w").GetInt32());
+    }
+
+    [Theory]
+    [InlineData(0, 0, 0, 3)]    // no width
+    [InlineData(0, 0, 13, 3)]   // wider than the grid
+    [InlineData(-1, 0, 4, 3)]   // left of the grid
+    [InlineData(10, 0, 4, 3)]   // sticks out on the right
+    [InlineData(0, -1, 4, 3)]   // above the grid
+    [InlineData(0, 0, 4, 0)]    // no height
+    [InlineData(0, 0, 4, 21)]   // taller than allowed
+    public async Task A_place_outside_the_grid_is_rejected(int x, int y, int w, int h)
+    {
+        var f = await NewFixtureAsync();
+        var chart = await RegionRevenueChartAsync(f.Owner, f.Org, f.Orders);
+
+        var response = await SaveAsync(f.Owner, f.Org, "Bad grid", [Placed(chart, x, y, w, h)]);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("Widgets[0]", await response.Content.ReadAsStringAsync());
+    }
+
     [Fact]
     public async Task A_chart_can_only_be_on_a_dashboard_once()
     {

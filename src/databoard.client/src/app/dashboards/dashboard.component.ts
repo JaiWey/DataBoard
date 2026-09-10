@@ -10,12 +10,15 @@ import { ChartViewComponent } from '../charts/chart-view.component';
 import { Chart, ChartsService } from '../charts/charts.service';
 import { problemMessages } from '../organizations/data-sources.service';
 import { AddChartsDialogComponent, AddChartsDialogData } from './add-charts-dialog.component';
+import { DashboardGridComponent } from './dashboard-grid.component';
+import { LayoutItem, arrange, sameLayout } from './dashboard-layout';
 import { Dataset, DatasetsService } from '../organizations/datasets.service';
 import {
   Dashboard,
   DashboardDefinition,
   DashboardFilter,
   DashboardRun,
+  DashboardWidget,
   DashboardsService,
   FilterValues,
   NEW_ID,
@@ -35,7 +38,7 @@ export function parseFilterInput(operator: SharedFilterOperator, text: string): 
 
 @Component({
   selector: 'app-dashboard',
-  imports: [ReactiveFormsModule, RouterLink, MatCardModule, MatFormFieldModule, MatInputModule, MatButtonModule, ChartViewComponent],
+  imports: [ReactiveFormsModule, RouterLink, MatCardModule, MatFormFieldModule, MatInputModule, MatButtonModule, ChartViewComponent, DashboardGridComponent],
   template: `
     <mat-card appearance="raised" class="detail">
     @if (dashboard(); as d) {
@@ -43,8 +46,16 @@ export function parseFilterInput(operator: SharedFilterOperator, text: string): 
         <mat-card-title>{{ d.name }}</mat-card-title>
         @if (canEdit()) {
           <span class="actions">
-            <button mat-stroked-button type="button" (click)="addCharts(d)">Add chart</button>
-            <button mat-button type="button" (click)="removeDashboard(d)">Delete dashboard</button>
+            @if (editingLayout()) {
+              <button mat-flat-button type="button" class="save-layout" [disabled]="busy() || !layoutChanged()" (click)="saveLayout(d)">Save layout</button>
+              <button mat-button type="button" class="cancel-layout" [disabled]="busy()" (click)="cancelLayout()">Cancel</button>
+            } @else {
+              @if (d.definition.widgets.length > 0) {
+                <button mat-stroked-button type="button" class="edit-layout" (click)="editLayout()">Edit layout</button>
+              }
+              <button mat-stroked-button type="button" (click)="addCharts(d)">Add chart</button>
+              <button mat-button type="button" (click)="removeDashboard(d)">Delete dashboard</button>
+            }
           </span>
         }
       </mat-card-header>
@@ -75,14 +86,15 @@ export function parseFilterInput(operator: SharedFilterOperator, text: string): 
         </p>
       }
 
-      <div class="widgets">
-        @for (widget of d.definition.widgets; track widget.id) {
+      <app-dashboard-grid [items]="items()" [editing]="editingLayout()" [labels]="labels()" (layoutChange)="draft.set($event)">
+        <ng-template let-id>
+          @if (widgetById(id); as widget) {
           <mat-card appearance="outlined" class="widget">
             @if (chartFor(widget.chartId); as chart) {
               <mat-card-header>
                 <mat-card-title>{{ chart.name }}</mat-card-title>
                 <mat-card-subtitle>{{ datasetName(chart.datasetId) }}</mat-card-subtitle>
-                @if (canEdit()) {
+                @if (canEdit() && !editingLayout()) {
                   <span class="widget-actions">
                     <a mat-button [routerLink]="['/organizations', orgId(), 'charts', chart.id]">Edit chart</a>
                     <button mat-button type="button" class="remove-widget" (click)="removeWidget(d, widget.id)">Remove</button>
@@ -94,9 +106,9 @@ export function parseFilterInput(operator: SharedFilterOperator, text: string): 
                   @if (r.error) {
                     <p class="fail" role="alert">{{ r.error }}</p>
                   } @else if (r.result; as result) {
-                    <app-chart-view [type]="chart.type" [result]="result" [chartStyle]="chart.definition.style"
+                    <app-chart-view [fill]="true" [type]="chart.type" [result]="result" [chartStyle]="chart.definition.style"
                                     [dimensions]="chart.definition.query.dimensions?.length ?? 0" [label]="chart.name" />
-                    @if (result.truncated) { <p><small>Showing the first {{ result.rows.length }} rows.</small></p> }
+                    @if (result.truncated) { <p class="note"><small>Showing the first {{ result.rows.length }} rows.</small></p> }
                   }
                 } @else {
                   <p><em>Loading...</em></p>
@@ -105,7 +117,7 @@ export function parseFilterInput(operator: SharedFilterOperator, text: string): 
             } @else {
               <mat-card-header>
                 <mat-card-title>Chart not found</mat-card-title>
-                @if (canEdit()) {
+                @if (canEdit() && !editingLayout()) {
                   <span class="widget-actions">
                     <button mat-button type="button" class="remove-widget" (click)="removeWidget(d, widget.id)">Remove</button>
                   </span>
@@ -114,8 +126,9 @@ export function parseFilterInput(operator: SharedFilterOperator, text: string): 
               <mat-card-content><p class="fail" role="alert">This chart was deleted.</p></mat-card-content>
             }
           </mat-card>
-        }
-      </div>
+          }
+        </ng-template>
+      </app-dashboard-grid>
 
       @if (canEdit()) {
         <h3>Add a shared filter</h3>
@@ -165,8 +178,14 @@ export function parseFilterInput(operator: SharedFilterOperator, text: string): 
     .detail > mat-card-content { flex: 1; min-height: 0; overflow: auto; padding-top: 0.75rem; }
     .filters { margin: 0.5rem 0 1rem; }
     .apply, .remove-filter { margin-top: 0.4rem; }
-    .widgets { display: grid; grid-template-columns: repeat(auto-fill, minmax(24rem, 1fr)); gap: 1rem; }
+    /* A widget fills its cell on the grid; its chart takes what the header leaves, and a table scrolls inside. */
+    .widget { height: 100%; }
     .widget mat-card-header { align-items: center; }
+    .widget mat-card-content { flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; padding-bottom: 0.5rem; }
+    .widget app-chart-view { flex: 1; min-height: 0; }
+    .note { margin: 0.25rem 0 0; }
+    /* The grid is one column on a narrow screen, so there is nothing to arrange. */
+    @media (max-width: 640px) { .edit-layout { display: none; } }
   `,
 })
 export class DashboardComponent implements OnInit {
@@ -192,6 +211,19 @@ export class DashboardComponent implements OnInit {
   protected readonly run = signal<DashboardRun | null>(null);
   protected readonly errors = signal<string[]>([]);
   protected readonly busy = signal(false);
+
+  /** True while the editor is arranging widgets; the changes live in `draft` until they are saved. */
+  protected readonly editingLayout = signal(false);
+  protected readonly draft = signal<LayoutItem[] | null>(null);
+  /** Where each widget sits as saved, with places made up for widgets that have none yet. */
+  private readonly savedLayout = computed(() => arrange(this.dashboard()?.definition.widgets ?? []));
+  protected readonly items = computed(() => this.draft() ?? this.savedLayout());
+  protected readonly layoutChanged = computed(() => !sameLayout(this.items(), this.savedLayout()));
+  protected readonly labels = computed(() => {
+    const names: Record<string, string> = {};
+    for (const w of this.dashboard()?.definition.widgets ?? []) names[w.id] = this.chartFor(w.chartId)?.name ?? 'missing chart';
+    return names;
+  });
 
   protected filterForm: FormGroup<Record<string, FormControl<string>>> = this.fb.nonNullable.group({});
   protected readonly newFilterForm = this.fb.nonNullable.group({
@@ -231,6 +263,39 @@ export class DashboardComponent implements OnInit {
     return this.charts().find((c) => c.id === id);
   }
 
+  protected widgetById(id: string): DashboardWidget | undefined {
+    return this.dashboard()?.definition.widgets.find((w) => w.id === id);
+  }
+
+  protected editLayout(): void {
+    this.draft.set(this.savedLayout());
+    this.editingLayout.set(true);
+  }
+
+  protected cancelLayout(): void {
+    this.editingLayout.set(false);
+    this.draft.set(null);
+  }
+
+  protected saveLayout(d: Dashboard): void {
+    const layout = this.items();
+    const widgets = d.definition.widgets.map((w) => {
+      const place = layout.find((i) => i.id === w.id);
+      return place ? { ...w, layout: { x: place.x, y: place.y, w: place.w, h: place.h } } : w;
+    });
+    // The charts are not run again: moving a widget does not change what it shows.
+    this.save(d, { ...d.definition, widgets }, () => this.cancelLayout(), false);
+  }
+
+  /** Writes the places the page worked out into the widgets, so they stay where they are when others come and go. */
+  private placed(widgets: DashboardWidget[]): DashboardWidget[] {
+    const layout = arrange(widgets);
+    return widgets.map((w) => {
+      const place = layout.find((i) => i.id === w.id)!;
+      return { ...w, layout: { x: place.x, y: place.y, w: place.w, h: place.h } };
+    });
+  }
+
   /** Lets the editor pick saved charts to put on this dashboard (or go and make a new one). */
   protected addCharts(d: Dashboard): void {
     const placed = new Set(d.definition.widgets.map((w) => w.chartId));
@@ -250,7 +315,10 @@ export class DashboardComponent implements OnInit {
           .afterClosed()
           .subscribe((ids) => {
             if (!ids || ids.length === 0) return;
-            this.save(d, { ...d.definition, widgets: [...d.definition.widgets, ...ids.map((chartId) => ({ id: NEW_ID, chartId }))] });
+            // New widgets have no id yet, so they are placed under their position in the list and the server gives ids.
+            const widgets = this.placed([...d.definition.widgets, ...ids.map((chartId, n) => ({ id: `${NEW_ID}-${n}`, chartId }))])
+              .map((w) => (w.id.startsWith(NEW_ID) ? { ...w, id: NEW_ID } : w));
+            this.save(d, { ...d.definition, widgets });
           });
       },
       error: (e) => this.errors.set(problemMessages(e, 'Could not load the charts.')),
@@ -288,7 +356,7 @@ export class DashboardComponent implements OnInit {
   }
 
   protected removeWidget(d: Dashboard, widgetId: string): void {
-    this.save(d, { ...d.definition, widgets: d.definition.widgets.filter((w) => w.id !== widgetId) });
+    this.save(d, { ...d.definition, widgets: this.placed(d.definition.widgets.filter((w) => w.id !== widgetId)) });
   }
 
   protected removeDashboard(d: Dashboard): void {
@@ -299,7 +367,7 @@ export class DashboardComponent implements OnInit {
     });
   }
 
-  private save(d: Dashboard, definition: DashboardDefinition, done?: () => void): void {
+  private save(d: Dashboard, definition: DashboardDefinition, done?: () => void, rerun = true): void {
     this.busy.set(true);
     this.errors.set([]);
     this.api.update(this.orgId(), d, definition).subscribe({
@@ -308,7 +376,7 @@ export class DashboardComponent implements OnInit {
         this.show(saved);
         this.changed.emit(saved);
         done?.();
-        this.execute();
+        if (rerun) this.execute();
       },
       error: (e) => {
         this.busy.set(false);

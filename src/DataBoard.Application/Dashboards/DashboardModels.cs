@@ -3,8 +3,17 @@ using DataBoard.Application.Charts;
 
 namespace DataBoard.Application.Dashboards;
 
-/// <summary>One chart placed on a dashboard. The chart itself (dataset, type, query, style) is a saved chart, shared by every dashboard that shows it.</summary>
-public sealed record DashboardWidget(Guid Id, Guid ChartId);
+/// <summary>
+/// Where a widget sits on the dashboard's grid, in grid cells: <paramref name="X"/> is the column (0-based) and
+/// <paramref name="Y"/> the row, <paramref name="W"/> and <paramref name="H"/> the width in columns and the height in rows.
+/// </summary>
+public sealed record WidgetLayout(int X, int Y, int W, int H);
+
+/// <summary>
+/// One chart placed on a dashboard. The chart itself (dataset, type, query, style) is a saved chart, shared by every
+/// dashboard that shows it. A widget without a <paramref name="Layout"/> (older dashboards) is placed by the client.
+/// </summary>
+public sealed record DashboardWidget(Guid Id, Guid ChartId, WidgetLayout? Layout = null);
 
 /// <summary>
 /// A filter shared by the whole dashboard. Viewers pick values; the filter then applies to every widget whose dataset

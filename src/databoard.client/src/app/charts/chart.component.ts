@@ -48,9 +48,15 @@ export const ECHARTS_LOADER = new InjectionToken<() => Promise<EchartsApi>>('ECH
   styles: `
     :host { display: block; }
     .chart { width: 100%; height: 320px; }
+    /* On a dashboard the widget decides how tall the chart is. */
+    :host(.fill) { height: 100%; }
+    :host(.fill) .chart { height: 100%; min-height: 6rem; }
   `,
+  host: { '[class.fill]': 'fill()' },
 })
 export class ChartComponent {
+  /** Take the height of the parent instead of a fixed one. */
+  readonly fill = input(false);
   readonly kind = input.required<ChartKind>();
   readonly result = input.required<ResultShape>();
   readonly chartStyle = input<ChartStyleOptions>({});

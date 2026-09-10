@@ -30,7 +30,7 @@ import { ChartType } from './charts.service';
         <span class="caption">{{ numberCaption() }}</span>
       </div>
     } @else {
-      <app-chart [kind]="kind()" [result]="result()" [chartStyle]="chartStyle()" [dimensions]="dimensions()" [label]="label()" />
+      <app-chart [kind]="kind()" [result]="result()" [chartStyle]="chartStyle()" [dimensions]="dimensions()" [label]="label()" [fill]="fill()" />
     }
   `,
   styles: `
@@ -39,9 +39,16 @@ import { ChartType } from './charts.service';
     .number { display: grid; place-items: center; min-height: 12rem; text-align: center; }
     .value { font: var(--mat-sys-display-medium); color: var(--mat-sys-primary); }
     .caption { color: var(--mat-sys-on-surface-variant); }
+    /* On a dashboard the widget decides how tall the view is; a long table scrolls inside it. */
+    :host(.fill) { height: 100%; }
+    :host(.fill) .results { height: 100%; max-height: none; overflow: auto; }
+    :host(.fill) .number { min-height: 0; height: 100%; }
   `,
+  host: { '[class.fill]': 'fill()' },
 })
 export class ChartViewComponent {
+  /** Take the height of the parent instead of a fixed one. */
+  readonly fill = input(false);
   readonly type = input.required<ChartType>();
   readonly result = input.required<ResultShape>();
   readonly chartStyle = input<ChartStyleOptions>({});

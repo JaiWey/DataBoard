@@ -39,6 +39,9 @@ internal static class DashboardValidator
     public const int MaxWidgets = 24;
     public const int MaxFilters = 10;
     public const int MaxTitleLength = 200;
+    public const int GridColumns = 12;
+    public const int MaxWidgetHeight = 20;
+    public const int MaxRow = 1_000;
 
     private static readonly FilterOperator[] SharedFilterOperators =
         [FilterOperator.Eq, FilterOperator.NotEq, FilterOperator.In, FilterOperator.Contains, FilterOperator.StartsWith,
@@ -95,6 +98,12 @@ internal static class DashboardValidator
                 continue;
             }
 
+            if (w.Layout is { } layout && LayoutProblem(layout) is { } problem)
+            {
+                Fail(field, problem);
+                continue;
+            }
+
             normalizedWidgets.Add(w with { Id = w.Id == Guid.Empty ? Guid.NewGuid() : w.Id });
         }
         if (normalizedWidgets.Select(w => w.Id).Distinct().Count() != normalizedWidgets.Count)
@@ -104,6 +113,16 @@ internal static class DashboardValidator
 
         if (errors.Count > 0) throw new ValidationException(errors);
         return new DashboardDefinition(normalizedWidgets, normalizedFilters);
+    }
+
+    /// <summary>Widgets sit on a 12-column grid. Overlaps are not rejected: the client lays out and pushes widgets apart.</summary>
+    private static string? LayoutProblem(WidgetLayout l)
+    {
+        if (l.W < 1 || l.W > GridColumns) return $"A widget is between 1 and {GridColumns} columns wide.";
+        if (l.X < 0 || l.X + l.W > GridColumns) return $"A widget has to fit inside the {GridColumns} columns.";
+        if (l.H < 1 || l.H > MaxWidgetHeight) return $"A widget is between 1 and {MaxWidgetHeight} rows high.";
+        if (l.Y < 0 || l.Y > MaxRow) return "A widget's row is out of range.";
+        return null;
     }
 }
 
