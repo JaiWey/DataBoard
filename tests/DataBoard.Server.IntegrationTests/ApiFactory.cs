@@ -94,6 +94,7 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
                 ["Jwt:Key"] = "integration-test-key-integration-test-key-0123456789",
                 ["RateLimiting:AuthPermitLimit"] = "10000",
                 ["RateLimiting:ConnectionPermitLimit"] = "10000",
+                ["RateLimiting:SharedPermitLimit"] = "10000",
                 // The test database is on localhost, which is blocked by default; tests of the block turn it back off.
                 ["DataSourceSecurity:AllowPrivateNetworks"] = "true",
             }));

@@ -4,6 +4,7 @@ import { MatCardModule } from '@angular/material/card';
 import { RouterLink } from '@angular/router';
 import { Subscription } from 'rxjs';
 import { ChartViewComponent } from '../charts/chart-view.component';
+import { ExportMenuComponent } from '../charts/export-menu.component';
 import { CHART_TYPES, Chart, ChartsService } from '../charts/charts.service';
 import { problemMessages } from '../organizations/data-sources.service';
 import { ChartResult } from '../organizations/datasets.service';
@@ -12,18 +13,21 @@ import { DashboardSummary } from './dashboards.service';
 /** A saved chart on the right of the dashboards page: how it looks, where it is used, and Edit and Delete. */
 @Component({
   selector: 'app-chart-card',
-  imports: [RouterLink, MatCardModule, MatButtonModule, ChartViewComponent],
+  imports: [RouterLink, MatCardModule, MatButtonModule, ChartViewComponent, ExportMenuComponent],
   template: `
-    <mat-card appearance="raised" class="detail">
+    <mat-card appearance="raised" class="detail" data-export-scope>
       <mat-card-header>
         <mat-card-title>{{ chart().name }}</mat-card-title>
         <mat-card-subtitle>{{ typeLabel() }} · {{ datasetName() }}</mat-card-subtitle>
-        @if (canEdit()) {
-          <span class="actions">
+        <span class="actions">
+          @if (result(); as exported) {
+            <app-export-menu [name]="chart().name" [result]="exported" [type]="chart().type" />
+          }
+          @if (canEdit()) {
             <a mat-stroked-button [routerLink]="['/organizations', orgId(), 'charts', chart().id]">Edit chart</a>
             <button mat-button type="button" (click)="remove()">Delete chart</button>
-          </span>
-        }
+          }
+        </span>
       </mat-card-header>
       <mat-card-content>
         @if (chart().description) { <p class="desc">{{ chart().description }}</p> }

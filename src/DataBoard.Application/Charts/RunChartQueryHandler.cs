@@ -23,7 +23,19 @@ public sealed class RunChartQueryHandler(
     public async Task<ChartResult> HandleAsync(Guid organizationId, Guid datasetId, ChartQuery query, CancellationToken ct = default)
     {
         var member = await access.RequireRoleAsync(organizationId, OrganizationRole.Viewer, ct);
+        return await ExecuteAsync(organizationId, datasetId, query, member.HasAtLeast(OrganizationRole.Editor), ct);
+    }
 
+    /// <summary>
+    /// For a caller that has already been authorised some other way (a public dashboard link, whose token was checked).
+    /// No organization membership is needed, and the generated SQL is never returned.
+    /// </summary>
+    public Task<ChartResult> HandleTrustedAsync(Guid organizationId, Guid datasetId, ChartQuery query, CancellationToken ct = default) =>
+        ExecuteAsync(organizationId, datasetId, query, includeSql: false, ct);
+
+    private async Task<ChartResult> ExecuteAsync(
+        Guid organizationId, Guid datasetId, ChartQuery query, bool includeSql, CancellationToken ct)
+    {
         var dataset = await datasets.GetAsync(organizationId, datasetId, ct)
             ?? throw new NotFoundException("Dataset not found.");
         var (source, connectionString) = await DataSourceLookup.LoadAsync(dataSources, secrets, organizationId, dataset.DataSourceId, ct);
@@ -39,6 +51,6 @@ public sealed class RunChartQueryHandler(
             result.Columns,
             result.Rows,
             result.Truncated,
-            member.HasAtLeast(OrganizationRole.Editor) ? built.Sql : null);
+            includeSql ? built.Sql : null);
     }
 }

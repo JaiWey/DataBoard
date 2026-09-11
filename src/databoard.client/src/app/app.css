@@ -24,6 +24,7 @@ nav a.active { background: #3370ff; }
 .who { margin-right: 0.75rem; font: var(--mat-sys-body-medium); }
 
 main { max-width: 90rem; margin: 0 auto; padding: 1.25rem; }
+main.public { max-width: none; padding: 0; }
 footer { text-align: center; font-size: 0.85rem; padding-bottom: 1rem; }
 
 @media (max-width: 48rem) {

@@ -6,9 +6,13 @@ export interface ChartInstance {
   setOption(option: unknown, notMerge?: boolean): void;
   resize(): void;
   dispose(): void;
+  /** A picture of the chart as it is drawn now. */
+  getDataURL?(options: { type: 'png'; pixelRatio: number; backgroundColor: string }): string;
 }
 export interface EchartsApi {
   init(element: HTMLElement): ChartInstance;
+  /** The chart drawn in an element, so a picture can be taken of it from outside the chart component. */
+  getInstanceByDom?(element: HTMLElement): ChartInstance | undefined;
 }
 
 let loaded: Promise<EchartsApi> | undefined;
@@ -72,8 +76,15 @@ export class ChartComponent {
   private observer: ResizeObserver | undefined;
 
   constructor() {
+    // A chart is a canvas sized for the screen. Printing lays the page out again at the paper's width, so the chart
+    // has to be redrawn then (and again when the page goes back to the screen).
+    const printing = typeof matchMedia === 'function' ? matchMedia('print') : undefined;
+    const redraw = (): void => this.chart?.resize();
+    printing?.addEventListener('change', redraw);
+
     inject(DestroyRef).onDestroy(() => {
       this.destroyed = true;
+      printing?.removeEventListener('change', redraw);
       this.observer?.disconnect();
       this.chart?.dispose();
     });

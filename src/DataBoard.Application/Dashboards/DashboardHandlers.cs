@@ -223,8 +223,22 @@ public sealed class RunDashboardHandler(
         await access.RequireRoleAsync(organizationId, OrganizationRole.Viewer, ct);
         var dashboard = await dashboards.GetAsync(organizationId, dashboardId, ct)
             ?? throw new NotFoundException("Dashboard not found.");
-        var definition = DashboardJson.Deserialize(dashboard.DefinitionJson);
+        return await RunWidgetsAsync(organizationId, DashboardJson.Deserialize(dashboard.DefinitionJson), request, shared: false, ct);
+    }
 
+    /// <summary>
+    /// Runs a dashboard for someone who holds a valid share link (checked by the caller). The widgets run exactly as
+    /// for a member, except that no SQL ever comes back.
+    /// </summary>
+    internal Task<DashboardRunResult> HandleSharedAsync(
+        Guid organizationId, DashboardDefinition definition, RunDashboardRequest? request, CancellationToken ct) =>
+        RunWidgetsAsync(organizationId, definition, request, shared: true, ct);
+
+    private const string SharedFailure = "This chart could not be shown.";
+
+    private async Task<DashboardRunResult> RunWidgetsAsync(
+        Guid organizationId, DashboardDefinition definition, RunDashboardRequest? request, bool shared, CancellationToken ct)
+    {
         var chosen = request?.Filters ?? new Dictionary<Guid, IReadOnlyList<JsonElement>>();
         var active = definition.Filters.Where(f => chosen.TryGetValue(f.Id, out var v) && v.Count > 0).ToList();
 
@@ -260,16 +274,20 @@ public sealed class RunDashboardHandler(
 
             try
             {
-                var result = await runner.HandleAsync(organizationId, chart.DatasetId, query with { Filters = filters }, ct);
+                var run = query with { Filters = filters };
+                var result = shared
+                    ? await runner.HandleTrustedAsync(organizationId, chart.DatasetId, run, ct)
+                    : await runner.HandleAsync(organizationId, chart.DatasetId, run, ct);
                 results.Add(new WidgetResult(widget.Id, result, null, applied));
             }
             catch (ValidationException ex)
             {
-                results.Add(new WidgetResult(widget.Id, null, string.Join(" ", ex.Errors.SelectMany(e => e.Value)), applied));
+                // Table and column names in these messages are for the dashboard's members, not for the public.
+                results.Add(new WidgetResult(widget.Id, null, shared ? SharedFailure : string.Join(" ", ex.Errors.SelectMany(e => e.Value)), applied));
             }
             catch (NotFoundException ex)
             {
-                results.Add(new WidgetResult(widget.Id, null, ex.Message, applied));
+                results.Add(new WidgetResult(widget.Id, null, shared ? SharedFailure : ex.Message, applied));
             }
         }
 

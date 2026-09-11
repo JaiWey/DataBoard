@@ -43,5 +43,10 @@ export const routes: Routes = [
     canActivate: [authGuard],
     loadComponent: () => import('./charts/chart-editor.component').then((m) => m.ChartEditorComponent),
   },
+  {
+    // A dashboard opened from a public link: no sign-in, so no guard. The token in the address is the credential.
+    path: 'shared/:token',
+    loadComponent: () => import('./dashboards/shared-dashboard.component').then((m) => m.SharedDashboardComponent),
+  },
   { path: '**', redirectTo: '' },
 ];

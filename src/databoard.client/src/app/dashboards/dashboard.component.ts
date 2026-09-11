@@ -7,10 +7,12 @@ import { MatDialog } from '@angular/material/dialog';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { ChartViewComponent } from '../charts/chart-view.component';
+import { ExportMenuComponent } from '../charts/export-menu.component';
 import { Chart, ChartsService } from '../charts/charts.service';
 import { problemMessages } from '../organizations/data-sources.service';
 import { AddChartsDialogComponent, AddChartsDialogData } from './add-charts-dialog.component';
 import { DashboardGridComponent } from './dashboard-grid.component';
+import { ShareDialogComponent, ShareDialogData } from './share-dialog.component';
 import { LayoutItem, arrange, sameLayout } from './dashboard-layout';
 import { Dataset, DatasetsService } from '../organizations/datasets.service';
 import {
@@ -38,14 +40,17 @@ export function parseFilterInput(operator: SharedFilterOperator, text: string): 
 
 @Component({
   selector: 'app-dashboard',
-  imports: [ReactiveFormsModule, RouterLink, MatCardModule, MatFormFieldModule, MatInputModule, MatButtonModule, ChartViewComponent, DashboardGridComponent],
+  imports: [ReactiveFormsModule, RouterLink, MatCardModule, MatFormFieldModule, MatInputModule, MatButtonModule, ChartViewComponent, DashboardGridComponent, ExportMenuComponent],
   template: `
     <mat-card appearance="raised" class="detail">
     @if (dashboard(); as d) {
       <mat-card-header>
         <mat-card-title>{{ d.name }}</mat-card-title>
-        @if (canEdit()) {
-          <span class="actions">
+        <span class="actions no-print">
+          @if (d.definition.widgets.length > 0 && !editingLayout()) {
+            <button mat-button type="button" class="print" (click)="print()">Print / PDF</button>
+          }
+          @if (canEdit()) {
             @if (editingLayout()) {
               <button mat-flat-button type="button" class="save-layout" [disabled]="busy() || !layoutChanged()" (click)="saveLayout(d)">Save layout</button>
               <button mat-button type="button" class="cancel-layout" [disabled]="busy()" (click)="cancelLayout()">Cancel</button>
@@ -53,16 +58,17 @@ export function parseFilterInput(operator: SharedFilterOperator, text: string): 
               @if (d.definition.widgets.length > 0) {
                 <button mat-stroked-button type="button" class="edit-layout" (click)="editLayout()">Edit layout</button>
               }
+              <button mat-stroked-button type="button" class="share" (click)="share(d)">Share</button>
               <button mat-stroked-button type="button" (click)="addCharts(d)">Add chart</button>
               <button mat-button type="button" (click)="removeDashboard(d)">Delete dashboard</button>
             }
-          </span>
-        }
+          }
+        </span>
       </mat-card-header>
       <mat-card-content>
 
       @if (d.definition.filters.length > 0) {
-        <form class="filters form-row" [formGroup]="filterForm" (ngSubmit)="apply()">
+        <form class="filters form-row no-print" [formGroup]="filterForm" (ngSubmit)="apply()">
           @for (filter of d.definition.filters; track filter.id) {
             <mat-form-field>
               <mat-label>{{ filter.label }} ({{ operatorLabel(filter.operator) }})</mat-label>
@@ -89,15 +95,20 @@ export function parseFilterInput(operator: SharedFilterOperator, text: string): 
       <app-dashboard-grid [items]="items()" [editing]="editingLayout()" [labels]="labels()" (layoutChange)="draft.set($event)">
         <ng-template let-id>
           @if (widgetById(id); as widget) {
-          <mat-card appearance="outlined" class="widget">
+          <mat-card appearance="outlined" class="widget" data-export-scope>
             @if (chartFor(widget.chartId); as chart) {
               <mat-card-header>
                 <mat-card-title>{{ chart.name }}</mat-card-title>
                 <mat-card-subtitle>{{ datasetName(chart.datasetId) }}</mat-card-subtitle>
-                @if (canEdit() && !editingLayout()) {
-                  <span class="widget-actions">
-                    <a mat-button [routerLink]="['/organizations', orgId(), 'charts', chart.id]">Edit chart</a>
-                    <button mat-button type="button" class="remove-widget" (click)="removeWidget(d, widget.id)">Remove</button>
+                @if (!editingLayout()) {
+                  <span class="widget-actions no-print">
+                    @if (resultFor(widget.id)?.result; as exported) {
+                      <app-export-menu [name]="chart.name" [result]="exported" [type]="chart.type" />
+                    }
+                    @if (canEdit()) {
+                      <a mat-button [routerLink]="['/organizations', orgId(), 'charts', chart.id]">Edit chart</a>
+                      <button mat-button type="button" class="remove-widget" (click)="removeWidget(d, widget.id)">Remove</button>
+                    }
                   </span>
                 }
               </mat-card-header>
@@ -118,7 +129,7 @@ export function parseFilterInput(operator: SharedFilterOperator, text: string): 
               <mat-card-header>
                 <mat-card-title>Chart not found</mat-card-title>
                 @if (canEdit() && !editingLayout()) {
-                  <span class="widget-actions">
+                  <span class="widget-actions no-print">
                     <button mat-button type="button" class="remove-widget" (click)="removeWidget(d, widget.id)">Remove</button>
                   </span>
                 }
@@ -131,8 +142,8 @@ export function parseFilterInput(operator: SharedFilterOperator, text: string): 
       </app-dashboard-grid>
 
       @if (canEdit()) {
-        <h3>Add a shared filter</h3>
-        <form class="form-row" [formGroup]="newFilterForm" (ngSubmit)="addFilter(d)">
+        <h3 class="no-print">Add a shared filter</h3>
+        <form class="form-row no-print" [formGroup]="newFilterForm" (ngSubmit)="addFilter(d)">
           <mat-form-field>
             <mat-label>Label</mat-label>
             <input matInput formControlName="label" aria-label="Filter label" />
@@ -265,6 +276,20 @@ export class DashboardComponent implements OnInit {
 
   protected widgetById(id: string): DashboardWidget | undefined {
     return this.dashboard()?.definition.widgets.find((w) => w.id === id);
+  }
+
+  /** Public links: make one (and copy it) or revoke the ones that exist. */
+  protected share(d: Dashboard): void {
+    this.dialog.open<ShareDialogComponent, ShareDialogData>(ShareDialogComponent, {
+      data: { orgId: this.orgId(), dashboardId: d.id, dashboardName: d.name },
+      width: '36rem',
+      maxWidth: '95vw',
+    });
+  }
+
+  /** Opens the browser's print dialog, whose "Save as PDF" makes the file. The print styles leave only the dashboard on the page. */
+  protected print(): void {
+    window.print();
   }
 
   protected editLayout(): void {

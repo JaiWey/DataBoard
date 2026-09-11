@@ -1,3 +1,4 @@
+@if (!publicPage()) {
 <mat-toolbar class="topbar">
   <a class="brand" routerLink="/" aria-label="DataBoard home">
     <svg viewBox="0 0 32 32" width="28" height="28" aria-hidden="true">
@@ -26,11 +27,13 @@
     <button mat-stroked-button type="button" class="signout" (click)="logout()">Sign out</button>
   }
 </mat-toolbar>
+}
 
-<main>
+<main [class.public]="publicPage()">
   <router-outlet />
 </main>
 
+@if (!publicPage()) {
 <footer>
   @if (health(); as h) {
     <p id="api-status" class="ok">API status: {{ h.status }} ({{ h.timeUtc }})</p>
@@ -40,3 +43,4 @@
     <p id="api-status"><em>Checking API...</em></p>
   }
 </footer>
+}

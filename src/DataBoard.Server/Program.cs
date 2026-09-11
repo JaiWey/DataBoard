@@ -58,6 +58,14 @@ builder.Services.AddRateLimiter(options =>
 			user,
 			_ => new FixedWindowRateLimiterOptions { PermitLimit = limit, Window = TimeSpan.FromMinutes(1) });
 	});
+	// Public share links: nobody is signed in, and every run queries the owner's database, so limit per address.
+	options.AddPolicy("shared", context =>
+	{
+		var limit = context.RequestServices.GetRequiredService<IConfiguration>().GetValue("RateLimiting:SharedPermitLimit", 30);
+		return RateLimitPartition.GetFixedWindowLimiter(
+			context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+			_ => new FixedWindowRateLimiterOptions { PermitLimit = limit, Window = TimeSpan.FromMinutes(1) });
+	});
 	options.AddPolicy("auth", context =>
 	{
 		var limit = context.RequestServices.GetRequiredService<IConfiguration>().GetValue("RateLimiting:AuthPermitLimit", 10);

@@ -190,7 +190,7 @@ describe('DashboardComponent', () => {
     http.expectOne(runUrl).flush({ widgets: [] });
 
     const buttons = Array.from(el().querySelectorAll('button')).map((b) => b.textContent?.trim());
-    expect(buttons).toEqual(['Apply filters', 'Clear']);
+    expect(buttons).toEqual(['Print / PDF', 'Apply filters', 'Clear']); // printing is not editing
     expect(el().textContent).not.toContain('Add a shared filter');
     expect(el().querySelector('.widget a')).toBeNull(); // no "Edit chart"
   });
@@ -252,6 +252,59 @@ describe('DashboardComponent', () => {
     http.expectOne(`/api/organizations/${ORG}/charts`).flush(charts);
 
     http.expectNone({ method: 'PUT', url: dashboardUrl });
+  });
+
+  describe('exporting', () => {
+    it('lets anyone print the dashboard to PDF through the browser', () => {
+      const print = vi.spyOn(window, 'print').mockImplementation(() => undefined);
+      load('Viewer');
+      http.expectOne(runUrl).flush({ widgets: [] });
+
+      buttonByText('Print / PDF').click();
+
+      expect(print).toHaveBeenCalledTimes(1);
+      print.mockRestore();
+    });
+
+    it('lets editors, and only editors, share the dashboard through a public link', () => {
+      load('Viewer');
+      http.expectOne(runUrl).flush({ widgets: [] });
+      expect(buttonByText('Share')).toBeUndefined();
+    });
+
+    it('opens the sharing dialog for the dashboard that is shown', () => {
+      load('Editor');
+      http.expectOne(runUrl).flush({ widgets: [] });
+      const open = vi.spyOn(TestBed.inject(MatDialog), 'open').mockReturnValue({} as never);
+
+      buttonByText('Share').click();
+
+      const [, config] = open.mock.calls[0] as unknown as [unknown, { data: unknown }];
+      expect(config.data).toEqual({ orgId: ORG, dashboardId: DASH, dashboardName: 'Sales overview' });
+    });
+
+    it('marks everything that should stay off the printed page', () => {
+      load('Editor');
+      http.expectOne(runUrl).flush({ widgets: [] });
+
+      expect(el().querySelector('mat-card-header .actions')?.classList).toContain('no-print'); // the buttons
+      expect(el().querySelector('form.filters')?.classList).toContain('no-print'); // the filter inputs
+      expect(el().querySelector('h3')?.classList).toContain('no-print'); // "Add a shared filter" and its form
+      expect(el().querySelector('h3 + form')?.classList).toContain('no-print');
+    });
+
+    it('gives each chart with data an export menu, for viewers too', () => {
+      load('Viewer');
+      http.expectOne(runUrl).flush({
+        widgets: [
+          { widgetId: W_BAR, result: ok([['Auckland', 3]]), error: null, appliedFilters: [] },
+          { widgetId: W_TABLE, result: null, error: 'boom', appliedFilters: [] },
+        ],
+      });
+      fixture.detectChanges();
+
+      expect(Array.from(el().querySelectorAll('app-export-menu')).length).toBe(1); // none for the one that failed
+    });
   });
 
   describe('layout', () => {

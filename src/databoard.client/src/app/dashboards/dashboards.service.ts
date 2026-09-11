@@ -69,6 +69,25 @@ export interface DashboardRun {
 /** Filter id -> the values the viewer picked. A filter with no values is not applied. */
 export type FilterValues = Record<string, string[]>;
 
+/** A public, read-only link to a dashboard. The secret itself is never listed: it is only shown when the link is made. */
+export interface DashboardShare {
+  id: string;
+  createdUtc: string;
+  expiresUtc: string | null;
+  expired: boolean;
+}
+
+export interface DashboardShareCreated {
+  id: string;
+  /** The secret part of the link. Shown once: the server keeps only a hash. */
+  token: string;
+  createdUtc: string;
+  expiresUtc: string | null;
+}
+
+/** How long a new link lasts: a number of days, or explicitly forever. */
+export type ShareLifetime = { expiresInDays: number } | { neverExpires: true };
+
 /** Ids are assigned by the server; a new widget or filter is sent with the empty id. */
 export const NEW_ID = '00000000-0000-0000-0000-000000000000';
 
@@ -108,5 +127,17 @@ export class DashboardsService {
 
   run(orgId: string, id: string, filters: FilterValues): Observable<DashboardRun> {
     return this.http.post<DashboardRun>(this.url(orgId, `/${id}/run`), { filters });
+  }
+
+  listShares(orgId: string, id: string): Observable<DashboardShare[]> {
+    return this.http.get<DashboardShare[]>(this.url(orgId, `/${id}/shares`));
+  }
+
+  createShare(orgId: string, id: string, lifetime: ShareLifetime): Observable<DashboardShareCreated> {
+    return this.http.post<DashboardShareCreated>(this.url(orgId, `/${id}/shares`), lifetime);
+  }
+
+  revokeShare(orgId: string, id: string, shareId: string): Observable<void> {
+    return this.http.delete<void>(this.url(orgId, `/${id}/shares/${shareId}`));
   }
 }

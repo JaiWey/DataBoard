@@ -49,6 +49,12 @@ public static class DependencyInjection
         services.AddScoped<UpdateDashboardHandler>();
         services.AddScoped<DeleteDashboardHandler>();
         services.AddScoped<RunDashboardHandler>();
+
+        services.AddScoped<CreateShareHandler>();
+        services.AddScoped<ListSharesHandler>();
+        services.AddScoped<RevokeShareHandler>();
+        services.AddScoped<GetSharedDashboardHandler>();
+        services.AddScoped<RunSharedDashboardHandler>();
         return services;
     }
 }

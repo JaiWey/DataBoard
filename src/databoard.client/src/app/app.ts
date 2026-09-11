@@ -30,6 +30,9 @@ export class App implements OnInit {
   protected readonly health = signal<HealthResponse | null>(null);
   protected readonly error = signal<string | null>(null);
 
+  /** A page opened from a public link has no navigation or status of its own to show: it is the dashboard and nothing else. */
+  protected readonly publicPage = signal(false);
+
   /** The organization the navigation links point at. */
   protected readonly orgId = computed(() => this.orgs.current()?.id ?? null);
 
@@ -47,6 +50,7 @@ export class App implements OnInit {
 
     // Opening a page of an organization makes it the current one, so the navigation follows the user.
     this.router.events.pipe(filter((e): e is NavigationEnd => e instanceof NavigationEnd)).subscribe((e) => {
+      this.publicPage.set(e.urlAfterRedirects.startsWith('/shared/'));
       const id = ORG_IN_URL.exec(e.urlAfterRedirects)?.[1];
       if (id) this.orgs.select(id); // an id the user does not belong to is ignored by OrgContext.current
     });

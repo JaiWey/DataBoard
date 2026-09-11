@@ -35,5 +35,23 @@ small { color: var(--mat-sys-on-surface-variant); }
 }
 .chip.measure { background: var(--mat-sys-tertiary-container); color: var(--mat-sys-on-tertiary-container); }
 
+/*
+ * Printing a dashboard (the browser's "Save as PDF"): only the dashboard stays on the page, at its full height, with
+ * its widgets kept whole across page breaks. Buttons, filter forms and the rest of the shell are left out.
+ */
+@page { size: A4 landscape; margin: 10mm; }
+@media print {
+  .no-print, .topbar, footer { display: none !important; }
+  body { background: #fff !important; }
+  main { padding: 0 !important; }
+  app-dashboards .list { display: none !important; }
+  app-dashboards .layout { display: block !important; height: auto !important; }
+  app-dashboards .workspace, app-dashboards app-dashboard { display: block !important; height: auto !important; min-height: 0 !important; }
+  app-dashboard .detail { height: auto !important; box-shadow: none !important; }
+  app-dashboard .detail > mat-card-content { overflow: visible !important; }
+  app-dashboard-grid .cell { break-inside: avoid; }
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}
+
 .form-row { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: flex-start; }
 .actions { margin-left: auto; display: flex; gap: 0.4rem; }

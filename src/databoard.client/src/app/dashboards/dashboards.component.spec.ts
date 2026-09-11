@@ -265,7 +265,8 @@ describe('DashboardsComponent', () => {
     const card = el().querySelector('app-chart-card') as HTMLElement;
     expect(card.textContent).toContain('Not on any dashboard yet.');
     expect(card.querySelector('a')).toBeNull();
-    expect(card.querySelector('button')).toBeNull();
+    // Anyone who can see the chart may export it; only editors get the buttons that change it.
+    expect(Array.from(card.querySelectorAll('button')).map((b) => b.textContent?.trim())).toEqual(['Export']);
   });
 
   it('opens the Charts list and one chart when the address asks for it (as the editor\'s back button does)', () => {

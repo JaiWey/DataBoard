@@ -19,6 +19,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<DataSource> DataSources => Set<DataSource>();
     public DbSet<Dataset> Datasets => Set<Dataset>();
     public DbSet<Dashboard> Dashboards => Set<Dashboard>();
+    public DbSet<DashboardShare> DashboardShares => Set<DashboardShare>();
     public DbSet<Chart> Charts => Set<Chart>();
     public DbSet<Organization> Organizations => Set<Organization>();
     public DbSet<OrganizationMember> OrganizationMembers => Set<OrganizationMember>();
