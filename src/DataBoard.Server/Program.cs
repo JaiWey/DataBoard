@@ -5,6 +5,7 @@ using DataBoard.Infrastructure;
 using DataBoard.Infrastructure.Identity;
 using DataBoard.Infrastructure.Persistence;
 using DataBoard.Server.Infrastructure;
+using DataBoard.Server.Mcp;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -25,7 +26,11 @@ builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<ApplicationExceptionHandler>();
 
 // Options are read lazily so settings supplied after startup (for example by tests) are honoured.
-builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer();
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+	.AddJwtBearer()
+	// Personal access tokens are for the MCP endpoint only; the rest of the API takes a sign-in (JWT) and nothing else.
+	.AddScheme<Microsoft.AspNetCore.Authentication.AuthenticationSchemeOptions, ApiTokenAuthenticationHandler>(ApiTokenDefaults.Scheme, null);
+builder.Services.AddDataBoardMcp();
 builder.Services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme)
 	.Configure<IOptions<JwtOptions>>((bearer, jwt) =>
 	{
@@ -66,6 +71,18 @@ builder.Services.AddRateLimiter(options =>
 			context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
 			_ => new FixedWindowRateLimiterOptions { PermitLimit = limit, Window = TimeSpan.FromMinutes(1) });
 	});
+	// The MCP endpoint is authenticated after this runs, so the caller is told apart by the token they send (never kept).
+	options.AddPolicy("mcp", context =>
+	{
+		var limit = context.RequestServices.GetRequiredService<IConfiguration>().GetValue("RateLimiting:McpPermitLimit", 60);
+		var credential = context.Request.Headers.Authorization.ToString();
+		var key = credential.Length > 0
+			? Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(credential)))
+			: context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+		return RateLimitPartition.GetFixedWindowLimiter(
+			key,
+			_ => new FixedWindowRateLimiterOptions { PermitLimit = limit, Window = TimeSpan.FromMinutes(1) });
+	});
 	options.AddPolicy("auth", context =>
 	{
 		var limit = context.RequestServices.GetRequiredService<IConfiguration>().GetValue("RateLimiting:AuthPermitLimit", 10);
@@ -102,6 +119,7 @@ app.UseRateLimiter(); // after authentication so the "connections" policy can li
 app.UseAuthorization();
 
 app.MapControllers();
+app.MapDataBoardMcp();
 
 app.MapFallbackToFile("/index.html");
 

@@ -1,3 +1,4 @@
+using DataBoard.Application.ApiTokens;
 using DataBoard.Application.Charts;
 using DataBoard.Application.Dashboards;
 using DataBoard.Application.DataSources;
@@ -49,6 +50,11 @@ public static class DependencyInjection
         services.AddScoped<UpdateDashboardHandler>();
         services.AddScoped<DeleteDashboardHandler>();
         services.AddScoped<RunDashboardHandler>();
+
+        services.AddScoped<CreateApiTokenHandler>();
+        services.AddScoped<ListApiTokensHandler>();
+        services.AddScoped<RevokeApiTokenHandler>();
+        services.AddScoped<AuthenticateApiTokenHandler>();
 
         services.AddScoped<CreateShareHandler>();
         services.AddScoped<ListSharesHandler>();

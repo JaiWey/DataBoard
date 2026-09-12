@@ -5,6 +5,7 @@ using DataBoard.Domain.Dashboards;
 using DataBoard.Domain.DataSources;
 using DataBoard.Domain.Datasets;
 using DataBoard.Domain.Organizations;
+using DataBoard.Domain.Users;
 using DataBoard.Infrastructure.Identity;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
@@ -24,6 +25,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<Organization> Organizations => Set<Organization>();
     public DbSet<OrganizationMember> OrganizationMembers => Set<OrganizationMember>();
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
+    public DbSet<ApiToken> ApiTokens => Set<ApiToken>();
 
     /// <summary>A duplicate name that slips past the pre-check (two requests at once) becomes a 409, not a 500.</summary>
     public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
