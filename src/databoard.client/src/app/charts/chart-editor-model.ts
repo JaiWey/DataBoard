@@ -66,6 +66,8 @@ export interface EditorState {
   limit: number | null;
   /** How many series to keep when there are two dimensions; null keeps them all. */
   seriesLimit: number | null;
+  /** Values chosen for the dataset's parameters, by name. A parameter that is not here uses its default. */
+  parameters: Record<string, unknown>;
   /** The name of a dimension or metric in the result, or empty for no sorting. */
   sortBy: string;
   sortDirection: 'Asc' | 'Desc';
@@ -82,6 +84,7 @@ export const emptyEditorState = (datasetId = ''): EditorState => ({
   style: defaultChartStyle(),
   limit: null,
   seriesLimit: null,
+  parameters: {},
   sortBy: '',
   sortDirection: 'Desc',
 });
@@ -192,6 +195,7 @@ export function toQuery(state: EditorState): ChartQuery {
   if (state.limit !== null) query.limit = state.limit;
   // Only meaningful when there are series to cut down; otherwise a stale value would make the server reject the query.
   if (state.seriesLimit !== null && isAxisType(state.type) && state.dimensions.length >= 2) query.seriesLimit = state.seriesLimit;
+  if (Object.keys(state.parameters).length > 0) query.parameters = { ...state.parameters };
   return query;
 }
 
@@ -243,6 +247,7 @@ export function fromChart(chart: Chart, dataset: Dataset | undefined): EditorSta
     style: { ...defaultChartStyle(), ...chart.definition.style },
     limit: query.limit ?? null,
     seriesLimit: query.seriesLimit ?? null,
+    parameters: { ...(query.parameters ?? {}) },
     sortBy: known ? order.field : '',
     sortDirection: known ? order.direction : 'Desc',
   };

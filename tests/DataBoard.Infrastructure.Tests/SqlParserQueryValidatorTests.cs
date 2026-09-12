@@ -25,6 +25,13 @@ public class SqlParserQueryValidatorTests
     [InlineData("SELECT 1 -- trailing comment")]
     [InlineData("SELECT 1 /* ; DROP TABLE x */")]
     [InlineData("SELECT now(), version(), upper('x'), coalesce(NULL, 1)")]
+    // Bound parameters, as dataset parameters become once their {{placeholders}} are replaced.
+    [InlineData("SELECT * FROM sales WHERE region = @databoard_p0")]
+    [InlineData("SELECT * FROM sales WHERE amount BETWEEN @databoard_p0 AND @databoard_p1 AND sold_at >= @databoard_p2")]
+    [InlineData("SELECT * FROM sales WHERE region = @databoard_p0 OR note = @databoard_p0 LIMIT @databoard_p1")]
+    [InlineData("SELECT @databoard_p0 AS chosen, amount FROM sales")]
+    [InlineData("WITH r AS (SELECT * FROM sales WHERE region = @databoard_p0) SELECT count(*) FROM r")]
+    [InlineData("SELECT * FROM sales WHERE sold_at > now() - (@databoard_p0 || ' days')::interval")]
     public void Accepts_read_only_queries(string sql) => Assert.NotEmpty(Validate(sql));
 
     [Fact]

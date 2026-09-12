@@ -34,6 +34,8 @@ internal static class ChartDefinitionValidator
 
         var query = request.Definition?.Query ?? new ChartQuery();
         ChartQueryPlanner.Plan(dataset.Columns, query); // throws a ValidationException that names the problem
+        // The values the chart gives the dataset's parameters have to fit them (and every parameter needs a value or a default).
+        SqlParameters.Bind(dataset.Sql, DatasetParametersJson.FromJson(dataset.ParametersJson), query.Parameters);
 
         var style = request.Definition?.Style ?? new ChartStyle();
         if (!Palettes.Contains(style.Palette))

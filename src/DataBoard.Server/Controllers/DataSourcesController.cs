@@ -14,7 +14,7 @@ public class DataSourcesController : ControllerBase
 {
 	public sealed record CreateDataSourceBody(string Name, DataSourceType Type, string ConnectionString);
 	public sealed record TestConnectionBody(DataSourceType Type, string ConnectionString);
-	public sealed record PreviewBody(string Sql, int? MaxRows);
+	public sealed record PreviewBody(string Sql, int? MaxRows, IReadOnlyList<DataBoard.Application.Datasets.DatasetParameter>? Parameters = null);
 
 	[HttpGet]
 	public async Task<ActionResult<IReadOnlyList<DataSourceDto>>> List(
@@ -53,7 +53,7 @@ public class DataSourcesController : ControllerBase
 	[EnableRateLimiting("connections")]
 	public async Task<ActionResult<QueryPreview>> Preview(
 		Guid organizationId, Guid dataSourceId, PreviewBody body, [FromServices] PreviewQueryHandler handler, CancellationToken ct) =>
-		Ok(await handler.HandleAsync(organizationId, dataSourceId, new PreviewQueryRequest(body.Sql, body.MaxRows), ct));
+		Ok(await handler.HandleAsync(organizationId, dataSourceId, new PreviewQueryRequest(body.Sql, body.MaxRows, body.Parameters), ct));
 
 	/// <summary>Runs a table view definition (main table, fields, joins) without saving it. Editors and Owners only.</summary>
 	[HttpPost("{dataSourceId:guid}/table-view/preview")]

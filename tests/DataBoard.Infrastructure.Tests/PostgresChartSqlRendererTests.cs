@@ -81,6 +81,41 @@ public class PostgresChartSqlRendererTests
     }
 
     [Fact]
+    public void A_datasets_own_parameters_come_first_and_filter_values_continue_the_numbering()
+    {
+        var plan = Plan(
+            measures: [Measure(Aggregation.Count, null, "n")],
+            filters: [new("region", FilterOperator.Eq, ["Auckland"]), new("price", FilterOperator.Between, [10m, 20m])]);
+
+        var query = _renderer.Render("SELECT * FROM sales WHERE a = @databoard_p0 AND b = @databoard_p1", plan, ["first", 7m]);
+
+        Assert.Contains("FROM (\nSELECT * FROM sales WHERE a = @databoard_p0 AND b = @databoard_p1\n)", query.Sql);
+        Assert.Contains("\"region\" = @databoard_p2 AND \"price\" BETWEEN @databoard_p3 AND @databoard_p4", query.Sql);
+        Assert.Equal(new object[] { "first", 7m, "Auckland", 10m, 20m }, query.Parameters);
+    }
+
+    [Fact]
+    public void Dataset_parameters_are_kept_when_the_query_is_cut_down_to_its_top_series()
+    {
+        var plan = Plan(
+            dims: [Dim("at", "date", TimeGrain.Month, "month"), Dim("region")],
+            measures: [Measure(Aggregation.Sum, "price", "revenue")],
+            filters: [new("quantity", FilterOperator.Gte, [3m])],
+            seriesLimit: 3);
+
+        var query = _renderer.Render("SELECT * FROM sales WHERE a = @databoard_p0", plan, ["x"]);
+
+        Assert.StartsWith("WITH \"databoard_base\" AS (", query.Sql);
+        Assert.Contains("\"quantity\" >= @databoard_p1", query.Sql);
+        Assert.Equal(new object[] { "x", 3m }, query.Parameters);
+    }
+
+    [Fact]
+    public void Without_dataset_parameters_the_numbering_starts_at_zero() =>
+        Assert.Equal(new object[] { "Auckland" }, _renderer.Render(Dataset,
+            Plan(measures: [Measure(Aggregation.Count, null, "n")], filters: [new("region", FilterOperator.Eq, ["Auckland"])])).Parameters);
+
+    [Fact]
     public void Without_a_series_limit_there_is_no_cte() =>
         Assert.DoesNotContain("WITH", _renderer.Render(Dataset,
             Plan(dims: [Dim("a"), Dim("b")], measures: [Measure(Aggregation.Count, null, "n")])).Sql);

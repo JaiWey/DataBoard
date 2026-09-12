@@ -1,6 +1,7 @@
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
+import { DatasetParameter } from './dataset-parameters';
 
 export interface DataSource {
   id: string;
@@ -71,7 +72,10 @@ export class DataSourcesService {
     return this.http.get<DatabaseSchema>(this.url(orgId, `/${id}/schema`));
   }
 
-  preview(orgId: string, id: string, sql: string, maxRows?: number): Observable<QueryPreview> {
-    return this.http.post<QueryPreview>(this.url(orgId, `/${id}/preview`), maxRows ? { sql, maxRows } : { sql });
+  /** Runs SQL once, to try it. Its {{parameters}} (with their defaults) are declared in `parameters`. */
+  preview(orgId: string, id: string, sql: string, maxRows?: number, parameters: DatasetParameter[] = []): Observable<QueryPreview> {
+    return this.http.post<QueryPreview>(this.url(orgId, `/${id}/preview`), {
+      sql, ...(maxRows ? { maxRows } : {}), ...(parameters.length > 0 ? { parameters } : {}),
+    });
   }
 }

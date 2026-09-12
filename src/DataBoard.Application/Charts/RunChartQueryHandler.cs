@@ -40,10 +40,13 @@ public sealed class RunChartQueryHandler(
             ?? throw new NotFoundException("Dataset not found.");
         var (source, connectionString) = await DataSourceLookup.LoadAsync(dataSources, secrets, organizationId, dataset.DataSourceId, ct);
 
+        // The dataset's {{parameters}} become bound values (the chart's own, else the defaults) before the SQL is checked.
+        var bound = SqlParameters.Bind(dataset.Sql, DatasetParametersJson.FromJson(dataset.ParametersJson), query?.Parameters);
+
         // Same rule as every other run: the stored SQL is validated again, in case it was changed outside the app.
-        var datasetSql = validator.ValidateReadOnly(source.Type, dataset.Sql);
+        var datasetSql = validator.ValidateReadOnly(source.Type, bound.Sql);
         var plan = ChartQueryPlanner.Plan(dataset.Columns, query ?? new ChartQuery());
-        var built = renderers.Get(source.Type).Render(datasetSql, plan);
+        var built = renderers.Get(source.Type).Render(datasetSql, plan, bound.Parameters);
 
         var result = await connectors.Get(source.Type).ExecuteAsync(connectionString, built, plan.Limit, ct);
 

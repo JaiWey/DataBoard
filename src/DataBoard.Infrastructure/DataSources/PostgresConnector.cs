@@ -77,19 +77,23 @@ internal sealed class PostgresConnector(NetworkGuard networkGuard, ILogger<Postg
         }
     }
 
-    public Task<IReadOnlyList<PreviewColumn>> DescribeAsync(string connectionString, string validatedSql, CancellationToken ct = default) =>
+    public Task<IReadOnlyList<PreviewColumn>> DescribeAsync(
+        string connectionString, string validatedSql, IReadOnlyList<object?> parameters, CancellationToken ct = default) =>
         RunReadOnlyAsync<IReadOnlyList<PreviewColumn>>(connectionString, async (connection, transaction) =>
         {
             // LIMIT 0 returns the column metadata without reading any rows.
             await using var command = new NpgsqlCommand(Wrap(validatedSql, 0), connection, transaction);
+            Bind(command, parameters);
             await using var reader = await command.ExecuteReaderAsync(ct);
             return ReadColumns(reader);
         }, ct);
 
-    public Task<QueryPreview> PreviewAsync(string connectionString, string validatedSql, int maxRows, CancellationToken ct = default) =>
+    public Task<QueryPreview> PreviewAsync(
+        string connectionString, string validatedSql, int maxRows, IReadOnlyList<object?> parameters, CancellationToken ct = default) =>
         RunReadOnlyAsync(connectionString, async (connection, transaction) =>
         {
             await using var command = new NpgsqlCommand(Wrap(validatedSql, maxRows + 1), connection, transaction);
+            Bind(command, parameters);
             return await ReadResultAsync(command, maxRows, ct);
         }, ct);
 
@@ -97,10 +101,16 @@ internal sealed class PostgresConnector(NetworkGuard networkGuard, ILogger<Postg
         RunReadOnlyAsync(connectionString, async (connection, transaction) =>
         {
             await using var command = new NpgsqlCommand(query.Sql, connection, transaction);
-            for (var i = 0; i < query.Parameters.Count; i++)
-                command.Parameters.AddWithValue(ParameterizedQuery.Name(i), query.Parameters[i] ?? DBNull.Value);
+            Bind(command, query.Parameters);
             return await ReadResultAsync(command, maxRows, ct);
         }, ct);
+
+    /// <summary>Values travel as driver parameters named databoard_p0, databoard_p1, ...; they are never written into the SQL text.</summary>
+    private static void Bind(NpgsqlCommand command, IReadOnlyList<object?> parameters)
+    {
+        for (var i = 0; i < parameters.Count; i++)
+            command.Parameters.AddWithValue(ParameterizedQuery.Name(i), parameters[i] ?? DBNull.Value);
+    }
 
     /// <summary>Reads at most maxRows + 1 rows; the extra one only signals that the result was cut.</summary>
     private static async Task<QueryPreview> ReadResultAsync(NpgsqlCommand command, int maxRows, CancellationToken ct)

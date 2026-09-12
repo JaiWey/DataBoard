@@ -224,7 +224,7 @@ describe('DatasetsComponent', () => {
 
     (Array.from(el().querySelectorAll('.detail button')).find((b) => b.textContent?.trim() === 'Save') as HTMLButtonElement).click();
 
-    expect((open.mock.calls[0][1] as { data: unknown }).data).toEqual({ orgId: ORG, dataSourceId: 'src-2', sql: 'SELECT region FROM sales' });
+    expect((open.mock.calls[0][1] as { data: unknown }).data).toEqual({ orgId: ORG, dataSourceId: 'src-2', sql: 'SELECT region FROM sales', parameters: [] });
     http.expectOne(`/api/organizations/${ORG}/datasets`).flush([dataset(null), created]);
     await settle();
 
@@ -727,5 +727,117 @@ describe('DatasetsComponent', () => {
     await settle();
 
     expect(buttonText()).not.toContain('Run query');
+  });
+
+  // ---- parameters ----
+
+  const PARAMETER_SQL = 'SELECT region FROM sales WHERE region = {{region}}';
+  const withParameters = (sql = PARAMETER_SQL) => ({ ...dataset(sql), parameters: [{ name: 'region', type: 'Text', default: 'Auckland' }] });
+  const control = (label: string) => el().querySelector(`[aria-label="${label}"]`) as HTMLInputElement | HTMLSelectElement;
+  const setControl = async (label: string, value: string, event = 'input') => {
+    const c = control(label);
+    c.value = value;
+    c.dispatchEvent(new Event(event));
+    await settle();
+  };
+
+  it('shows the parameters of a dataset with their types and defaults', async () => {
+    load('Editor', [withParameters()]);
+    await settle();
+
+    expect(el().querySelector('.name')?.textContent).toBe('{{region}}');
+    expect((control('Type of region') as HTMLSelectElement).value).toBe('Text');
+    expect((control('Default of region') as HTMLInputElement).value).toBe('Auckland');
+    expect(el().textContent).toContain('Charts and dashboards can choose its value');
+  });
+
+  it('shows a viewer who may see the SQL its parameters, but not editable', async () => {
+    load('Viewer', [withParameters()]);
+    await settle();
+
+    expect((control('Default of region') as HTMLInputElement).disabled).toBe(true);
+  });
+
+  it('adds a parameter when a placeholder is written, and will not run or save it until it has a default', async () => {
+    load('Editor', [dataset('SELECT region FROM sales')]);
+    await settle();
+
+    monaco.editors[0].type(PARAMETER_SQL);
+    await settle();
+
+    expect(el().querySelector('.name')?.textContent).toBe('{{region}}');
+    expect(el().textContent).toContain('Give region a default');
+    expect(saveButton().disabled).toBe(true);
+    expect(runButton().disabled).toBe(true);
+
+    await setControl('Default of region', 'Wellington');
+
+    expect(el().textContent).not.toContain('Give region a default');
+    expect(saveButton().disabled).toBe(false);
+    expect(runButton().disabled).toBe(false);
+  });
+
+  it('runs the SQL with the parameters declared, so the placeholders can be bound', async () => {
+    load('Editor', [withParameters()]);
+    await settle();
+    await setControl('Default of region', 'Dunedin');
+
+    runButton().click();
+
+    const req = http.expectOne({ method: 'POST', url: sourceUrl(dataset(null).dataSourceId) });
+    expect(req.request.body).toEqual({ sql: PARAMETER_SQL, maxRows: 100, parameters: [{ name: 'region', type: 'Text', default: 'Dunedin' }] });
+    req.flush(rows);
+    await settle();
+  });
+
+  it('counts a changed default as an unsaved change, and saves the parameters with the SQL', async () => {
+    load('Editor', [withParameters()]);
+    await settle();
+    expect(saveButton().disabled).toBe(true);
+
+    await setControl('Type of region', 'Number', 'change');
+    await setControl('Default of region', '5');
+    expect(el().querySelector('.tab .dot')).not.toBeNull();
+
+    saveButton().click();
+    const req = http.expectOne({ method: 'PUT', url: datasetUrl });
+    expect(req.request.body).toEqual({
+      name: 'Orders', description: 'All orders', sql: PARAMETER_SQL, parameters: [{ name: 'region', type: 'Number', default: 5 }],
+    });
+    req.flush({ ...withParameters(), parameters: [{ name: 'region', type: 'Number', default: 5 }] });
+    await settle();
+    expect(el().querySelector('.tab .dot')).toBeNull();
+  });
+
+  it('removes the parameters when the placeholders are taken out of the SQL', async () => {
+    load('Editor', [withParameters()]);
+    await settle();
+
+    monaco.editors[0].type('SELECT region FROM sales');
+    await settle();
+    saveButton().click();
+
+    const req = http.expectOne({ method: 'PUT', url: datasetUrl });
+    expect(req.request.body).toEqual({ name: 'Orders', description: 'All orders', sql: 'SELECT region FROM sales' }); // none sent: none kept
+    req.flush(dataset('SELECT region FROM sales'));
+    await settle();
+  });
+
+  it('runs a new dataset with its parameters too', async () => {
+    load('Owner', [], false);
+    await startNew();
+
+    monaco.editors[0].type('SELECT region FROM sales WHERE region = {{region}} ');
+    await settle();
+    expect(runButton().disabled).toBe(true); // no default yet
+    await setControl('Default of region', 'Auckland');
+    runButton().click();
+
+    const req = http.expectOne({ method: 'POST', url: sourceUrl('src-1') });
+    expect(req.request.body).toEqual({
+      sql: 'SELECT region FROM sales WHERE region = {{region}}', maxRows: 100, parameters: [{ name: 'region', type: 'Text', default: 'Auckland' }],
+    });
+    req.flush(rows);
+    await settle();
   });
 });

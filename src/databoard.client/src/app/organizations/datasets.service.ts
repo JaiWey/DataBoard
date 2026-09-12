@@ -2,6 +2,7 @@ import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 import { QueryPreview } from './data-sources.service';
+import { DatasetParameter } from './dataset-parameters';
 
 export type ColumnRole = 'Dimension' | 'Measure';
 export type Aggregation = 'Sum' | 'Avg' | 'Min' | 'Max' | 'Count' | 'CountDistinct';
@@ -18,7 +19,11 @@ export interface ChartQuery {
   limit?: number | null;
   /** Keeps only this many series (the second dimension), ranked by the first metric's total. */
   seriesLimit?: number | null;
+  /** Values for the dataset's own parameters, by name. A parameter that is left out uses its default. */
+  parameters?: Record<string, unknown> | null;
 }
+
+export type { DatasetParameter, ParameterType } from './dataset-parameters';
 
 export interface ChartResult extends QueryPreview {
   /** Only editors and owners receive the generated SQL. */
@@ -59,6 +64,8 @@ export interface Dataset {
   kind: DatasetKind;
   /** Only for table views, and only for editors and owners. */
   definition: TableViewDefinition | null;
+  /** The values the SQL takes. Empty for a table view and for SQL without {{placeholders}}. */
+  parameters?: DatasetParameter[];
   createdUtc: string;
   updatedUtc: string;
 }
@@ -75,8 +82,10 @@ export class DatasetsService {
     return this.http.get<Dataset[]>(this.url(orgId));
   }
 
-  create(orgId: string, dataSourceId: string, name: string, sql: string, description?: string): Observable<Dataset> {
-    return this.http.post<Dataset>(this.url(orgId), { dataSourceId, name, description: description ?? null, sql });
+  create(orgId: string, dataSourceId: string, name: string, sql: string, description?: string, parameters: DatasetParameter[] = []): Observable<Dataset> {
+    return this.http.post<Dataset>(this.url(orgId), {
+      dataSourceId, name, description: description ?? null, sql, ...(parameters.length > 0 ? { parameters } : {}),
+    });
   }
 
   /** A table view sends its definition; the server generates the SQL. */
@@ -84,8 +93,9 @@ export class DatasetsService {
     return this.http.post<Dataset>(this.url(orgId), { dataSourceId, name, description: description ?? null, kind: 'TableView', definition });
   }
 
-  update(orgId: string, id: string, name: string, sql: string, description: string | null): Observable<Dataset> {
-    return this.http.put<Dataset>(this.url(orgId, `/${id}`), { name, description, sql });
+  /** An update replaces everything, so leaving the parameters out removes them. */
+  update(orgId: string, id: string, name: string, sql: string, description: string | null, parameters: DatasetParameter[] = []): Observable<Dataset> {
+    return this.http.put<Dataset>(this.url(orgId, `/${id}`), { name, description, sql, ...(parameters.length > 0 ? { parameters } : {}) });
   }
 
   updateTableView(orgId: string, id: string, name: string, definition: TableViewDefinition, description: string | null): Observable<Dataset> {

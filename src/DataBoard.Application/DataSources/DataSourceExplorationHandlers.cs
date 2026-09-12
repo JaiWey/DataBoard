@@ -7,7 +7,8 @@ using DataBoard.Domain.Organizations;
 namespace DataBoard.Application.DataSources;
 
 public sealed record TestConnectionRequest(DataSourceType Type, string ConnectionString);
-public sealed record PreviewQueryRequest(string Sql, int? MaxRows);
+/// <param name="Parameters">The parameters the SQL takes ({{name}} placeholders); the preview runs them with their defaults.</param>
+public sealed record PreviewQueryRequest(string Sql, int? MaxRows, IReadOnlyList<Datasets.DatasetParameter>? Parameters = null);
 
 /// <summary>Shared lookup: the data source must belong to the organization in the URL, and the secret is decrypted only here.</summary>
 internal static class DataSourceLookup
@@ -78,9 +79,11 @@ public sealed class PreviewQueryHandler(
         var (source, connectionString) = await DataSourceLookup.LoadAsync(repository, secrets, organizationId, dataSourceId, ct);
 
         var connector = connectors.Get(source.Type);
-        var sql = validator.ValidateReadOnly(source.Type, request.Sql);
+        Datasets.SqlParameters.CheckDefinitions(request.Sql ?? string.Empty, request.Parameters);
+        var bound = Datasets.SqlParameters.Bind(request.Sql ?? string.Empty, request.Parameters ?? [], null);
+        var sql = validator.ValidateReadOnly(source.Type, bound.Sql);
         var maxRows = Math.Clamp(request.MaxRows ?? DefaultRows, 1, MaxRows);
 
-        return await connector.PreviewAsync(connectionString, sql, maxRows, ct);
+        return await connector.PreviewAsync(connectionString, sql, maxRows, bound.Parameters, ct);
     }
 }

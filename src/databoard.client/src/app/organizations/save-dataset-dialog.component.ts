@@ -5,6 +5,7 @@ import { MAT_DIALOG_DATA, MatDialogModule, MatDialogRef } from '@angular/materia
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { problemMessages } from './data-sources.service';
+import { DatasetParameter } from './dataset-parameters';
 import { Dataset, DatasetsService, TableViewDefinition } from './datasets.service';
 
 export interface SaveDatasetDialogData {
@@ -12,6 +13,8 @@ export interface SaveDatasetDialogData {
   dataSourceId: string;
   /** What to save: SQL for a SQL dataset, or the definition of a table view (the server generates its SQL). */
   sql?: string;
+  /** The values the SQL takes ({{placeholders}}), each with a type and a default. */
+  parameters?: DatasetParameter[];
   definition?: TableViewDefinition;
 }
 
@@ -66,10 +69,10 @@ export class SaveDatasetDialogComponent {
     this.errors.set([]);
 
     const v = this.form.getRawValue();
-    const { orgId, dataSourceId, sql, definition } = this.data;
+    const { orgId, dataSourceId, sql, definition, parameters } = this.data;
     const request = definition
       ? this.api.createTableView(orgId, dataSourceId, v.name, definition, v.description || undefined)
-      : this.api.create(orgId, dataSourceId, v.name, sql ?? '', v.description || undefined);
+      : this.api.create(orgId, dataSourceId, v.name, sql ?? '', v.description || undefined, parameters ?? []);
     request.subscribe({
       next: (created) => this.ref.close(created),
       error: (e) => {

@@ -24,11 +24,17 @@ export interface DashboardWidget {
   layout?: { x: number; y: number; w: number; h: number } | null;
 }
 
+/** What a shared filter acts on: a dataset column (it filters rows), or a dataset parameter (it sets a value the SQL takes). */
+export type FilterTarget = 'Column' | 'Parameter';
+
 export interface DashboardFilter {
   id: string;
   label: string;
+  /** The column's name, or the parameter's name when the target is a parameter. */
   column: string;
   operator: SharedFilterOperator;
+  /** Left out (or Column) for a column filter. */
+  target?: FilterTarget;
 }
 
 export interface DashboardDefinition {

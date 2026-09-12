@@ -41,7 +41,9 @@ public interface IDataSourceConnector
     Task<DatabaseSchema> GetSchemaAsync(string connectionString, CancellationToken ct = default);
 
     /// <summary>Returns the column names and database types a validated query produces, without returning any rows.</summary>
-    Task<IReadOnlyList<PreviewColumn>> DescribeAsync(string connectionString, string validatedSql, CancellationToken ct = default);
+    /// <param name="parameters">Values for the <c>@databoard_pN</c> parameters the SQL refers to, in order (empty if none).</param>
+    Task<IReadOnlyList<PreviewColumn>> DescribeAsync(
+        string connectionString, string validatedSql, IReadOnlyList<object?> parameters, CancellationToken ct = default);
 
     /// <summary>
     /// Runs a query produced by a <see cref="Charts.IChartSqlRenderer"/> (read-only, with timeouts). The renderer has
@@ -50,7 +52,8 @@ public interface IDataSourceConnector
     Task<QueryPreview> ExecuteAsync(string connectionString, ParameterizedQuery query, int maxRows, CancellationToken ct = default);
 
     /// <summary>Runs an already validated, single read-only query and returns at most <paramref name="maxRows"/> rows.</summary>
-    Task<QueryPreview> PreviewAsync(string connectionString, string validatedSql, int maxRows, CancellationToken ct = default);
+    Task<QueryPreview> PreviewAsync(
+        string connectionString, string validatedSql, int maxRows, IReadOnlyList<object?> parameters, CancellationToken ct = default);
 }
 
 public interface ISqlQueryValidator

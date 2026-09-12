@@ -24,6 +24,17 @@ const datasets = [
   },
 ];
 
+const DS3 = '55555555-5555-5555-5555-555555555555';
+datasets.push({
+  id: DS3, dataSourceId: 'src', name: 'Orders by region', description: null, sql: null, kind: 'Sql', definition: null, createdUtc: '', updatedUtc: '',
+  columns: [{ name: 'region', dataType: 'text', role: 'Dimension' }, { name: 'price', dataType: 'numeric(10,2)', role: 'Measure' }],
+  parameters: [
+    { name: 'region', type: 'Text', default: 'Auckland' },
+    { name: 'min_price', type: 'Number', default: 0, label: 'Minimum price' },
+    { name: 'paid', type: 'Boolean', default: true },
+  ],
+} as never);
+
 const result = (sql: string | null = 'SELECT 1') => ({
   columns: [{ name: 'region', dataType: 'text' }, { name: 'sum_price', dataType: 'numeric' }],
   rows: [['Auckland', 2480], ['Wellington', 1400]],
@@ -662,5 +673,113 @@ describe('ChartEditorComponent', () => {
     const box = Array.from(el().querySelectorAll('mat-checkbox')).find((c) => c.textContent?.includes('Stack series'))!.querySelector('input') as HTMLInputElement;
     expect(box.disabled).toBe(true);
     preview();
+  });
+
+  // ---- the dataset's parameters ----
+
+  describe('parameters', () => {
+    beforeEach(() => {
+      queryParams = { dataset: DS3 };
+    });
+
+    it('shows nothing about parameters for a dataset that has none', () => {
+      queryParams = {};
+      open();
+
+      expect(byLabel('Value of region')).toBeNull();
+      expect(el().textContent).not.toContain('This dataset takes values');
+    });
+
+    it('offers each parameter of the dataset with its default as a hint', () => {
+      open();
+
+      expect(el().textContent).toContain('This dataset takes values');
+      const region = byLabel<HTMLInputElement>('Value of region');
+      expect([region.type, region.placeholder, region.value]).toEqual(['text', 'default: Auckland', '']);
+      const min = byLabel<HTMLInputElement>('Value of min_price');
+      expect([min.type, min.placeholder]).toEqual(['number', 'default: 0']);
+      expect(el().textContent).toContain('Minimum price'); // the label, when it has one
+      expect(byLabel<HTMLSelectElement>('Value of paid').selectedOptions[0].textContent).toContain('default (true)');
+    });
+
+    it('sends the values chosen to the preview, as the type of the parameter, and leaves the others to their defaults', () => {
+      open();
+      click('Add region');
+      click('Add price');
+      preview(result(), DS3);
+
+      typeInto('Value of region', 'Wellington');
+      typeInto('Value of min_price', '250');
+      choose('Value of paid', 'false');
+      vi.advanceTimersByTime(300);
+      const req = http.expectOne({ method: 'POST', url: queryUrl(DS3) });
+
+      expect(req.request.body.parameters).toEqual({ region: 'Wellington', min_price: 250, paid: false });
+      req.flush(result());
+    });
+
+    it('goes back to the default when a value is cleared, and sends nothing when none is chosen', () => {
+      open();
+      click('Add price');
+      preview(result(), DS3);
+      typeInto('Value of region', 'Wellington');
+      vi.advanceTimersByTime(300);
+      http.expectOne({ method: 'POST', url: queryUrl(DS3) }).flush(result());
+
+      typeInto('Value of region', '');
+      vi.advanceTimersByTime(300);
+      const req = http.expectOne({ method: 'POST', url: queryUrl(DS3) });
+
+      expect(req.request.body.parameters).toBeUndefined();
+      req.flush(result());
+    });
+
+    it('does not take a number that is not one', () => {
+      open();
+      click('Add price');
+      preview(result(), DS3);
+
+      typeInto('Value of min_price', 'lots');
+      vi.advanceTimersByTime(300);
+
+      http.expectNone({ method: 'POST', url: queryUrl(DS3) }); // nothing changed, so nothing is asked again
+    });
+
+    it('saves the values with the chart, and shows them again when it is opened', () => {
+      open();
+      click('Add region');
+      click('Add price');
+      preview(result(), DS3);
+      typeInto('Chart name', 'Wellington revenue');
+      typeInto('Value of region', 'Wellington');
+      vi.advanceTimersByTime(300);
+      http.expectOne({ method: 'POST', url: queryUrl(DS3) }).flush(result());
+
+      saveButton().click();
+
+      const req = http.expectOne({ method: 'POST', url: `/api/organizations/${ORG}/charts` });
+      expect(req.request.body.definition.query.parameters).toEqual({ region: 'Wellington' });
+      req.flush({ ...saved(), id: 'c9', datasetId: DS3, definition: { ...saved().definition, query: { ...saved().definition.query, parameters: { region: 'Wellington' } } } });
+    });
+
+    it('forgets the values when another dataset is chosen, because they belong to the first', () => {
+      open();
+      click('Add price');
+      preview(result(), DS3);
+      typeInto('Value of region', 'Wellington');
+      vi.advanceTimersByTime(300);
+      http.expectOne({ method: 'POST', url: queryUrl(DS3) }).flush(result());
+
+      choose('Dataset', DS);
+      choose('Dataset', DS3);
+
+      expect(byLabel<HTMLInputElement>('Value of region').value).toBe('');
+    });
+
+    it('shows a viewer the values but does not let them be changed', () => {
+      open('Viewer');
+
+      expect(byLabel<HTMLInputElement>('Value of region').disabled).toBe(true);
+    });
   });
 });

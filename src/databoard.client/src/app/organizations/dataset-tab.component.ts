@@ -5,12 +5,14 @@ import { SqlEditorComponent } from '../sql-editor/sql-editor.component';
 import { SqlResultsComponent } from '../sql-editor/sql-results.component';
 import { DataSourcesService, MAX_PREVIEW_ROWS, QueryPreview, problemMessages } from './data-sources.service';
 import { TableViewBuilderComponent } from './table-view-builder.component';
+import { DatasetParameter, parametersMissingDefaults, sameParameters } from './dataset-parameters';
+import { ParametersPanelComponent } from './parameters-panel.component';
 import { Dataset, DatasetsService, TableViewDefinition, emptyTableView } from './datasets.service';
 
 /** One open dataset: its SQL editor and the preview/explore panels. Each tab keeps its own state while hidden. */
 @Component({
   selector: 'app-dataset-tab',
-  imports: [MatCardModule, MatButtonModule, SqlEditorComponent, SqlResultsComponent, TableViewBuilderComponent],
+  imports: [MatCardModule, MatButtonModule, SqlEditorComponent, SqlResultsComponent, TableViewBuilderComponent, ParametersPanelComponent],
   template: `
     <mat-card appearance="raised" class="detail">
       <mat-card-header>
@@ -42,10 +44,12 @@ import { Dataset, DatasetsService, TableViewDefinition, emptyTableView } from '.
           <details class="generated"><summary>Generated SQL</summary><app-sql-editor [value]="dataset().sql ?? ''" [readOnly]="true" label="Generated SQL" /></details>
         } @else if (dataset().sql !== null) {
           <app-sql-editor [value]="sqlText()" [readOnly]="!canEdit()" (valueChange)="sqlText.set($event)" (save)="saveSql()" (run)="testSql()" />
+          <app-parameters-panel [sql]="sqlText()" [readOnly]="!canEdit()" [(parameters)]="parameters" />
           @if (canEdit()) {
+            <p class="hint"><small>{{ parameterHint }}</small></p>
             <p class="save-row">
-              <button mat-flat-button type="button" class="save" [disabled]="!dirty() || busy()" (click)="saveSql()">Save</button>
-              <button mat-stroked-button type="button" class="test" [disabled]="testing() || !sqlText().trim()" (click)="testSql()">Run query</button>
+              <button mat-flat-button type="button" class="save" [disabled]="!dirty() || busy() || missingDefaults()" (click)="saveSql()">Save</button>
+              <button mat-stroked-button type="button" class="test" [disabled]="testing() || !sqlText().trim() || missingDefaults()" (click)="testSql()">Run query</button>
               @if (dirty()) { <small>Unsaved changes</small> }
             </p>
           }
@@ -90,6 +94,7 @@ import { Dataset, DatasetsService, TableViewDefinition, emptyTableView } from '.
     .chips { display: flex; flex-wrap: wrap; gap: 0.35rem; }
     .generated { margin: 0.5rem 0; }
     .save-row { display: flex; align-items: center; gap: 0.75rem; margin: 0.5rem 0; }
+    .hint { margin: 0.25rem 0 0; }
   `,
   host: { '[class.inactive]': '!active()' },
 })
@@ -114,10 +119,15 @@ export class DatasetTabComponent {
   protected readonly isView = computed(() => this.canEdit() && this.dataset().kind === 'TableView' && this.dataset().definition !== null);
   /** The table view being edited; starts from, and resets to, the saved definition. */
   protected readonly viewDefinition = linkedSignal<TableViewDefinition>(() => this.dataset().definition ?? emptyTableView());
+  /** The SQL's parameters; they start from, and reset to, the saved ones. */
+  protected readonly parameters = linkedSignal<DatasetParameter[]>(() => this.dataset().parameters ?? []);
+  protected readonly parameterHint = 'Write {{name}} in the SQL to make a value a parameter. Charts and dashboards can choose its value.';
+  protected readonly missingDefaults = computed(() => parametersMissingDefaults(this.parameters()).length > 0);
   protected readonly dirty = computed(() =>
     this.isView()
       ? JSON.stringify(this.viewDefinition()) !== JSON.stringify(this.dataset().definition)
-      : this.dataset().sql !== null && this.sqlText() !== this.dataset().sql);
+      : this.dataset().sql !== null
+        && (this.sqlText() !== this.dataset().sql || !sameParameters(this.parameters(), this.dataset().parameters ?? [])));
   protected readonly sqlErrors = signal<string[]>([]);
   /** Rows from running the editor's current SQL (saved or not) against the dataset's data source. */
   protected readonly testResult = signal<QueryPreview | null>(null);
@@ -139,7 +149,7 @@ export class DatasetTabComponent {
     this.testing.set(true);
     this.testResult.set(null);
     this.testErrors.set([]);
-    this.sourcesApi.preview(this.orgId(), this.dataset().dataSourceId, sql, MAX_PREVIEW_ROWS).subscribe({
+    this.sourcesApi.preview(this.orgId(), this.dataset().dataSourceId, sql, MAX_PREVIEW_ROWS, this.parameters()).subscribe({
       next: (r) => {
         this.testing.set(false);
         this.testResult.set(r);
@@ -158,7 +168,7 @@ export class DatasetTabComponent {
     this.sqlErrors.set([]);
     const request = this.isView()
       ? this.api.updateTableView(this.orgId(), dataset.id, dataset.name, this.viewDefinition(), dataset.description)
-      : this.api.update(this.orgId(), dataset.id, dataset.name, this.sqlText(), dataset.description);
+      : this.api.update(this.orgId(), dataset.id, dataset.name, this.sqlText(), dataset.description, this.parameters());
     request.subscribe({
       next: (saved) => {
         this.busy.set(false);

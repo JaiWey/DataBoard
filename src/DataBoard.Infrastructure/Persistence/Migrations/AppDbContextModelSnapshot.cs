@@ -229,6 +229,10 @@ namespace DataBoard.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("OrganizationId")
                         .HasColumnType("uuid");
 
+                    b.Property<string>("ParametersJson")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("parameters");
+
                     b.Property<string>("Sql")
                         .IsRequired()
                         .HasColumnType("text");

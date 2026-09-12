@@ -73,8 +73,12 @@ internal static class DashboardValidator
                 Fail(field, "A filter needs a label of at most 200 characters.");
             else if (string.IsNullOrWhiteSpace(f.Column))
                 Fail(field, "A filter needs a column.");
+            else if (!Enum.IsDefined(f.Target))
+                Fail(field, "A filter acts on a column or on a parameter.");
             else if (!SharedFilterOperators.Contains(f.Operator))
                 Fail(field, $"Operator {f.Operator} is not supported for dashboard filters.");
+            else if (f.Target == FilterTarget.Parameter && f.Operator != FilterOperator.Eq)
+                Fail(field, "A filter on a parameter sets one value, so its condition is 'is' (Eq).");
             else
                 normalizedFilters.Add(f with { Id = f.Id == Guid.Empty ? Guid.NewGuid() : f.Id, Label = f.Label.Trim(), Column = f.Column.Trim() });
         }
@@ -262,10 +266,23 @@ public sealed class RunDashboardHandler(
 
             var applied = new List<Guid>();
             var filters = (query.Filters ?? []).ToList();
+            var parameters = new Dictionary<string, JsonElement>(query.Parameters ?? new Dictionary<string, JsonElement>(), StringComparer.OrdinalIgnoreCase);
+            var declared = DatasetParametersJson.FromJson(dataset.ParametersJson);
             foreach (var filter in active)
             {
-                if (!dataset.Columns.Any(c => c.Name == filter.Column)) continue;
                 var values = chosen[filter.Id];
+
+                if (filter.Target == FilterTarget.Parameter)
+                {
+                    // Sets a value the dataset's SQL takes, for the charts whose dataset has a parameter of that name.
+                    var parameter = declared.FirstOrDefault(p => string.Equals(p.Name, filter.Column, StringComparison.OrdinalIgnoreCase));
+                    if (parameter is null) continue;
+                    parameters[parameter.Name] = values[0];
+                    applied.Add(filter.Id);
+                    continue;
+                }
+
+                if (!dataset.Columns.Any(c => c.Name == filter.Column)) continue;
                 filters.Add(filter.Operator is FilterOperator.In or FilterOperator.Between
                     ? new FilterSpec(filter.Column, filter.Operator, Values: values)
                     : new FilterSpec(filter.Column, filter.Operator, values[0]));
@@ -274,7 +291,7 @@ public sealed class RunDashboardHandler(
 
             try
             {
-                var run = query with { Filters = filters };
+                var run = query with { Filters = filters, Parameters = parameters.Count > 0 ? parameters : null };
                 var result = shared
                     ? await runner.HandleTrustedAsync(organizationId, chart.DatasetId, run, ct)
                     : await runner.HandleAsync(organizationId, chart.DatasetId, run, ct);

@@ -79,10 +79,10 @@ describe('DashboardComponent', () => {
     fixture.detectChanges();
   };
 
-  const load = (role: 'Viewer' | 'Editor' | 'Owner', def = dashboard()) => {
+  const load = (role: 'Viewer' | 'Editor' | 'Owner', def = dashboard(), datasetList: object[] = datasets) => {
     open(role);
     http.expectOne(`/api/organizations/${ORG}/charts`).flush(charts);
-    http.expectOne(`/api/organizations/${ORG}/datasets`).flush(datasets);
+    http.expectOne(`/api/organizations/${ORG}/datasets`).flush(datasetList);
     http.expectOne(dashboardUrl).flush(def);
     fixture.detectChanges();
   };
@@ -452,10 +452,60 @@ describe('DashboardComponent', () => {
 
     const put = http.expectOne({ method: 'PUT', url: dashboardUrl });
     expect(put.request.body.definition.filters).toEqual([
-      { id: '00000000-0000-0000-0000-000000000000', label: 'Region', column: 'region', operator: 'In' },
+      { id: '00000000-0000-0000-0000-000000000000', label: 'Region', column: 'region', operator: 'In', target: 'Column' },
     ]);
     put.flush(dashboard());
     http.expectOne(runUrl).flush({ widgets: [] });
+  });
+
+  describe('filters on a dataset parameter', () => {
+    const withParameters = [{ ...datasets[0], parameters: [{ name: 'region', type: 'Text', default: 'Auckland' }, { name: 'min_price', type: 'Number', default: 0 }] }];
+    const filterSelect = (label: string) => el().querySelector(`select[aria-label="${label}"]`) as HTMLSelectElement;
+    const choose = (label: string, value: string) => {
+      const select = filterSelect(label);
+      select.value = value;
+      select.dispatchEvent(new Event('change'));
+      fixture.detectChanges();
+    };
+
+    it('offers parameters only when a dataset has them', () => {
+      load('Editor', dashboard(false));
+      http.expectOne(runUrl).flush({ widgets: [] });
+
+      const option = Array.from(filterSelect('Filter applies to').options).find((o) => o.value === 'Parameter')!;
+      expect(option.disabled).toBe(true);
+    });
+
+    it('lists the parameters of the datasets, fixes the condition at "is", and saves the target', () => {
+      load('Editor', dashboard(false), withParameters);
+      http.expectOne(runUrl).flush({ widgets: [] });
+
+      choose('Filter applies to', 'Parameter');
+      expect(Array.from(filterSelect('Filter column').options).map((o) => o.textContent?.trim())).toEqual(['min_price', 'region']);
+      expect(el().querySelector('select[aria-label="Filter condition"]')).toBeNull(); // a parameter takes one value
+
+      type('input[aria-label="Filter label"]', 'Region');
+      choose('Filter column', 'region');
+      (el().querySelector('form button[type=submit]') as HTMLButtonElement).click();
+
+      const put = http.expectOne({ method: 'PUT', url: dashboardUrl });
+      expect(put.request.body.definition.filters).toEqual([
+        { id: '00000000-0000-0000-0000-000000000000', label: 'Region', column: 'region', operator: 'Eq', target: 'Parameter' },
+      ]);
+      put.flush(dashboard());
+      http.expectOne(runUrl).flush({ widgets: [] });
+    });
+
+    it('goes back to columns, and their conditions, when the target is changed back', () => {
+      load('Editor', dashboard(false), withParameters);
+      http.expectOne(runUrl).flush({ widgets: [] });
+
+      choose('Filter applies to', 'Parameter');
+      choose('Filter applies to', 'Column');
+
+      expect(Array.from(filterSelect('Filter column').options).map((o) => o.textContent?.trim())).toEqual(['price', 'region']);
+      expect(filterSelect('Filter condition')).not.toBeNull();
+    });
   });
 
   it('shows the API message when the dashboard cannot be loaded', () => {

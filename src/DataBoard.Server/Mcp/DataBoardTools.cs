@@ -64,7 +64,7 @@ public sealed class DataBoardTools(IServiceProvider services, IHttpContextAccess
         [Description("The organization's id, from list_organizations.")] Guid organizationId, CancellationToken ct) =>
         Run("list_datasets", organizationId, false, async () =>
             (IReadOnlyList<DatasetSummary>)(await Get<ListDatasetsHandler>().HandleAsync(organizationId, ct))
-                .Select(d => new DatasetSummary(d.Id, d.Name, d.Description, d.Columns))
+                .Select(d => new DatasetSummary(d.Id, d.Name, d.Description, d.Columns, d.Parameters ?? []))
                 .ToList());
 
     [McpServerTool(Name = "preview_chart", ReadOnly = true, Destructive = false, OpenWorld = false)]
@@ -190,16 +190,17 @@ public sealed class DataBoardTools(IServiceProvider services, IHttpContextAccess
         }, ct));
 
     [McpServerTool(Name = "add_dashboard_filter", ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
-    [Description("Adds a shared filter to a dashboard: viewers type a value once and it applies to every chart whose dataset has a column with exactly this name. Needs a Write token and the Editor or Owner role.")]
+    [Description("Adds a shared filter to a dashboard: viewers type a value once and it applies to every chart whose dataset has a column (or, with target Parameter, a parameter) with exactly this name. Needs a Write token and the Editor or Owner role.")]
     public Task<DashboardInfo> AddDashboardFilter(
         [Description("The organization's id.")] Guid organizationId,
         [Description("The dashboard's id.")] Guid dashboardId,
         [Description("The label viewers see, such as \"Region\".")] string label,
-        [Description("The dataset column the filter applies to, by its exact name.")] string column,
-        [Description("How the typed value is compared: Eq, NotEq, In, Contains, StartsWith, Gte, Lte or Between.")] FilterOperator @operator,
+        [Description("The dataset column (or parameter, when the target is Parameter) the filter applies to, by its exact name.")] string column,
+        [Description("How the typed value is compared: Eq, NotEq, In, Contains, StartsWith, Gte, Lte or Between. A filter on a parameter sets one value, so it is Eq.")] FilterOperator @operator,
+        [Description("Column (default) filters rows of the charts. Parameter sets the value of a dataset parameter, for the charts whose dataset has one with that name.")] FilterTarget target = FilterTarget.Column,
         CancellationToken ct = default) =>
         Run("add_dashboard_filter", organizationId, true, () => ChangeDashboard(organizationId, dashboardId,
-            d => d with { Filters = [.. d.Filters, new DashboardFilter(Guid.Empty, label, column, @operator)] }, ct));
+            d => d with { Filters = [.. d.Filters, new DashboardFilter(Guid.Empty, label, column, @operator, target)] }, ct));
 
     /// <summary>Reads a dashboard, applies a change to its definition, and saves it through the normal update handler (validation included).</summary>
     private async Task<DashboardInfo> ChangeDashboard(
@@ -214,7 +215,9 @@ public sealed class DataBoardTools(IServiceProvider services, IHttpContextAccess
 
 // ---- what the tools return: only what an assistant needs, never SQL, connection details or other people's data ------
 
-public sealed record DatasetSummary(Guid Id, string Name, string? Description, IReadOnlyList<DatasetColumnDto> Columns);
+/// <param name="Parameters">Values the dataset's SQL takes (name, type, default). A chart can set them in its query's "parameters".</param>
+public sealed record DatasetSummary(
+    Guid Id, string Name, string? Description, IReadOnlyList<DatasetColumnDto> Columns, IReadOnlyList<DatasetParameter> Parameters);
 
 public sealed record PreviewColumnInfo(string Name, string DataType);
 
@@ -242,7 +245,8 @@ internal static class QueryHelp
         "measures: totals to compute, e.g. {\"aggregation\":\"Sum\",\"column\":\"price\",\"alias\":\"revenue\"}; aggregation is Sum, Avg, Min, Max, Count or CountDistinct (Sum and Avg need a number column; Count needs no column and counts rows). " +
         "filters: conditions on columns, e.g. {\"column\":\"region\",\"operator\":\"In\",\"values\":[\"Auckland\"]}; operators Eq, NotEq, Gt, Gte, Lt, Lte (value), In, NotIn, Between (values), Contains, StartsWith (text value), IsNull, IsNotNull. " +
         "orderBy: [{\"field\":\"revenue\",\"direction\":\"Desc\"}] names a dimension or measure alias. limit: rows, 1 to 1000 (default 100). " +
-        "seriesLimit: keep only the largest N series (1 to 100) when there are two dimensions. Use only column names from list_datasets.";
+        "seriesLimit: keep only the largest N series (1 to 100) when there are two dimensions. " +
+        "parameters: values for the dataset's own parameters (listed by list_datasets), as {\"region\":\"Auckland\"}; a parameter not given uses its default. Use only column names from list_datasets.";
 
     public const string Style = "How it looks. Optional. legend (true), labels (false: show values on the chart), palette (default, warm, cool or mono), stack (false: pile series on top of each other on bar, line and area charts).";
 }

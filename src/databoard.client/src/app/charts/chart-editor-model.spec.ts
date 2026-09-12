@@ -127,6 +127,13 @@ describe('toQuery', () => {
     expect(toQuery(state({ ...two, type: 'Line', seriesLimit: null })).seriesLimit).toBeUndefined();
   });
 
+  it('sends the values chosen for the dataset parameters, and nothing when none were chosen', () => {
+    const chosen = toQuery(state({ metrics: [rowCountMetric()], parameters: { region: 'Wellington', min_price: 250, paid: false } }));
+
+    expect(chosen.parameters).toEqual({ region: 'Wellington', min_price: 250, paid: false });
+    expect(toQuery(state({ metrics: [rowCountMetric()] })).parameters).toBeUndefined();
+  });
+
   it('skips filters that were added but not filled in yet', () => {
     const query = toQuery(state({ metrics: [rowCountMetric()], filters: [{ ...filterFor(region), value: '  ' }] }));
 
@@ -174,6 +181,19 @@ describe('fromChart', () => {
     expect(s.sortDirection).toBe('Asc');
     expect(s.limit).toBe(50);
     expect(s.style).toEqual({ legend: false, labels: true, palette: 'cool', stack: false });
+  });
+
+  it('brings back the parameter values, and does not share them with the saved chart', () => {
+    const chart = saved();
+    chart.definition.query.parameters = { region: 'Dunedin', min_price: 10 };
+
+    const s = fromChart(chart, dataset());
+    s.parameters['region'] = 'changed';
+
+    expect(s.parameters).toEqual({ region: 'changed', min_price: 10 });
+    expect(chart.definition.query.parameters).toEqual({ region: 'Dunedin', min_price: 10 });
+    expect(toQuery(fromChart(chart, dataset())).parameters).toEqual({ region: 'Dunedin', min_price: 10 });
+    expect(fromChart(saved(), dataset()).parameters).toEqual({}); // a chart without any
   });
 
   it('brings back the series limit', () => {

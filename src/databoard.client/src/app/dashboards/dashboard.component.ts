@@ -22,6 +22,7 @@ import {
   DashboardRun,
   DashboardWidget,
   DashboardsService,
+  FilterTarget,
   FilterValues,
   NEW_ID,
   SHARED_FILTER_OPERATORS,
@@ -149,18 +150,30 @@ export function parseFilterInput(operator: SharedFilterOperator, text: string): 
             <input matInput formControlName="label" aria-label="Filter label" />
           </mat-form-field>
           <mat-form-field>
-            <mat-label>Column</mat-label>
-            <select matNativeControl formControlName="column" aria-label="Filter column">
-              @for (name of columnNames(); track name) { <option [value]="name">{{ name }}</option> }
+            <mat-label>Applies to</mat-label>
+            <select matNativeControl formControlName="target" aria-label="Filter applies to" (change)="setTarget($any($event.target).value)">
+              <option value="Column">A column</option>
+              <option value="Parameter" [disabled]="parameterNames().length === 0">A dataset parameter</option>
             </select>
-            <mat-hint>Applies to every chart whose dataset has this column</mat-hint>
           </mat-form-field>
           <mat-form-field>
-            <mat-label>Condition</mat-label>
-            <select matNativeControl formControlName="operator" aria-label="Filter condition">
-              @for (op of operators; track op.value) { <option [value]="op.value">{{ op.label }}</option> }
+            <mat-label>{{ target() === 'Parameter' ? 'Parameter' : 'Column' }}</mat-label>
+            <select matNativeControl formControlName="column" aria-label="Filter column">
+              @for (name of targetNames(); track name) { <option [value]="name">{{ name }}</option> }
             </select>
+            <mat-hint>
+              @if (target() === 'Parameter') { Sets the value for every chart whose dataset has this parameter }
+              @else { Applies to every chart whose dataset has this column }
+            </mat-hint>
           </mat-form-field>
+          @if (target() === 'Column') {
+            <mat-form-field>
+              <mat-label>Condition</mat-label>
+              <select matNativeControl formControlName="operator" aria-label="Filter condition">
+                @for (op of operators; track op.value) { <option [value]="op.value">{{ op.label }}</option> }
+              </select>
+            </mat-form-field>
+          }
           <button mat-flat-button type="submit" class="apply" [disabled]="newFilterForm.invalid || busy()">Add filter</button>
         </form>
       }
@@ -241,11 +254,25 @@ export class DashboardComponent implements OnInit {
     label: ['', [Validators.required, Validators.maxLength(200)]],
     column: ['', Validators.required],
     operator: ['In' as SharedFilterOperator],
+    target: ['Column' as FilterTarget],
   });
+  /** What the filter being made acts on. A parameter sets one value, so its condition is always "is". */
+  protected readonly target = signal<FilterTarget>('Column');
 
   protected readonly columnNames = computed(() =>
     [...new Set(this.datasets().flatMap((d) => d.columns.map((c) => c.name)))].sort((a, b) => a.localeCompare(b)),
   );
+  protected readonly parameterNames = computed(() =>
+    [...new Set(this.datasets().flatMap((d) => (d.parameters ?? []).map((p) => p.name)))].sort((a, b) => a.localeCompare(b)),
+  );
+  protected readonly targetNames = computed(() => (this.target() === 'Parameter' ? this.parameterNames() : this.columnNames()));
+
+  protected setTarget(target: FilterTarget): void {
+    this.target.set(target);
+    const controls = this.newFilterForm.controls;
+    controls.column.setValue(this.targetNames()[0] ?? '');
+    controls.operator.setValue(target === 'Parameter' ? 'Eq' : 'In');
+  }
 
   ngOnInit(): void {
     this.chartsApi.list(this.orgId()).subscribe({ next: (items) => this.charts.set(items) });
@@ -372,7 +399,7 @@ export class DashboardComponent implements OnInit {
     const v = this.newFilterForm.getRawValue();
     this.save(d, {
       ...d.definition,
-      filters: [...d.definition.filters, { id: NEW_ID, label: v.label, column: v.column, operator: v.operator }],
+      filters: [...d.definition.filters, { id: NEW_ID, label: v.label, column: v.column, operator: v.operator, target: v.target }],
     }, () => this.newFilterForm.controls.label.reset());
   }
 

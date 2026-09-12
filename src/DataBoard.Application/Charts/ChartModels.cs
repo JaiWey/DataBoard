@@ -40,7 +40,8 @@ public sealed record ChartQuery(
     IReadOnlyList<FilterSpec>? MeasureFilters = null,
     IReadOnlyList<OrderSpec>? OrderBy = null,
     int? Limit = null,
-    int? SeriesLimit = null);
+    int? SeriesLimit = null,
+    IReadOnlyDictionary<string, JsonElement>? Parameters = null);
 
 // ---- the validated, typed form the SQL renderer works from ---------------------------------------------------
 
@@ -75,7 +76,11 @@ public interface IChartSqlRenderer
     /// Builds one SELECT over the dataset's SQL. Identifiers come only from the validated plan, and every value
     /// travels as a bound parameter, never as text inside the SQL.
     /// </summary>
-    ParameterizedQuery Render(string datasetSql, ChartQueryPlan plan);
+    /// <param name="datasetParameters">
+    /// Values for the <c>@databoard_pN</c> parameters already inside <paramref name="datasetSql"/> (a dataset's own
+    /// parameters), in order. The query's filter values are numbered after them.
+    /// </param>
+    ParameterizedQuery Render(string datasetSql, ChartQueryPlan plan, IReadOnlyList<object?>? datasetParameters = null);
 }
 
 /// <summary>Finds the renderer for a data source type.</summary>

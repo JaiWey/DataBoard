@@ -9,6 +9,7 @@ import { MatTabsModule } from '@angular/material/tabs';
 import { ActivatedRoute, Router } from '@angular/router';
 import { Subscription } from 'rxjs';
 import { problemMessages } from '../organizations/data-sources.service';
+import { DatasetParameter, parameterText, parseParameterValue } from '../organizations/dataset-parameters';
 import { ChartResult, Dataset, DatasetColumn, DatasetsService } from '../organizations/datasets.service';
 import {
   AGGREGATIONS,
@@ -164,6 +165,31 @@ interface Organization {
                   <p class="drop-hint">Drag a field here</p>
                 }
               </div>
+
+              @if (datasetParameters().length > 0) {
+                <h3>Parameters</h3>
+                <p class="zone-hint">This dataset takes values. Leave one empty to use its default.</p>
+                <div class="params">
+                  @for (parameter of datasetParameters(); track parameter.name) {
+                    <label class="param">
+                      <span>{{ parameterLabel(parameter) }}</span>
+                      @if (parameter.type === 'Boolean') {
+                        <select [attr.aria-label]="'Value of ' + parameter.name" [disabled]="!canEdit()" (change)="setParameter(parameter, $any($event.target).value)">
+                          <option value="" [selected]="parameterValue(parameter) === ''">default ({{ defaultText(parameter) }})</option>
+                          <option value="true" [selected]="parameterValue(parameter) === 'true'">true</option>
+                          <option value="false" [selected]="parameterValue(parameter) === 'false'">false</option>
+                        </select>
+                      } @else {
+                        <input [attr.aria-label]="'Value of ' + parameter.name" [disabled]="!canEdit()"
+                               [type]="parameter.type === 'Number' ? 'number' : parameter.type === 'Date' ? 'date' : 'text'"
+                               [step]="parameter.type === 'Number' ? 'any' : null"
+                               [placeholder]="'default: ' + defaultText(parameter)" [value]="parameterValue(parameter)"
+                               (input)="setParameter(parameter, $any($event.target).value)" />
+                      }
+                    </label>
+                  }
+                </div>
+              }
             </div>
           </mat-tab>
 
@@ -292,6 +318,9 @@ interface Organization {
     .zone { min-width: 0; min-height: 3.2rem; display: grid; gap: 0.35rem; padding: 0.4rem; background: var(--mat-sys-surface-container); border-radius: 6px; align-content: start; }
     .zone.cdk-drop-list-dragging, .zone.cdk-drop-list-receiving { outline: 2px dashed var(--mat-sys-primary); }
     .zone-hint { margin: 0; font: var(--mat-sys-body-small); color: var(--mat-sys-on-surface-variant); }
+    .params { display: grid; gap: 0.5rem; }
+    .param { display: grid; grid-template-columns: 9rem 1fr; align-items: center; gap: 0.5rem; }
+    .param input, .param select { padding: 0.3rem; min-width: 0; }
     .role { font: var(--mat-sys-label-small); color: var(--mat-sys-primary); min-width: 3.2rem; }
     .drop-hint { margin: 0.6rem 0; text-align: center; color: var(--mat-sys-on-surface-variant); }
     .item { min-width: 0; display: flex; align-items: center; gap: 0.4rem; padding: 0.3rem 0.5rem; background: #fff; border: 1px solid var(--mat-sys-outline-variant); border-radius: 4px; }
@@ -334,6 +363,8 @@ export class ChartEditorComponent implements OnInit {
   private readonly savedJson = signal<string>('');
   protected readonly dataset = computed(() => this.datasets().find((d) => d.id === this.state().datasetId));
   protected readonly columns = computed<DatasetColumn[]>(() => this.dataset()?.columns ?? []);
+  /** The values the dataset's SQL takes; a chart can choose them, and what it leaves alone uses the default. */
+  protected readonly datasetParameters = computed<DatasetParameter[]>(() => this.dataset()?.parameters ?? []);
 
   protected readonly chartTypes = CHART_TYPES;
   protected readonly palettes = PALETTE_NAMES;
@@ -453,7 +484,31 @@ export class ChartEditorComponent implements OnInit {
   /** Another dataset has other fields, so everything chosen from the old one is cleared. */
   protected chooseDataset(id: string): void {
     if (id === this.state().datasetId) return;
-    this.patch({ datasetId: id, dimensions: [], metrics: [], filters: [], sortBy: '' });
+    // Parameters belong to a dataset, so the values chosen for the old one do not carry over.
+    this.patch({ datasetId: id, dimensions: [], metrics: [], filters: [], sortBy: '', parameters: {} });
+  }
+
+  /** The value chosen for a parameter, as text for its input (empty: the default is used). */
+  protected parameterValue(parameter: DatasetParameter): string {
+    return parameterText(this.state().parameters[parameter.name] as string | number | boolean | null | undefined);
+  }
+
+  /** Choosing nothing puts the parameter back to its default; a value that is not valid for the type is not kept. */
+  protected setParameter(parameter: DatasetParameter, text: string): void {
+    const value = parseParameterValue(parameter.type, text);
+    if (value === null && !(parameter.name in this.state().parameters)) return; // nothing was chosen, nothing changes
+    const rest = { ...this.state().parameters };
+    if (value === null) delete rest[parameter.name];
+    else rest[parameter.name] = value;
+    this.patch({ parameters: rest });
+  }
+
+  protected defaultText(parameter: DatasetParameter): string {
+    return parameterText(parameter.default) || 'none';
+  }
+
+  protected parameterLabel(parameter: DatasetParameter): string {
+    return parameter.label || parameter.name;
   }
 
   protected addField(zone: Zone, column: DatasetColumn): void {

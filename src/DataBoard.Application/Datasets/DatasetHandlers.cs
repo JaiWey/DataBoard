@@ -10,10 +10,11 @@ namespace DataBoard.Application.Datasets;
 /// <param name="Sql">Required for SQL datasets. For a table view it is ignored: the SQL is generated from <paramref name="Definition"/>.</param>
 public sealed record CreateDatasetRequest(
     Guid DataSourceId, string Name, string? Description, string? Sql,
-    DatasetKind Kind = DatasetKind.Sql, TableViewDefinition? Definition = null);
+    DatasetKind Kind = DatasetKind.Sql, TableViewDefinition? Definition = null, IReadOnlyList<DatasetParameter>? Parameters = null);
 
 /// <summary>The kind of a dataset cannot change, so an update carries the SQL or the definition, whichever the dataset uses.</summary>
-public sealed record UpdateDatasetRequest(string Name, string? Description, string? Sql, TableViewDefinition? Definition = null);
+public sealed record UpdateDatasetRequest(
+    string Name, string? Description, string? Sql, TableViewDefinition? Definition = null, IReadOnlyList<DatasetParameter>? Parameters = null);
 
 public sealed record DatasetColumnDto(string Name, string DataType, ColumnRole Role);
 
@@ -28,7 +29,8 @@ public sealed record DatasetDto(
     DateTime CreatedUtc,
     DateTime UpdatedUtc,
     DatasetKind Kind = DatasetKind.Sql,
-    TableViewDefinition? Definition = null);
+    TableViewDefinition? Definition = null,
+    IReadOnlyList<DatasetParameter>? Parameters = null);
 
 internal static class DatasetMapping
 {
@@ -42,7 +44,8 @@ internal static class DatasetMapping
         d.CreatedUtc,
         d.UpdatedUtc,
         d.Kind,
-        includeSql ? TableViewDefinition.FromJson(d.DefinitionJson) : null);
+        includeSql ? TableViewDefinition.FromJson(d.DefinitionJson) : null,
+        DatasetParametersJson.FromJson(d.ParametersJson));
 }
 
 /// <summary>Validates SQL and records what it returns. Shared by create and update.</summary>
@@ -54,24 +57,31 @@ internal static class DatasetQuery
         Domain.DataSources.DataSource source,
         string connectionString,
         string sql,
+        IReadOnlyList<DatasetParameter>? parameters,
         CancellationToken ct)
     {
-        var validated = validator.ValidateReadOnly(source.Type, sql);
-        var described = await connector.DescribeAsync(connectionString, validated, ct);
+        // The parameters are checked against the SQL, then replaced by their defaults to validate and describe it.
+        SqlParameters.CheckDefinitions(sql, parameters);
+        var bound = SqlParameters.Bind(sql, parameters ?? [], null);
+        var validated = validator.ValidateReadOnly(source.Type, bound.Sql);
+        var described = await connector.DescribeAsync(connectionString, validated, bound.Parameters, ct);
         var columns = described
             .Select(c => new DatasetColumn(c.Name, c.DataType, ColumnRoleInference.Infer(c.DataType)))
             .ToList();
-        return (validated, columns);
+        // With parameters, what is stored is the SQL as written, {{placeholders}} and all: it is bound again on every run.
+        var stored = SqlParameters.Placeholders(sql).Count == 0 ? validated : sql.Trim().TrimEnd(';').TrimEnd();
+        return (stored, columns);
     }
 
     /// <summary>
     /// Works out the SQL and columns for a create or update. A SQL dataset uses what was typed; a table view is checked
     /// against the data source's real schema and its SQL is generated, then goes through the same validation as typed SQL.
     /// </summary>
-    public static async Task<(string Sql, List<DatasetColumn> Columns, string? DefinitionJson)> ResolveAsync(
+    public static async Task<(string Sql, List<DatasetColumn> Columns, string? DefinitionJson, string? ParametersJson)> ResolveAsync(
         DatasetKind kind,
         string? sql,
         TableViewDefinition? definition,
+        IReadOnlyList<DatasetParameter>? parameters,
         IDataSourceConnector connector,
         TableViewSqlRenderers renderers,
         ISqlQueryValidator validator,
@@ -84,13 +94,15 @@ internal static class DatasetQuery
             case DatasetKind.Sql:
                 if (definition is not null)
                     throw new ValidationException("Definition", "A SQL dataset has no table view definition.");
-                var (typed, typedColumns) = await PrepareAsync(connector, validator, source, connectionString, sql ?? string.Empty, ct);
-                return (typed, typedColumns, null);
+                var (typed, typedColumns) = await PrepareAsync(connector, validator, source, connectionString, sql ?? string.Empty, parameters, ct);
+                return (typed, typedColumns, null, DatasetParametersJson.ToJson(parameters));
 
             case DatasetKind.TableView:
+                if (parameters is { Count: > 0 })
+                    throw new ValidationException("Parameters", "A table view has no parameters; its SQL is generated.");
                 var generated = await GenerateAsync(definition, connector, renderers, source, connectionString, ct);
-                var (checkedSql, columns) = await PrepareAsync(connector, validator, source, connectionString, generated, ct);
-                return (checkedSql, columns, definition!.ToJson());
+                var (checkedSql, columns) = await PrepareAsync(connector, validator, source, connectionString, generated, null, ct);
+                return (checkedSql, columns, definition!.ToJson(), null);
 
             default:
                 throw new ValidationException("Kind", "The dataset kind is not valid.");
@@ -142,15 +154,15 @@ public sealed class CreateDatasetHandler(
         var userId = access.RequireUserId();
 
         var (source, connectionString) = await DataSourceLookup.LoadAsync(dataSources, secrets, organizationId, request.DataSourceId, ct);
-        var (sql, columns, definitionJson) = await DatasetQuery.ResolveAsync(
-            request.Kind, request.Sql, request.Definition, connectors.Get(source.Type), renderers, validator, source, connectionString, ct);
+        var (sql, columns, definitionJson, parametersJson) = await DatasetQuery.ResolveAsync(
+            request.Kind, request.Sql, request.Definition, request.Parameters, connectors.Get(source.Type), renderers, validator, source, connectionString, ct);
 
         if (await datasets.NameExistsAsync(organizationId, request.Name?.Trim() ?? string.Empty, null, ct))
             throw new ConflictException("A dataset with that name already exists.");
 
         var dataset = DatasetQuery.Guard(() => Dataset.Create(
             organizationId, source.Id, request.Name!, request.Description, sql, columns, userId, clock.UtcNow,
-            request.Kind, definitionJson));
+            request.Kind, definitionJson, parametersJson));
 
         await datasets.AddAsync(dataset, ct);
         await unitOfWork.SaveChangesAsync(ct);
@@ -199,15 +211,15 @@ public sealed class UpdateDatasetHandler(
         var dataset = await datasets.GetAsync(organizationId, datasetId, ct)
             ?? throw new NotFoundException("Dataset not found.");
         var (source, connectionString) = await DataSourceLookup.LoadAsync(dataSources, secrets, organizationId, dataset.DataSourceId, ct);
-        var (sql, columns, definitionJson) = await DatasetQuery.ResolveAsync(
-            dataset.Kind, request.Sql, request.Definition, connectors.Get(source.Type), renderers, validator, source, connectionString, ct);
+        var (sql, columns, definitionJson, parametersJson) = await DatasetQuery.ResolveAsync(
+            dataset.Kind, request.Sql, request.Definition, request.Parameters, connectors.Get(source.Type), renderers, validator, source, connectionString, ct);
 
         if (await datasets.NameExistsAsync(organizationId, request.Name?.Trim() ?? string.Empty, dataset.Id, ct))
             throw new ConflictException("A dataset with that name already exists.");
 
         DatasetQuery.Guard(() =>
         {
-            dataset.Update(request.Name!, request.Description, sql, columns, clock.UtcNow, definitionJson);
+            dataset.Update(request.Name!, request.Description, sql, columns, clock.UtcNow, definitionJson, parametersJson);
             return true;
         });
 
@@ -250,9 +262,11 @@ public sealed class PreviewDatasetHandler(
             ?? throw new NotFoundException("Dataset not found.");
         var (source, connectionString) = await DataSourceLookup.LoadAsync(dataSources, secrets, organizationId, dataset.DataSourceId, ct);
 
-        var sql = validator.ValidateReadOnly(source.Type, dataset.Sql);
+        // Parameters take their defaults here; a chart can choose other values.
+        var bound = SqlParameters.Bind(dataset.Sql, DatasetParametersJson.FromJson(dataset.ParametersJson), null);
+        var sql = validator.ValidateReadOnly(source.Type, bound.Sql);
         var rows = Math.Clamp(maxRows ?? PreviewQueryHandler.DefaultRows, 1, PreviewQueryHandler.MaxRows);
-        return await connectors.Get(source.Type).PreviewAsync(connectionString, sql, rows, ct);
+        return await connectors.Get(source.Type).PreviewAsync(connectionString, sql, rows, bound.Parameters, ct);
     }
 }
 
@@ -280,7 +294,7 @@ public sealed class PreviewTableViewHandler(
         var sql = validator.ValidateReadOnly(source.Type, generated);
         var maxRows = Math.Clamp(request.MaxRows ?? PreviewQueryHandler.DefaultRows, 1, PreviewQueryHandler.MaxRows);
 
-        var result = await connector.PreviewAsync(connectionString, sql, maxRows, ct);
+        var result = await connector.PreviewAsync(connectionString, sql, maxRows, [], ct);
         return new TableViewPreviewResult(result.Columns, result.Rows, result.Truncated, sql);
     }
 }

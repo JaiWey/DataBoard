@@ -19,7 +19,10 @@ public sealed record DashboardWidget(Guid Id, Guid ChartId, WidgetLayout? Layout
 /// A filter shared by the whole dashboard. Viewers pick values; the filter then applies to every widget whose dataset
 /// has a column with exactly this name, and widgets without that column ignore it.
 /// </summary>
-public sealed record DashboardFilter(Guid Id, string Label, string Column, FilterOperator Operator);
+public sealed record DashboardFilter(Guid Id, string Label, string Column, FilterOperator Operator, FilterTarget Target = FilterTarget.Column);
+
+/// <summary>What a shared filter acts on: a dataset column (it filters rows), or a dataset parameter (it sets a value the SQL takes).</summary>
+public enum FilterTarget { Column = 0, Parameter = 1 }
 
 public sealed record DashboardDefinition(IReadOnlyList<DashboardWidget> Widgets, IReadOnlyList<DashboardFilter> Filters);
 

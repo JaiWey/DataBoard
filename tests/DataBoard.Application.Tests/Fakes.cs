@@ -64,19 +64,26 @@ internal sealed class FakeConnector : IDataSourceConnector
     public int DescribeCalls { get; private set; }
     public int PreviewCalls { get; private set; }
 
-    public Task<IReadOnlyList<PreviewColumn>> DescribeAsync(string connectionString, string validatedSql, CancellationToken ct = default)
+    /// <summary>The values the last describe or preview was asked to bind.</summary>
+    public IReadOnlyList<object?> LastBound { get; private set; } = [];
+
+    public Task<IReadOnlyList<PreviewColumn>> DescribeAsync(
+        string connectionString, string validatedSql, IReadOnlyList<object?> parameters, CancellationToken ct = default)
     {
         DescribeCalls++;
         UsedConnectionStrings.Add(connectionString);
         LastSql = validatedSql;
+        LastBound = parameters;
         return Task.FromResult<IReadOnlyList<PreviewColumn>>(DescribedColumns);
     }
 
-    public Task<QueryPreview> PreviewAsync(string connectionString, string validatedSql, int maxRows, CancellationToken ct = default)
+    public Task<QueryPreview> PreviewAsync(
+        string connectionString, string validatedSql, int maxRows, IReadOnlyList<object?> parameters, CancellationToken ct = default)
     {
         PreviewCalls++;
         UsedConnectionStrings.Add(connectionString);
         LastSql = validatedSql;
+        LastBound = parameters;
         LastMaxRows = maxRows;
         return Task.FromResult(new QueryPreview([], [], false));
     }
@@ -179,12 +186,14 @@ internal sealed class FakeRenderer : IChartSqlRenderer
     public Domain.DataSources.DataSourceType Type => Domain.DataSources.DataSourceType.PostgreSql;
     public string? LastDatasetSql { get; private set; }
     public ChartQueryPlan? LastPlan { get; private set; }
+    public IReadOnlyList<object?>? LastDatasetParameters { get; private set; }
 
-    public ParameterizedQuery Render(string datasetSql, ChartQueryPlan plan)
+    public ParameterizedQuery Render(string datasetSql, ChartQueryPlan plan, IReadOnlyList<object?>? datasetParameters = null)
     {
         LastDatasetSql = datasetSql;
         LastPlan = plan;
-        return new ParameterizedQuery($"RENDERED({datasetSql})", []);
+        LastDatasetParameters = datasetParameters;
+        return new ParameterizedQuery($"RENDERED({datasetSql})", datasetParameters ?? []);
     }
 }
 

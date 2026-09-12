@@ -7,13 +7,15 @@ import { MatInputModule } from '@angular/material/input';
 import { SqlEditorComponent } from '../sql-editor/sql-editor.component';
 import { SqlResultsComponent } from '../sql-editor/sql-results.component';
 import { DataSource, DataSourcesService, MAX_PREVIEW_ROWS, QueryPreview, problemMessages } from './data-sources.service';
+import { DatasetParameter, parametersMissingDefaults } from './dataset-parameters';
+import { ParametersPanelComponent } from './parameters-panel.component';
 import { Dataset } from './datasets.service';
 import { SaveDatasetDialogComponent, SaveDatasetDialogData } from './save-dataset-dialog.component';
 
 /** An unsaved dataset: pick the data source, write the SQL, and Save asks for a name. */
 @Component({
   selector: 'app-new-dataset-tab',
-  imports: [MatCardModule, MatButtonModule, MatFormFieldModule, MatInputModule, SqlEditorComponent, SqlResultsComponent],
+  imports: [MatCardModule, MatButtonModule, MatFormFieldModule, MatInputModule, SqlEditorComponent, SqlResultsComponent, ParametersPanelComponent],
   template: `
     <mat-card appearance="raised" class="detail">
       <mat-card-header>
@@ -34,7 +36,8 @@ import { SaveDatasetDialogComponent, SaveDatasetDialogData } from './save-datase
           </select>
         </mat-form-field>
         <app-sql-editor [value]="sql()" (valueChange)="sql.set($event)" (save)="openSave()" (run)="test()" />
-        <p><small>One read-only SELECT. Give every column a unique name.</small></p>
+        <app-parameters-panel [sql]="sql()" [(parameters)]="parameters" />
+        <p><small>One read-only SELECT. Give every column a unique name. {{ parameterHint }}</small></p>
         @for (message of errors(); track message) {
           <p class="fail" role="alert">{{ message }}</p>
         }
@@ -75,7 +78,12 @@ export class NewDatasetTabComponent implements OnInit {
   protected readonly testResult = signal<QueryPreview | null>(null);
   protected readonly testErrors = signal<string[]>([]);
   protected readonly testing = signal(false);
-  protected readonly canSave = computed(() => !!this.sourceId() && this.sql().trim().length > 0);
+  /** The SQL's parameters, kept in step with its {{placeholders}} by the panel. */
+  protected readonly parameters = signal<DatasetParameter[]>([]);
+  protected readonly parameterHint = 'Write {{name}} to make a value a parameter that charts and dashboards can choose.';
+  protected readonly canSave = computed(
+    () => !!this.sourceId() && this.sql().trim().length > 0 && parametersMissingDefaults(this.parameters()).length === 0,
+  );
 
   constructor() {
     effect(() => this.dirtyChange.emit(this.sql().trim().length > 0));
@@ -101,7 +109,7 @@ export class NewDatasetTabComponent implements OnInit {
     this.testing.set(true);
     this.testResult.set(null);
     this.testErrors.set([]);
-    this.sourcesApi.preview(this.orgId(), this.sourceId(), this.sql().trim(), MAX_PREVIEW_ROWS).subscribe({
+    this.sourcesApi.preview(this.orgId(), this.sourceId(), this.sql().trim(), MAX_PREVIEW_ROWS, this.parameters()).subscribe({
       next: (r) => {
         this.testing.set(false);
         this.testResult.set(r);
@@ -117,7 +125,7 @@ export class NewDatasetTabComponent implements OnInit {
     if (!this.canSave()) return;
     this.dialog
       .open<SaveDatasetDialogComponent, SaveDatasetDialogData, Dataset>(SaveDatasetDialogComponent, {
-        data: { orgId: this.orgId(), dataSourceId: this.sourceId(), sql: this.sql() },
+        data: { orgId: this.orgId(), dataSourceId: this.sourceId(), sql: this.sql(), parameters: this.parameters() },
         width: '28rem',
         maxWidth: '95vw',
       })

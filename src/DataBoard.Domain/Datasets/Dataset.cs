@@ -46,6 +46,12 @@ public sealed class Dataset : BaseEntity
     /// </summary>
     public string? DefinitionJson { get; private set; }
 
+    /// <summary>
+    /// The parameters the SQL takes (its <c>{{name}}</c> placeholders), as JSON the application layer owns. Null when
+    /// there are none, and always null for a table view, whose SQL is generated.
+    /// </summary>
+    public string? ParametersJson { get; private set; }
+
     /// <summary>The columns the query returned when it was saved.</summary>
     public IReadOnlyList<DatasetColumn> Columns => _columns;
 
@@ -63,7 +69,8 @@ public sealed class Dataset : BaseEntity
         Guid createdByUserId,
         DateTime nowUtc,
         DatasetKind kind = DatasetKind.Sql,
-        string? definitionJson = null)
+        string? definitionJson = null,
+        string? parametersJson = null)
     {
         if (organizationId == Guid.Empty)
             throw new ArgumentException("Organization is required.", nameof(organizationId));
@@ -80,18 +87,23 @@ public sealed class Dataset : BaseEntity
             CreatedUtc = nowUtc,
             Kind = kind,
         };
-        dataset.Apply(name, description, sql, columns, nowUtc, definitionJson);
+        dataset.Apply(name, description, sql, columns, nowUtc, definitionJson, parametersJson);
         return dataset;
     }
 
     /// <summary>The kind never changes: a table view stays a table view, a SQL dataset stays SQL.</summary>
     public void Update(
-        string name, string? description, string sql, IEnumerable<DatasetColumn> columns, DateTime nowUtc, string? definitionJson = null) =>
-        Apply(name, description, sql, columns, nowUtc, definitionJson);
+        string name, string? description, string sql, IEnumerable<DatasetColumn> columns, DateTime nowUtc,
+        string? definitionJson = null, string? parametersJson = null) =>
+        Apply(name, description, sql, columns, nowUtc, definitionJson, parametersJson);
 
     private void Apply(
-        string name, string? description, string sql, IEnumerable<DatasetColumn> columns, DateTime nowUtc, string? definitionJson)
+        string name, string? description, string sql, IEnumerable<DatasetColumn> columns, DateTime nowUtc,
+        string? definitionJson, string? parametersJson)
     {
+        if (Kind == DatasetKind.TableView && parametersJson is not null)
+            throw new ArgumentException("A table view has no parameters.", nameof(parametersJson));
+
         if (!Enum.IsDefined(Kind))
             throw new ArgumentException("Dataset kind is not valid.", nameof(Kind));
         if (Kind == DatasetKind.TableView && string.IsNullOrWhiteSpace(definitionJson))
@@ -124,6 +136,7 @@ public sealed class Dataset : BaseEntity
         Description = string.IsNullOrWhiteSpace(description) ? null : description.Trim();
         Sql = sql;
         DefinitionJson = definitionJson;
+        ParametersJson = parametersJson;
         _columns.Clear();
         _columns.AddRange(list);
         UpdatedUtc = nowUtc;

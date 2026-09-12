@@ -20,9 +20,10 @@ internal sealed class PostgresChartSqlRenderer : IChartSqlRenderer
 
     public DataSourceType Type => DataSourceType.PostgreSql;
 
-    public ParameterizedQuery Render(string datasetSql, ChartQueryPlan plan)
+    public ParameterizedQuery Render(string datasetSql, ChartQueryPlan plan, IReadOnlyList<object?>? datasetParameters = null)
     {
-        var parameters = new List<object?>();
+        // The dataset's own parameters are already named in its SQL (databoard_p0 ...); filter values continue the numbering.
+        var parameters = new List<object?>(datasetParameters ?? []);
 
         string Bind(object value)
         {
