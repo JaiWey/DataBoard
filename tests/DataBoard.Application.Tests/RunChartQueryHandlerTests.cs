@@ -33,7 +33,7 @@ public class RunChartQueryHandlerTests
 
     private RunChartQueryHandler Handler() => new(
         _datasets, _sources, new FakeSecrets(), new DataSourceConnectors([_connector]),
-        new ChartSqlRenderers([_renderer]), _validator, new OrganizationAccess(_orgs, _user));
+        new ChartSqlRenderers([_renderer]), _validator, new FakeResultCache(), new FixedClock(), new OrganizationAccess(_orgs, _user));
 
     private void Join(OrganizationRole role, Guid? org = null) =>
         _orgs.Members.Add(OrganizationMember.Create(org ?? _org, _user.UserId!.Value, role, DateTime.UtcNow));

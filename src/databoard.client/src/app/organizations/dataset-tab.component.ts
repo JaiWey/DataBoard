@@ -5,6 +5,7 @@ import { SqlEditorComponent } from '../sql-editor/sql-editor.component';
 import { SqlResultsComponent } from '../sql-editor/sql-results.component';
 import { DataSourcesService, MAX_PREVIEW_ROWS, QueryPreview, problemMessages } from './data-sources.service';
 import { TableViewBuilderComponent } from './table-view-builder.component';
+import { CACHE_CHOICES, cacheLabel } from '../shared/relative-time';
 import { DatasetParameter, parametersMissingDefaults, sameParameters } from './dataset-parameters';
 import { ParametersPanelComponent } from './parameters-panel.component';
 import { Dataset, DatasetsService, TableViewDefinition, emptyTableView } from './datasets.service';
@@ -34,6 +35,22 @@ import { Dataset, DatasetsService, TableViewDefinition, emptyTableView } from '.
             </span>
           }
         </p>
+
+        @if (canEdit()) {
+          <p class="cache">
+            <label>
+              <span>Keep results for</span>
+              <select aria-label="Cache results for" [disabled]="cacheBusy()" (change)="setCache(+$any($event.target).value)">
+                @for (choice of cacheChoices(); track choice.seconds) {
+                  <option [value]="choice.seconds" [selected]="choice.seconds === cacheSeconds()">{{ choice.label }}</option>
+                }
+              </select>
+            </label>
+            <small>Charts on this dataset reuse a result for this long instead of asking the database again.</small>
+          </p>
+        } @else if (cacheSeconds() > 0) {
+          <p class="cache"><small>Results are reused for {{ cacheText() }}, so the data can be a little behind.</small></p>
+        }
 
         @if (isView()) {
           <app-table-view-builder [orgId]="orgId()" [dataSourceId]="dataset().dataSourceId" [(definition)]="viewDefinition" />
@@ -95,6 +112,9 @@ import { Dataset, DatasetsService, TableViewDefinition, emptyTableView } from '.
     .generated { margin: 0.5rem 0; }
     .save-row { display: flex; align-items: center; gap: 0.75rem; margin: 0.5rem 0; }
     .hint { margin: 0.25rem 0 0; }
+    .cache { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem; margin: 0.25rem 0 0.75rem; }
+    .cache label { display: flex; align-items: center; gap: 0.5rem; }
+    .cache select { padding: 0.25rem; }
   `,
   host: { '[class.inactive]': '!active()' },
 })
@@ -113,14 +133,27 @@ export class DatasetTabComponent {
   readonly deleted = output<string>();
   readonly dirtyChange = output<boolean>();
 
-  /** The text in the editor; starts from, and resets to, the saved SQL whenever the dataset changes. */
-  protected readonly sqlText = linkedSignal(() => this.dataset().sql ?? '');
+  // The three below start from, and reset to, what is saved. They follow the saved content itself (not the dataset object),
+  // so changing something else about the dataset, such as how long its results are cached, does not wipe an unsaved edit.
+  // Each source is a computed: it only changes when the content does, while a bare function would re-run for any change.
+  private readonly savedSql = computed(() => this.dataset().sql ?? '');
+  private readonly savedDefinition = computed(() => JSON.stringify(this.dataset().definition ?? emptyTableView()));
+  private readonly savedParameters = computed(() => JSON.stringify(this.dataset().parameters ?? []));
+
+  /** The text in the editor. */
+  protected readonly sqlText = linkedSignal({ source: this.savedSql, computation: (sql) => sql });
   /** A table view that this user may edit: built step by step instead of written as SQL. */
   protected readonly isView = computed(() => this.canEdit() && this.dataset().kind === 'TableView' && this.dataset().definition !== null);
   /** The table view being edited; starts from, and resets to, the saved definition. */
-  protected readonly viewDefinition = linkedSignal<TableViewDefinition>(() => this.dataset().definition ?? emptyTableView());
+  protected readonly viewDefinition = linkedSignal<string, TableViewDefinition>({
+    source: this.savedDefinition,
+    computation: (json) => JSON.parse(json) as TableViewDefinition,
+  });
   /** The SQL's parameters; they start from, and reset to, the saved ones. */
-  protected readonly parameters = linkedSignal<DatasetParameter[]>(() => this.dataset().parameters ?? []);
+  protected readonly parameters = linkedSignal<string, DatasetParameter[]>({
+    source: this.savedParameters,
+    computation: (json) => JSON.parse(json) as DatasetParameter[],
+  });
   protected readonly parameterHint = 'Write {{name}} in the SQL to make a value a parameter. Charts and dashboards can choose its value.';
   protected readonly missingDefaults = computed(() => parametersMissingDefaults(this.parameters()).length > 0);
   protected readonly dirty = computed(() =>
@@ -128,6 +161,15 @@ export class DatasetTabComponent {
       ? JSON.stringify(this.viewDefinition()) !== JSON.stringify(this.dataset().definition)
       : this.dataset().sql !== null
         && (this.sqlText() !== this.dataset().sql || !sameParameters(this.parameters(), this.dataset().parameters ?? [])));
+  protected readonly cacheSeconds = computed(() => this.dataset().cacheSeconds ?? 0);
+  protected readonly cacheText = computed(() => cacheLabel(this.cacheSeconds()).toLowerCase());
+  /** The usual choices, plus the current setting if it was set to something else through the API. */
+  protected readonly cacheChoices = computed(() =>
+    CACHE_CHOICES.some((c) => c.seconds === this.cacheSeconds())
+      ? CACHE_CHOICES
+      : [...CACHE_CHOICES, { seconds: this.cacheSeconds(), label: cacheLabel(this.cacheSeconds()) }],
+  );
+  protected readonly cacheBusy = signal(false);
   protected readonly sqlErrors = signal<string[]>([]);
   /** Rows from running the editor's current SQL (saved or not) against the dataset's data source. */
   protected readonly testResult = signal<QueryPreview | null>(null);
@@ -180,6 +222,25 @@ export class DatasetTabComponent {
       error: (e) => {
         this.busy.set(false);
         this.sqlErrors.set(problemMessages(e, 'Could not save the query.'));
+      },
+    });
+  }
+
+  /** Takes effect at once and needs no Save: it is how the dataset is served, not what it is. */
+  protected setCache(seconds: number): void {
+    const dataset = this.dataset();
+    if (!this.canEdit() || this.cacheBusy() || seconds === this.cacheSeconds()) return;
+    this.cacheBusy.set(true);
+    this.sqlErrors.set([]);
+    this.api.setCache(this.orgId(), dataset.id, seconds).subscribe({
+      next: (saved) => {
+        this.cacheBusy.set(false);
+        // Only the setting changed; the list takes the new copy, and unsaved edits in this tab are left alone.
+        this.updated.emit({ ...dataset, cacheSeconds: saved.cacheSeconds ?? seconds });
+      },
+      error: (e) => {
+        this.cacheBusy.set(false);
+        this.sqlErrors.set(problemMessages(e, 'Could not change how long results are kept.'));
       },
     });
   }

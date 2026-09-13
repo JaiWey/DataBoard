@@ -131,8 +131,9 @@ export class DashboardsService {
     return this.http.delete<void>(this.url(orgId, `/${id}`));
   }
 
-  run(orgId: string, id: string, filters: FilterValues): Observable<DashboardRun> {
-    return this.http.post<DashboardRun>(this.url(orgId, `/${id}/run`), { filters });
+  /** `refresh` asks the databases again instead of reusing stored results (editors and owners only). */
+  run(orgId: string, id: string, filters: FilterValues, refresh = false): Observable<DashboardRun> {
+    return this.http.post<DashboardRun>(this.url(orgId, `/${id}/run`), refresh ? { filters, refresh } : { filters });
   }
 
   listShares(orgId: string, id: string): Observable<DashboardShare[]> {

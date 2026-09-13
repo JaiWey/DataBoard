@@ -254,6 +254,63 @@ describe('DashboardComponent', () => {
     http.expectNone({ method: 'PUT', url: dashboardUrl });
   });
 
+  describe('stored results', () => {
+    const cachedWidget = (cachedUtc: string | null) => ({
+      widgets: [{ widgetId: W_BAR, result: { ...ok([['Auckland', 3]]), cachedUtc }, error: null, appliedFilters: [] }],
+    });
+
+    it('says how old reused data is, so nobody takes it for live', () => {
+      load('Viewer');
+      http.expectOne(runUrl).flush(cachedWidget(new Date(Date.now() - 7 * 60_000).toISOString()));
+      fixture.detectChanges();
+
+      expect(el().querySelector('.cached')?.textContent).toBe('Data from 7 min ago.');
+    });
+
+    it('says nothing about age for data that was just fetched', () => {
+      load('Viewer');
+      http.expectOne(runUrl).flush(cachedWidget(null));
+      fixture.detectChanges();
+
+      expect(el().querySelector('.cached')).toBeNull();
+    });
+
+    it('lets editors fetch fresh data, and asks for exactly that', () => {
+      load('Editor');
+      http.expectOne(runUrl).flush(cachedWidget(new Date().toISOString()));
+      fixture.detectChanges();
+
+      buttonByText('Refresh data').click();
+
+      const req = http.expectOne(runUrl);
+      expect(req.request.body).toEqual({ filters: {}, refresh: true });
+      req.flush(cachedWidget(null));
+      fixture.detectChanges();
+      expect(el().querySelector('.cached')).toBeNull(); // fresh now
+    });
+
+    it('keeps the filters that were typed when refreshing', () => {
+      load('Editor');
+      http.expectOne(runUrl).flush({ widgets: [] });
+      fixture.detectChanges();
+      type('input[aria-label="Region"]', 'Auckland');
+
+      buttonByText('Refresh data').click();
+
+      expect(http.expectOne(runUrl).request.body).toEqual({ filters: { [F_REGION]: ['Auckland'] }, refresh: true });
+    });
+
+    it('does not offer refreshing to viewers, and an ordinary run does not ask for it', () => {
+      load('Viewer');
+      const run = http.expectOne(runUrl);
+
+      expect(run.request.body).toEqual({ filters: {} });
+      run.flush({ widgets: [] });
+      fixture.detectChanges();
+      expect(buttonByText('Refresh data')).toBeUndefined();
+    });
+  });
+
   describe('exporting', () => {
     it('lets anyone print the dashboard to PDF through the browser', () => {
       const print = vi.spyOn(window, 'print').mockImplementation(() => undefined);

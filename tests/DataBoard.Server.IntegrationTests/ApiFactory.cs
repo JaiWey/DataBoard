@@ -75,6 +75,15 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
         return builder.ConnectionString;
     }
 
+    /// <summary>Runs SQL as the database owner: to set up or change data behind the API's back (the API's role can only read).</summary>
+    public async Task ExecuteAsOwnerAsync(string sql)
+    {
+        await using var connection = new NpgsqlConnection(_postgres.GetConnectionString());
+        await connection.OpenAsync();
+        await using var command = new NpgsqlCommand(sql, connection);
+        await command.ExecuteNonQueryAsync();
+    }
+
     /// <summary>Runs a query as the database owner, for assertions about what the API did (or did not do) to the data.</summary>
     public async Task<long> CountSalesAsync()
     {

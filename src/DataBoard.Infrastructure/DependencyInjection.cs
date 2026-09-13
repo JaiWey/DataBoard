@@ -43,6 +43,9 @@ public static class DependencyInjection
         services.AddSingleton<ISecretProtector, DataProtectionSecretProtector>();
         services.AddSingleton<IClock, SystemClock>();
 
+        services.Configure<ResultCacheOptions>(configuration.GetSection(ResultCacheOptions.SectionName));
+        services.AddSingleton<IResultCache, MemoryResultCache>();
+
         services.AddOptions<JwtOptions>()
             .Bind(configuration.GetSection(JwtOptions.SectionName))
             .Validate(o => o.Key is { Length: >= JwtOptions.MinKeyBytes }, $"Jwt:Key must be at least {JwtOptions.MinKeyBytes} characters.")

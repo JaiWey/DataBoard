@@ -146,6 +146,6 @@ public sealed class RunSavedChartHandler(IChartRepository charts, RunChartQueryH
         await access.RequireRoleAsync(organizationId, OrganizationRole.Viewer, ct);
         var chart = await charts.GetAsync(organizationId, chartId, ct) ?? throw new NotFoundException("Chart not found.");
         var definition = ChartDefinition.FromJson(chart.DefinitionJson);
-        return await runner.HandleAsync(organizationId, chart.DatasetId, definition.Query, ct);
+        return await runner.HandleAsync(organizationId, chart.DatasetId, definition.Query, CacheRequest.Use, ct);
     }
 }

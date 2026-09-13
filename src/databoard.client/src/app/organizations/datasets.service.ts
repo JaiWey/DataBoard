@@ -28,6 +28,8 @@ export type { DatasetParameter, ParameterType } from './dataset-parameters';
 export interface ChartResult extends QueryPreview {
   /** Only editors and owners receive the generated SQL. */
   sql: string | null;
+  /** When the data was fetched from the database, if this result was stored and reused; null if it was fetched just now. */
+  cachedUtc?: string | null;
 }
 
 export interface DatasetColumn {
@@ -66,6 +68,8 @@ export interface Dataset {
   definition: TableViewDefinition | null;
   /** The values the SQL takes. Empty for a table view and for SQL without {{placeholders}}. */
   parameters?: DatasetParameter[];
+  /** How long results of queries on this dataset are reused, in seconds. 0 (or missing) means every run is live. */
+  cacheSeconds?: number;
   createdUtc: string;
   updatedUtc: string;
 }
@@ -109,6 +113,11 @@ export class DatasetsService {
 
   remove(orgId: string, id: string): Observable<void> {
     return this.http.delete<void>(this.url(orgId, `/${id}`));
+  }
+
+  /** Chooses how long results are reused (0 for never). Takes effect at once; it does not change the dataset itself. */
+  setCache(orgId: string, id: string, cacheSeconds: number): Observable<Dataset> {
+    return this.http.put<Dataset>(this.url(orgId, `/${id}/cache`), { cacheSeconds });
   }
 
   preview(orgId: string, id: string): Observable<QueryPreview> {

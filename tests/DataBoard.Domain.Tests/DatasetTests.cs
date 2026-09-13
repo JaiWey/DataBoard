@@ -4,6 +4,57 @@ namespace DataBoard.Domain.Tests;
 
 public class DatasetTests
 {
+    [Fact]
+    public void Keeps_no_results_until_told_to() => Assert.Equal(0, New().CacheSeconds);
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(60)]
+    [InlineData(Dataset.MaxCacheSeconds)]
+    public void Keeps_results_for_the_time_it_is_given(int seconds)
+    {
+        var dataset = New();
+
+        dataset.SetCacheSeconds(seconds);
+
+        Assert.Equal(seconds, dataset.CacheSeconds);
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(Dataset.MaxCacheSeconds + 1)]
+    public void Refuses_a_time_outside_what_is_allowed_and_keeps_the_old_one(int seconds)
+    {
+        var dataset = New();
+        dataset.SetCacheSeconds(300);
+
+        Assert.Throws<ArgumentException>(() => dataset.SetCacheSeconds(seconds));
+
+        Assert.Equal(300, dataset.CacheSeconds);
+    }
+
+    [Fact]
+    public void Choosing_how_long_results_are_kept_is_not_an_edit_of_the_dataset()
+    {
+        var dataset = New();
+        var updated = dataset.UpdatedUtc;
+
+        dataset.SetCacheSeconds(900);
+
+        Assert.Equal(updated, dataset.UpdatedUtc); // stored results are tied to the version, so this must not move it
+    }
+
+    [Fact]
+    public void An_edit_keeps_the_choice_of_how_long_results_are_kept()
+    {
+        var dataset = New();
+        dataset.SetCacheSeconds(900);
+
+        dataset.Update("Sales", null, "SELECT 2", Columns, Now.AddHours(1));
+
+        Assert.Equal(900, dataset.CacheSeconds);
+    }
+
     private static readonly DateTime Now = new(2026, 10, 7, 0, 0, 0, DateTimeKind.Utc);
     private static readonly Guid Org = Guid.NewGuid();
     private static readonly Guid Source = Guid.NewGuid();

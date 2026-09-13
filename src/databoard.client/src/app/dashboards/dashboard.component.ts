@@ -13,6 +13,7 @@ import { problemMessages } from '../organizations/data-sources.service';
 import { AddChartsDialogComponent, AddChartsDialogData } from './add-charts-dialog.component';
 import { DashboardGridComponent } from './dashboard-grid.component';
 import { ShareDialogComponent, ShareDialogData } from './share-dialog.component';
+import { ago } from '../shared/relative-time';
 import { LayoutItem, arrange, sameLayout } from './dashboard-layout';
 import { Dataset, DatasetsService } from '../organizations/datasets.service';
 import {
@@ -59,6 +60,7 @@ export function parseFilterInput(operator: SharedFilterOperator, text: string): 
               @if (d.definition.widgets.length > 0) {
                 <button mat-stroked-button type="button" class="edit-layout" (click)="editLayout()">Edit layout</button>
               }
+              <button mat-button type="button" class="refresh" [disabled]="busy()" (click)="refresh()">Refresh data</button>
               <button mat-stroked-button type="button" class="share" (click)="share(d)">Share</button>
               <button mat-stroked-button type="button" (click)="addCharts(d)">Add chart</button>
               <button mat-button type="button" (click)="removeDashboard(d)">Delete dashboard</button>
@@ -120,7 +122,14 @@ export function parseFilterInput(operator: SharedFilterOperator, text: string): 
                   } @else if (r.result; as result) {
                     <app-chart-view [fill]="true" [type]="chart.type" [result]="result" [chartStyle]="chart.definition.style"
                                     [dimensions]="chart.definition.query.dimensions?.length ?? 0" [label]="chart.name" />
-                    @if (result.truncated) { <p class="note"><small>Showing the first {{ result.rows.length }} rows.</small></p> }
+                    @if (result.truncated || result.cachedUtc) {
+                      <p class="note">
+                        <small>
+                          @if (result.truncated) { Showing the first {{ result.rows.length }} rows. }
+                          @if (result.cachedUtc; as stored) { <span class="cached">Data from {{ age(stored) }}.</span> }
+                        </small>
+                      </p>
+                    }
                   }
                 } @else {
                   <p><em>Loading...</em></p>
@@ -389,6 +398,16 @@ export class DashboardComponent implements OnInit {
     this.execute();
   }
 
+  /** How old a reused result is, for the note on a chart. */
+  protected age(utc: string): string {
+    return ago(utc);
+  }
+
+  /** Asks the databases again instead of reusing stored results; what comes back is stored for the next viewer. */
+  protected refresh(): void {
+    this.execute(true);
+  }
+
   protected clearFilters(): void {
     this.filterForm.reset();
     this.execute();
@@ -448,7 +467,7 @@ export class DashboardComponent implements OnInit {
     this.dashboard.set(d);
   }
 
-  private execute(): void {
+  private execute(refresh = false): void {
     const d = this.dashboard();
     if (!d) return;
 
@@ -460,7 +479,7 @@ export class DashboardComponent implements OnInit {
 
     this.busy.set(true);
     this.errors.set([]);
-    this.api.run(this.orgId(), d.id, values).subscribe({
+    this.api.run(this.orgId(), d.id, values, refresh).subscribe({
       next: (r) => {
         this.run.set(r);
         this.busy.set(false);

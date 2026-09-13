@@ -25,6 +25,7 @@ public sealed class Dataset : BaseEntity
     public const int MaxNameLength = 200;
     public const int MaxDescriptionLength = 1000;
     public const int MaxColumns = 500;
+    public const int MaxCacheSeconds = 86_400; // a day
 
     private readonly List<DatasetColumn> _columns = [];
 
@@ -51,6 +52,12 @@ public sealed class Dataset : BaseEntity
     /// there are none, and always null for a table view, whose SQL is generated.
     /// </summary>
     public string? ParametersJson { get; private set; }
+
+    /// <summary>
+    /// How long, in seconds, the results of queries on this dataset may be reused instead of asking the database again.
+    /// 0 (the default) means every run is live.
+    /// </summary>
+    public int CacheSeconds { get; private set; }
 
     /// <summary>The columns the query returned when it was saved.</summary>
     public IReadOnlyList<DatasetColumn> Columns => _columns;
@@ -89,6 +96,18 @@ public sealed class Dataset : BaseEntity
         };
         dataset.Apply(name, description, sql, columns, nowUtc, definitionJson, parametersJson);
         return dataset;
+    }
+
+    /// <summary>
+    /// Sets how long results are reused. This is a setting of how the dataset is served, not a change to the dataset
+    /// itself, so it does not count as an update. Results stored under the old setting are no longer used (the setting
+    /// is part of what identifies a stored result), so turning caching off, or changing it, shows fresh data at once.
+    /// </summary>
+    public void SetCacheSeconds(int seconds)
+    {
+        if (seconds < 0 || seconds > MaxCacheSeconds)
+            throw new ArgumentException($"Results can be kept for 0 to {MaxCacheSeconds} seconds.", nameof(seconds));
+        CacheSeconds = seconds;
     }
 
     /// <summary>The kind never changes: a table view stays a table view, a SQL dataset stays SQL.</summary>

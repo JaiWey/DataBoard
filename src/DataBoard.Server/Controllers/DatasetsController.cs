@@ -38,6 +38,12 @@ public class DatasetsController : ControllerBase
 		Guid organizationId, Guid datasetId, UpdateDatasetRequest body, [FromServices] UpdateDatasetHandler handler, CancellationToken ct) =>
 		Ok(await handler.HandleAsync(organizationId, datasetId, body, ct));
 
+	/// <summary>How long query results on the dataset are reused (0 for never). Editors and Owners.</summary>
+	[HttpPut("{datasetId:guid}/cache")]
+	public async Task<ActionResult<DatasetDto>> SetCache(
+		Guid organizationId, Guid datasetId, SetDatasetCacheRequest body, [FromServices] SetDatasetCacheHandler handler, CancellationToken ct) =>
+		Ok(await handler.HandleAsync(organizationId, datasetId, body, ct));
+
 	[HttpDelete("{datasetId:guid}")]
 	public async Task<IActionResult> Delete(
 		Guid organizationId, Guid datasetId, [FromServices] DeleteDatasetHandler handler, CancellationToken ct)

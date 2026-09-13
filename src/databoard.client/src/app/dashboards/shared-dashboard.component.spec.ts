@@ -121,6 +121,17 @@ describe('SharedDashboardComponent', () => {
     expect(input.value).toBe('');
   });
 
+  it('tells a visitor how old reused data is', () => {
+    open();
+    http.expectOne(runUrl).flush(run(
+      { widgetId: 'w1', result: { ...rows(['Auckland', 3]), cachedUtc: new Date(Date.now() - 3 * 3_600_000).toISOString() }, error: null },
+      { widgetId: 'w2', result: rows(['Dunedin', 1]), error: null },
+    ));
+    fixture.detectChanges();
+
+    expect(Array.from(el().querySelectorAll('.cached')).map((c) => c.textContent)).toEqual(['Data from 3 h ago.']); // only the stored one
+  });
+
   it('shows a chart that failed in place, without hiding the others', () => {
     open();
     http.expectOne(runUrl).flush(run(

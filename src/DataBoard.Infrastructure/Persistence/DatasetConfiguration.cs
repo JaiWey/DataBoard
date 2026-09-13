@@ -19,6 +19,7 @@ internal sealed class DatasetConfiguration : IEntityTypeConfiguration<Dataset>
         builder.Property(d => d.Kind).HasConversion<string>().HasMaxLength(20).HasDefaultValue(DatasetKind.Sql).HasSentinel(DatasetKind.Sql);
         builder.Property(d => d.DefinitionJson).HasColumnName("definition").HasColumnType("jsonb");
         builder.Property(d => d.ParametersJson).HasColumnName("parameters").HasColumnType("jsonb");
+        builder.Property(d => d.CacheSeconds).HasColumnName("cache_seconds").HasDefaultValue(0).HasSentinel(0);
 
         // The column list is one JSON document per dataset: it is always read and written as a whole.
         builder.OwnsMany(d => d.Columns, columns =>

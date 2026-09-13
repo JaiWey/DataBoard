@@ -36,7 +36,8 @@ public sealed record DashboardDto(
     Guid Id, string Name, string? Description, DashboardDefinition Definition, DateTime CreatedUtc, DateTime UpdatedUtc);
 
 /// <param name="Filters">Filter id -> the values the viewer picked. A filter with no values is not applied.</param>
-public sealed record RunDashboardRequest(IReadOnlyDictionary<Guid, IReadOnlyList<JsonElement>>? Filters = null);
+/// <param name="Refresh">Fetch fresh data from the databases instead of reusing stored results, and store it for the next viewer. Editors and Owners only.</param>
+public sealed record RunDashboardRequest(IReadOnlyDictionary<Guid, IReadOnlyList<JsonElement>>? Filters = null, bool Refresh = false);
 
 /// <param name="AppliedFilters">Ids of the shared filters that were applied to this widget.</param>
 public sealed record WidgetResult(

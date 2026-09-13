@@ -95,4 +95,6 @@ public sealed class ChartSqlRenderers(IEnumerable<IChartSqlRenderer> renderers)
 }
 
 /// <param name="Sql">Only Editors and Owners get this: it contains the dataset's SQL, which Viewers must not see.</param>
-public sealed record ChartResult(IReadOnlyList<PreviewColumn> Columns, IReadOnlyList<object?[]> Rows, bool Truncated, string? Sql);
+/// <param name="CachedUtc">When this result was fetched from the database, if it comes from the cache; null if it was fetched just now.</param>
+public sealed record ChartResult(
+    IReadOnlyList<PreviewColumn> Columns, IReadOnlyList<object?[]> Rows, bool Truncated, string? Sql, DateTime? CachedUtc = null);

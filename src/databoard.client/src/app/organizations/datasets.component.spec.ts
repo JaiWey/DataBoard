@@ -729,6 +729,89 @@ describe('DatasetsComponent', () => {
     expect(buttonText()).not.toContain('Run query');
   });
 
+  // ---- keeping results ----
+
+  const cacheSelect = () => el().querySelector('select[aria-label="Cache results for"]') as HTMLSelectElement;
+  const cacheUrl = `${datasetUrl}/cache`;
+  const chooseCache = async (seconds: number) => {
+    cacheSelect().value = String(seconds);
+    cacheSelect().dispatchEvent(new Event('change'));
+    await settle();
+  };
+
+  it('shows editors how long results are kept, off to begin with', async () => {
+    load('Editor', [dataset('SELECT 1')]);
+    await settle();
+
+    expect(cacheSelect().selectedOptions[0].textContent?.trim()).toBe('Off (always live)');
+    expect(Array.from(cacheSelect().options).map((o) => o.textContent?.trim())).toEqual([
+      'Off (always live)', '1 minute', '5 minutes', '15 minutes', '1 hour', '6 hours', '24 hours',
+    ]);
+  });
+
+  it('saves the choice at once, without Save, and updates the list', async () => {
+    load('Editor', [dataset('SELECT 1')]);
+    await settle();
+
+    await chooseCache(300);
+
+    const req = http.expectOne({ method: 'PUT', url: cacheUrl });
+    expect(req.request.body).toEqual({ cacheSeconds: 300 });
+    req.flush({ ...dataset('SELECT 1'), cacheSeconds: 300 });
+    await settle();
+    expect(cacheSelect().selectedOptions[0].textContent?.trim()).toBe('5 minutes');
+    expect(saveButton().disabled).toBe(true); // nothing to save: it was not a change to the dataset
+  });
+
+  it('does not lose an unsaved edit of the SQL when the choice is changed', async () => {
+    load('Editor', [dataset('SELECT 1')]);
+    await settle();
+    monaco.editors[0].type('SELECT 2');
+    await settle();
+
+    await chooseCache(60);
+    http.expectOne({ method: 'PUT', url: cacheUrl }).flush({ ...dataset('SELECT 1'), cacheSeconds: 60 });
+    await settle();
+
+    expect(monaco.editors[0].value).toBe('SELECT 2');
+    expect(saveButton().disabled).toBe(false);
+    expect(el().querySelector('.tab .dot')).not.toBeNull();
+  });
+
+  it('shows why the choice could not be saved, and keeps the old one', async () => {
+    load('Editor', [{ ...dataset('SELECT 1'), cacheSeconds: 60 }]);
+    await settle();
+
+    await chooseCache(300);
+    http.expectOne({ method: 'PUT', url: cacheUrl }).flush({ errors: { seconds: ['Results can be kept for 0 to 86400 seconds.'] } }, { status: 400, statusText: 'Bad Request' });
+    await settle();
+
+    expect(el().querySelector('[role=alert]')?.textContent).toContain('0 to 86400');
+    expect(cacheSelect().disabled).toBe(false);
+  });
+
+  it('lets a setting that is not one of the choices show as itself', async () => {
+    load('Editor', [{ ...dataset('SELECT 1'), cacheSeconds: 120 }]);
+    await settle();
+
+    expect(cacheSelect().selectedOptions[0].textContent?.trim()).toBe('2 minutes');
+  });
+
+  it('tells a viewer that the data can be behind, without a way to change it', async () => {
+    load('Viewer', [{ ...dataset('SELECT 1'), cacheSeconds: 300 }]);
+    await settle();
+
+    expect(cacheSelect()).toBeNull();
+    expect(el().textContent).toContain('Results are reused for 5 minutes');
+  });
+
+  it('says nothing to a viewer when results are not kept', async () => {
+    load('Viewer', [dataset('SELECT 1')]);
+    await settle();
+
+    expect(el().textContent).not.toContain('Results are reused');
+  });
+
   // ---- parameters ----
 
   const PARAMETER_SQL = 'SELECT region FROM sales WHERE region = {{region}}';

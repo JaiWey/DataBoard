@@ -10,6 +10,7 @@ import { ChartViewComponent } from '../charts/chart-view.component';
 import { ExportMenuComponent } from '../charts/export-menu.component';
 import { problemMessages } from '../organizations/data-sources.service';
 import { DashboardGridComponent } from './dashboard-grid.component';
+import { ago } from '../shared/relative-time';
 import { arrange } from './dashboard-layout';
 import { parseFilterInput } from './dashboard.component';
 import { DashboardRun, FilterValues, SHARED_FILTER_OPERATORS, WidgetResult } from './dashboards.service';
@@ -85,7 +86,14 @@ import { SharedChart, SharedDashboard, SharedDashboardsService } from './shared-
                     } @else if (r.result; as result) {
                       <app-chart-view [fill]="true" [type]="chart.type" [result]="result" [chartStyle]="chart.style"
                                       [dimensions]="chart.dimensionCount" [label]="chart.name" />
-                      @if (result.truncated) { <p class="truncated"><small>Showing the first {{ result.rows.length }} rows.</small></p> }
+                      @if (result.truncated || result.cachedUtc) {
+                        <p class="truncated">
+                          <small>
+                            @if (result.truncated) { Showing the first {{ result.rows.length }} rows. }
+                            @if (result.cachedUtc; as stored) { <span class="cached">Data from {{ age(stored) }}.</span> }
+                          </small>
+                        </p>
+                      }
                     }
                   } @else {
                     <p><em>Loading...</em></p>
@@ -180,6 +188,10 @@ export class SharedDashboardComponent implements OnInit {
 
   protected resultOf(widgetId: string): WidgetResult | undefined {
     return this.run()?.widgets.find((w) => w.widgetId === widgetId);
+  }
+
+  protected age(utc: string): string {
+    return ago(utc);
   }
 
   protected clear(): void {

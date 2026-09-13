@@ -224,10 +224,14 @@ public sealed class RunDashboardHandler(
     public async Task<DashboardRunResult> HandleAsync(
         Guid organizationId, Guid dashboardId, RunDashboardRequest? request, CancellationToken ct = default)
     {
-        await access.RequireRoleAsync(organizationId, OrganizationRole.Viewer, ct);
+        // Anyone may look; asking the databases again (instead of reusing stored results) is for people who change the dashboard.
+        var refresh = request?.Refresh == true;
+        await access.RequireRoleAsync(organizationId, refresh ? OrganizationRole.Editor : OrganizationRole.Viewer, ct);
         var dashboard = await dashboards.GetAsync(organizationId, dashboardId, ct)
             ?? throw new NotFoundException("Dashboard not found.");
-        return await RunWidgetsAsync(organizationId, DashboardJson.Deserialize(dashboard.DefinitionJson), request, shared: false, ct);
+        return await RunWidgetsAsync(
+            organizationId, DashboardJson.Deserialize(dashboard.DefinitionJson), request,
+            shared: false, refresh ? new CacheRequest(CacheMode.Refresh) : CacheRequest.Use, ct);
     }
 
     /// <summary>
@@ -236,12 +240,12 @@ public sealed class RunDashboardHandler(
     /// </summary>
     internal Task<DashboardRunResult> HandleSharedAsync(
         Guid organizationId, DashboardDefinition definition, RunDashboardRequest? request, CancellationToken ct) =>
-        RunWidgetsAsync(organizationId, definition, request, shared: true, ct);
+        RunWidgetsAsync(organizationId, definition, request, shared: true, CacheRequest.Use, ct); // a visitor cannot force a refresh
 
     private const string SharedFailure = "This chart could not be shown.";
 
     private async Task<DashboardRunResult> RunWidgetsAsync(
-        Guid organizationId, DashboardDefinition definition, RunDashboardRequest? request, bool shared, CancellationToken ct)
+        Guid organizationId, DashboardDefinition definition, RunDashboardRequest? request, bool shared, CacheRequest cache, CancellationToken ct)
     {
         var chosen = request?.Filters ?? new Dictionary<Guid, IReadOnlyList<JsonElement>>();
         var active = definition.Filters.Where(f => chosen.TryGetValue(f.Id, out var v) && v.Count > 0).ToList();
@@ -293,8 +297,8 @@ public sealed class RunDashboardHandler(
             {
                 var run = query with { Filters = filters, Parameters = parameters.Count > 0 ? parameters : null };
                 var result = shared
-                    ? await runner.HandleTrustedAsync(organizationId, chart.DatasetId, run, ct)
-                    : await runner.HandleAsync(organizationId, chart.DatasetId, run, ct);
+                    ? await runner.HandleTrustedAsync(organizationId, chart.DatasetId, run, cache, ct)
+                    : await runner.HandleAsync(organizationId, chart.DatasetId, run, cache, ct);
                 results.Add(new WidgetResult(widget.Id, result, null, applied));
             }
             catch (ValidationException ex)

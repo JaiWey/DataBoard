@@ -197,6 +197,12 @@ namespace DataBoard.Infrastructure.Persistence.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<int>("CacheSeconds")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("cache_seconds");
+
                     b.Property<Guid>("CreatedByUserId")
                         .HasColumnType("uuid");
 

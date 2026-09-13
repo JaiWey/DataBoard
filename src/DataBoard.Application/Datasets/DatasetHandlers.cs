@@ -30,7 +30,11 @@ public sealed record DatasetDto(
     DateTime UpdatedUtc,
     DatasetKind Kind = DatasetKind.Sql,
     TableViewDefinition? Definition = null,
-    IReadOnlyList<DatasetParameter>? Parameters = null);
+    IReadOnlyList<DatasetParameter>? Parameters = null,
+    int CacheSeconds = 0);
+
+/// <param name="CacheSeconds">How long query results on the dataset are reused: 0 for never, up to 86400 (a day).</param>
+public sealed record SetDatasetCacheRequest(int CacheSeconds);
 
 internal static class DatasetMapping
 {
@@ -45,7 +49,8 @@ internal static class DatasetMapping
         d.UpdatedUtc,
         d.Kind,
         includeSql ? TableViewDefinition.FromJson(d.DefinitionJson) : null,
-        DatasetParametersJson.FromJson(d.ParametersJson));
+        DatasetParametersJson.FromJson(d.ParametersJson),
+        d.CacheSeconds);
 }
 
 /// <summary>Validates SQL and records what it returns. Shared by create and update.</summary>
@@ -220,6 +225,29 @@ public sealed class UpdateDatasetHandler(
         DatasetQuery.Guard(() =>
         {
             dataset.Update(request.Name!, request.Description, sql, columns, clock.UtcNow, definitionJson, parametersJson);
+            return true;
+        });
+
+        await unitOfWork.SaveChangesAsync(ct);
+        return dataset.ToDto(includeSql: true);
+    }
+}
+
+/// <summary>
+/// Chooses how long results of queries on a dataset are reused. It takes effect for everything that runs on the
+/// dataset from then on; results already stored simply live out the time they were given.
+/// </summary>
+public sealed class SetDatasetCacheHandler(IDatasetRepository datasets, IUnitOfWork unitOfWork, OrganizationAccess access)
+{
+    public async Task<DatasetDto> HandleAsync(Guid organizationId, Guid datasetId, SetDatasetCacheRequest request, CancellationToken ct = default)
+    {
+        await access.RequireRoleAsync(organizationId, OrganizationRole.Editor, ct);
+        var dataset = await datasets.GetAsync(organizationId, datasetId, ct)
+            ?? throw new NotFoundException("Dataset not found.");
+
+        DatasetQuery.Guard(() =>
+        {
+            dataset.SetCacheSeconds(request.CacheSeconds);
             return true;
         });
 

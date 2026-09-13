@@ -57,8 +57,13 @@ internal sealed class FakeConnector : IDataSourceConnector
         UsedConnectionStrings.Add(connectionString);
         LastQuery = query;
         LastExecuteMaxRows = maxRows;
-        return Task.FromResult(new QueryPreview([new("n", "bigint")], [[3L]], false));
+        ExecuteCalls++;
+        return Task.FromResult(new QueryPreview([new("n", "bigint")], [[Answer]], false));
     }
+
+    /// <summary>What the database says; a test changes it to show whether an answer was fresh or reused.</summary>
+    public long Answer { get; set; } = 3;
+    public int ExecuteCalls { get; private set; }
 
     public List<PreviewColumn> DescribedColumns { get; set; } = [new("id", "integer"), new("name", "text")];
     public int DescribeCalls { get; private set; }
@@ -155,6 +160,32 @@ internal sealed class FakeSecrets : ISecretProtector
 internal sealed class FixedClock : IClock
 {
     public DateTime UtcNow { get; } = new(2026, 10, 7, 0, 0, 0, DateTimeKind.Utc);
+}
+
+/// <summary>A clock the test can move.</summary>
+internal sealed class MutableClock : IClock
+{
+    public DateTime UtcNow { get; set; } = new(2026, 10, 7, 0, 0, 0, DateTimeKind.Utc);
+}
+
+/// <summary>Remembers what was stored and for how long; entries never expire by themselves, the test decides.</summary>
+internal sealed class FakeResultCache : IResultCache
+{
+    public Dictionary<string, (CachedResult Entry, TimeSpan Ttl)> Items { get; } = [];
+    public int Gets { get; private set; }
+    public int Sets { get; private set; }
+
+    public CachedResult? Get(string key)
+    {
+        Gets++;
+        return Items.TryGetValue(key, out var item) ? item.Entry : null;
+    }
+
+    public void Set(string key, CachedResult entry, TimeSpan timeToLive)
+    {
+        Sets++;
+        Items[key] = (entry, timeToLive);
+    }
 }
 
 internal sealed class FakeCurrentUser(Guid? userId) : ICurrentUser
