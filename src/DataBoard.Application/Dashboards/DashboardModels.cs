@@ -32,8 +32,21 @@ public sealed record SaveDashboardRequest(string Name, string? Description, Dash
 public sealed record DashboardSummaryDto(
     Guid Id, string Name, string? Description, int WidgetCount, DateTime UpdatedUtc, IReadOnlyList<Guid>? ChartIds = null);
 
+/// <summary>
+/// The refresh schedule of a dashboard and how the last refresh went. Every member sees it (it says how old their data
+/// can be); public share links do not.
+/// </summary>
+/// <param name="IntervalMinutes">How often the server refreshes the charts; null when it does not.</param>
+/// <param name="LastFailures">How many charts could not be refreshed the last time; 0 when it went well.</param>
+public sealed record DashboardRefreshDto(
+    int? IntervalMinutes, DateTime? NextUtc, DateTime? LastUtc, int LastFailures, string? LastMessage);
+
 public sealed record DashboardDto(
-    Guid Id, string Name, string? Description, DashboardDefinition Definition, DateTime CreatedUtc, DateTime UpdatedUtc);
+    Guid Id, string Name, string? Description, DashboardDefinition Definition, DateTime CreatedUtc, DateTime UpdatedUtc,
+    DashboardRefreshDto? Refresh = null);
+
+/// <param name="IntervalMinutes">5 to 1440, or null to stop refreshing on a schedule.</param>
+public sealed record SetDashboardRefreshRequest(int? IntervalMinutes);
 
 /// <param name="Filters">Filter id -> the values the viewer picked. A filter with no values is not applied.</param>
 /// <param name="Refresh">Fetch fresh data from the databases instead of reusing stored results, and store it for the next viewer. Editors and Owners only.</param>

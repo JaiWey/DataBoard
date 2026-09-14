@@ -52,6 +52,17 @@ export interface DashboardSummary {
   chartIds?: string[];
 }
 
+/** How the server keeps a dashboard's data fresh, and how the last time went. */
+export interface DashboardRefresh {
+  /** How often the server refreshes the charts, in minutes; null when it does not. */
+  intervalMinutes: number | null;
+  nextUtc: string | null;
+  lastUtc: string | null;
+  /** How many charts could not be refreshed the last time; 0 when it went well. */
+  lastFailures: number;
+  lastMessage: string | null;
+}
+
 export interface Dashboard {
   id: string;
   name: string;
@@ -59,6 +70,7 @@ export interface Dashboard {
   definition: DashboardDefinition;
   createdUtc: string;
   updatedUtc: string;
+  refresh?: DashboardRefresh;
 }
 
 export interface WidgetResult {
@@ -134,6 +146,11 @@ export class DashboardsService {
   /** `refresh` asks the databases again instead of reusing stored results (editors and owners only). */
   run(orgId: string, id: string, filters: FilterValues, refresh = false): Observable<DashboardRun> {
     return this.http.post<DashboardRun>(this.url(orgId, `/${id}/run`), refresh ? { filters, refresh } : { filters });
+  }
+
+  /** Puts the dashboard on a refresh schedule (5 to 1440 minutes), or takes it off with null. Editors and owners. */
+  setRefresh(orgId: string, id: string, intervalMinutes: number | null): Observable<Dashboard> {
+    return this.http.put<Dashboard>(this.url(orgId, `/${id}/refresh`), { intervalMinutes });
   }
 
   listShares(orgId: string, id: string): Observable<DashboardShare[]> {

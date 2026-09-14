@@ -104,6 +104,8 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
                 ["RateLimiting:AuthPermitLimit"] = "10000",
                 ["RateLimiting:ConnectionPermitLimit"] = "10000",
                 ["RateLimiting:SharedPermitLimit"] = "10000",
+                // Tests run refresh passes themselves, at the moments they choose; a background loop would race them.
+                ["Refresh:Enabled"] = "false",
                 // The test database is on localhost, which is blocked by default; tests of the block turn it back off.
                 ["DataSourceSecurity:AllowPrivateNetworks"] = "true",
             }));

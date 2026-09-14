@@ -31,6 +31,10 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 	// Personal access tokens are for the MCP endpoint only; the rest of the API takes a sign-in (JWT) and nothing else.
 	.AddScheme<Microsoft.AspNetCore.Authentication.AuthenticationSchemeOptions, ApiTokenAuthenticationHandler>(ApiTokenDefaults.Scheme, null);
 builder.Services.AddDataBoardMcp();
+
+// The scheduled refresh of dashboards runs inside the server (each server may run it; a due dashboard goes to one of them).
+builder.Services.Configure<DashboardRefreshOptions>(builder.Configuration.GetSection(DashboardRefreshOptions.SectionName));
+builder.Services.AddHostedService<DashboardRefreshService>();
 builder.Services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme)
 	.Configure<IOptions<JwtOptions>>((bearer, jwt) =>
 	{

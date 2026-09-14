@@ -1,4 +1,4 @@
-import { CACHE_CHOICES, ago, cacheLabel } from './relative-time';
+import { CACHE_CHOICES, REFRESH_CHOICES, ago, cacheLabel, intervalLabel } from './relative-time';
 
 describe('ago', () => {
   const now = Date.parse('2026-10-10T12:00:00Z');
@@ -15,6 +15,27 @@ describe('ago', () => {
   ])('says how old %s is', (utc, expected) => expect(ago(utc, now)).toBe(expected));
 
   it('says nothing for a date it cannot read', () => expect(ago('not a date', now)).toBe(''));
+});
+
+describe('intervalLabel', () => {
+  it('puts each choice in words', () => {
+    expect(REFRESH_CHOICES.filter((c) => c.minutes !== null).map((c) => intervalLabel(c.minutes!))).toEqual([
+      '5 min', '15 min', '30 min', '1 hour', '6 hours', '24 hours',
+    ]);
+  });
+
+  it('still words an interval that is not one of the choices', () => {
+    expect(intervalLabel(45)).toBe('45 min');
+    expect(intervalLabel(120)).toBe('2 hours');
+  });
+
+  it('offers off first, then the intervals shortest to longest', () => {
+    expect(REFRESH_CHOICES[0]).toEqual({ minutes: null, label: 'Off' });
+    const minutes = REFRESH_CHOICES.slice(1).map((c) => c.minutes!);
+    expect(minutes).toEqual([...minutes].sort((a, b) => a - b));
+    expect(minutes[0]).toBeGreaterThanOrEqual(5); // what the server accepts
+    expect(minutes.at(-1)).toBeLessThanOrEqual(1440);
+  });
 });
 
 describe('cacheLabel', () => {

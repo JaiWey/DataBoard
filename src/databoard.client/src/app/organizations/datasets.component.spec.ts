@@ -788,6 +788,7 @@ describe('DatasetsComponent', () => {
 
     expect(el().querySelector('[role=alert]')?.textContent).toContain('0 to 86400');
     expect(cacheSelect().disabled).toBe(false);
+    expect(cacheSelect().selectedOptions[0].textContent?.trim()).toBe('1 minute'); // the control is back to what is saved
   });
 
   it('lets a setting that is not one of the choices show as itself', async () => {

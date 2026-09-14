@@ -40,7 +40,7 @@ import { Dataset, DatasetsService, TableViewDefinition, emptyTableView } from '.
           <p class="cache">
             <label>
               <span>Keep results for</span>
-              <select aria-label="Cache results for" [disabled]="cacheBusy()" (change)="setCache(+$any($event.target).value)">
+              <select aria-label="Cache results for" [disabled]="cacheBusy()" (change)="setCache($any($event.target))">
                 @for (choice of cacheChoices(); track choice.seconds) {
                   <option [value]="choice.seconds" [selected]="choice.seconds === cacheSeconds()">{{ choice.label }}</option>
                 }
@@ -227,8 +227,9 @@ export class DatasetTabComponent {
   }
 
   /** Takes effect at once and needs no Save: it is how the dataset is served, not what it is. */
-  protected setCache(seconds: number): void {
+  protected setCache(select: HTMLSelectElement): void {
     const dataset = this.dataset();
+    const seconds = Number(select.value);
     if (!this.canEdit() || this.cacheBusy() || seconds === this.cacheSeconds()) return;
     this.cacheBusy.set(true);
     this.sqlErrors.set([]);
@@ -241,6 +242,7 @@ export class DatasetTabComponent {
       error: (e) => {
         this.cacheBusy.set(false);
         this.sqlErrors.set(problemMessages(e, 'Could not change how long results are kept.'));
+        select.value = String(this.cacheSeconds()); // nothing in the page changed, so put the control back by hand
       },
     });
   }

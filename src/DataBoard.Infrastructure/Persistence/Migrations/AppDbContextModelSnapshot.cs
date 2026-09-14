@@ -95,13 +95,36 @@ namespace DataBoard.Infrastructure.Persistence.Migrations
                         .HasMaxLength(1000)
                         .HasColumnType("character varying(1000)");
 
+                    b.Property<int>("LastRefreshFailures")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("last_refresh_failures");
+
+                    b.Property<string>("LastRefreshMessage")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("last_refresh_message");
+
+                    b.Property<DateTime?>("LastRefreshUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_refresh_utc");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
 
+                    b.Property<DateTime?>("NextRefreshUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("next_refresh_utc");
+
                     b.Property<Guid>("OrganizationId")
                         .HasColumnType("uuid");
+
+                    b.Property<int?>("RefreshIntervalMinutes")
+                        .HasColumnType("integer")
+                        .HasColumnName("refresh_interval_minutes");
 
                     b.Property<DateTime>("UpdatedUtc")
                         .HasColumnType("timestamp with time zone");
@@ -109,6 +132,9 @@ namespace DataBoard.Infrastructure.Persistence.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("CreatedByUserId");
+
+                    b.HasIndex("NextRefreshUtc")
+                        .HasFilter("refresh_interval_minutes IS NOT NULL");
 
                     b.HasIndex("OrganizationId", "Name")
                         .IsUnique();

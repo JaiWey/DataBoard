@@ -51,6 +51,8 @@ public static class DependencyInjection
         services.AddScoped<UpdateDashboardHandler>();
         services.AddScoped<DeleteDashboardHandler>();
         services.AddScoped<RunDashboardHandler>();
+        services.AddScoped<SetDashboardRefreshHandler>();
+        services.AddScoped<RefreshDueDashboardsHandler>();
 
         services.AddScoped<CreateApiTokenHandler>();
         services.AddScoped<ListApiTokensHandler>();

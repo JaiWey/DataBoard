@@ -79,7 +79,7 @@ describe('DashboardComponent', () => {
     fixture.detectChanges();
   };
 
-  const load = (role: 'Viewer' | 'Editor' | 'Owner', def = dashboard(), datasetList: object[] = datasets) => {
+  const load = (role: 'Viewer' | 'Editor' | 'Owner', def: object = dashboard(), datasetList: object[] = datasets) => {
     open(role);
     http.expectOne(`/api/organizations/${ORG}/charts`).flush(charts);
     http.expectOne(`/api/organizations/${ORG}/datasets`).flush(datasetList);
@@ -252,6 +252,133 @@ describe('DashboardComponent', () => {
     http.expectOne(`/api/organizations/${ORG}/charts`).flush(charts);
 
     http.expectNone({ method: 'PUT', url: dashboardUrl });
+  });
+
+  describe('refresh schedule', () => {
+    const refresh = (over: Record<string, unknown> = {}) => ({
+      intervalMinutes: 15, nextUtc: null, lastUtc: new Date(Date.now() - 4 * 60_000).toISOString(), lastFailures: 0, lastMessage: null, ...over,
+    });
+    const scheduled = (over: Record<string, unknown> = {}) => ({ ...dashboard(false), refresh: refresh(over) });
+    const select = () => el().querySelector('select[aria-label="Refresh schedule"]') as HTMLSelectElement;
+    const status = () => el().querySelector('.schedule')?.textContent?.replace(/\s+/g, ' ').trim();
+    const choose = (value: string) => {
+      select().value = value;
+      select().dispatchEvent(new Event('change'));
+      fixture.detectChanges();
+    };
+
+    it('shows editors the schedule with its current choice', () => {
+      load('Editor', scheduled());
+      http.expectOne(runUrl).flush({ widgets: [] });
+
+      expect(select().selectedOptions[0].textContent?.trim()).toBe('15 minutes');
+      expect(Array.from(select().options).map((o) => o.textContent?.trim())).toEqual(
+        ['Off', '5 minutes', '15 minutes', '30 minutes', '1 hour', '6 hours', '24 hours']);
+      expect(status()).toContain('Last refresh 4 min ago.');
+    });
+
+    it('tells a viewer how often the data is refreshed and when, without a way to change it', () => {
+      load('Viewer', scheduled());
+      http.expectOne(runUrl).flush({ widgets: [] });
+
+      expect(select()).toBeNull();
+      expect(status()).toBe('Refreshed every 15 min. Last refresh 4 min ago.');
+    });
+
+    it('says when a schedule has not run yet', () => {
+      load('Viewer', scheduled({ lastUtc: null }));
+      http.expectOne(runUrl).flush({ widgets: [] });
+
+      expect(status()).toContain('Not refreshed yet.');
+    });
+
+    it('shows nothing about a schedule to a viewer when there is none, and only the choice to an editor', () => {
+      load('Viewer', { ...dashboard(false), refresh: refresh({ intervalMinutes: null, lastUtc: null }) });
+      http.expectOne(runUrl).flush({ widgets: [] });
+      expect(el().querySelector('.schedule')).toBeNull();
+    });
+
+    it('offers an editor the choice even when there is no schedule, with nothing else to say', () => {
+      load('Editor', { ...dashboard(false), refresh: refresh({ intervalMinutes: null, lastUtc: null }) });
+      http.expectOne(runUrl).flush({ widgets: [] });
+
+      expect(select().selectedOptions[0].textContent?.trim()).toBe('Off');
+      expect(el().querySelector('.schedule .status')).toBeNull();
+    });
+
+    it('says how many charts could not be refreshed, and why, to everyone', () => {
+      load('Viewer', scheduled({ lastFailures: 2, lastMessage: "'price' is not a column of this dataset." }));
+      http.expectOne(runUrl).flush({ widgets: [] });
+
+      expect(el().querySelector('.schedule [role=alert]')?.textContent?.replace(/\s+/g, ' ').trim())
+        .toBe("2 charts could not be refreshed: 'price' is not a column of this dataset.");
+    });
+
+    it('says "chart" for one', () => {
+      load('Viewer', scheduled({ lastFailures: 1, lastMessage: null }));
+      http.expectOne(runUrl).flush({ widgets: [] });
+
+      expect(el().querySelector('.schedule [role=alert]')?.textContent?.trim()).toBe('1 chart could not be refreshed');
+    });
+
+    it('puts the dashboard on the schedule that was chosen, at once and without running it again', () => {
+      load('Editor', { ...dashboard(false), refresh: refresh({ intervalMinutes: null, lastUtc: null }) });
+      http.expectOne(runUrl).flush({ widgets: [] });
+
+      choose('15');
+
+      const put = http.expectOne({ method: 'PUT', url: `${dashboardUrl}/refresh` });
+      expect(put.request.body).toEqual({ intervalMinutes: 15 });
+      put.flush(scheduled({ lastUtc: null }));
+      fixture.detectChanges();
+      expect(select().selectedOptions[0].textContent?.trim()).toBe('15 minutes');
+      expect(status()).toContain('Not refreshed yet.');
+      http.expectNone(runUrl); // the data on the page is as fresh as it was
+    });
+
+    it('takes the dashboard off the schedule with Off', () => {
+      load('Editor', scheduled());
+      http.expectOne(runUrl).flush({ widgets: [] });
+
+      choose('');
+
+      const put = http.expectOne({ method: 'PUT', url: `${dashboardUrl}/refresh` });
+      expect(put.request.body).toEqual({ intervalMinutes: null });
+      put.flush({ ...dashboard(false), refresh: refresh({ intervalMinutes: null }) });
+      fixture.detectChanges();
+      expect(el().querySelector('.schedule .status')).toBeNull();
+    });
+
+    it('shows why a schedule could not be set and puts the choice back', () => {
+      load('Editor', { ...dashboard(false), refresh: refresh({ intervalMinutes: null, lastUtc: null }) });
+      http.expectOne(runUrl).flush({ widgets: [] });
+
+      choose('5');
+      http.expectOne({ method: 'PUT', url: `${dashboardUrl}/refresh` }).flush(
+        { errors: { IntervalMinutes: ['At most 20 dashboards of an organization can be refreshed on a schedule. Turn one off first.'] } },
+        { status: 400, statusText: 'Bad Request' },
+      );
+      fixture.detectChanges();
+
+      expect(el().querySelector('[role=alert]')?.textContent).toContain('At most 20 dashboards');
+      expect(select().selectedOptions[0].textContent?.trim()).toBe('Off');
+    });
+
+    it('does not ask again for the choice that is already made', () => {
+      load('Editor', scheduled());
+      http.expectOne(runUrl).flush({ widgets: [] });
+
+      choose('15');
+
+      http.expectNone({ method: 'PUT', url: `${dashboardUrl}/refresh` });
+    });
+
+    it('keeps the page quiet for older answers that say nothing about a schedule', () => {
+      load('Editor', dashboard(false));
+      http.expectOne(runUrl).flush({ widgets: [] });
+
+      expect(el().querySelector('.schedule')).toBeNull();
+    });
   });
 
   describe('stored results', () => {

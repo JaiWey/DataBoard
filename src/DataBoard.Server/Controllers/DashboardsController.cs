@@ -41,6 +41,15 @@ public class DashboardsController : ControllerBase
 		return NoContent();
 	}
 
+	/// <summary>
+	/// Puts the dashboard on a refresh schedule (every 5 to 1440 minutes) or, with a null interval, takes it off. The server
+	/// then re-runs its charts and keeps the results for viewers. Editors and Owners.
+	/// </summary>
+	[HttpPut("{dashboardId:guid}/refresh")]
+	public async Task<ActionResult<DashboardDto>> SetRefresh(
+		Guid organizationId, Guid dashboardId, SetDashboardRefreshRequest body, [FromServices] SetDashboardRefreshHandler handler, CancellationToken ct) =>
+		Ok(await handler.HandleAsync(organizationId, dashboardId, body, ct));
+
 	/// <summary>Public links to the dashboard. Only Editors and Owners manage them.</summary>
 	[HttpGet("{dashboardId:guid}/shares")]
 	public async Task<ActionResult<IReadOnlyList<ShareDto>>> ListShares(

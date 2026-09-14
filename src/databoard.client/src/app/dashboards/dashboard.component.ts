@@ -13,7 +13,7 @@ import { problemMessages } from '../organizations/data-sources.service';
 import { AddChartsDialogComponent, AddChartsDialogData } from './add-charts-dialog.component';
 import { DashboardGridComponent } from './dashboard-grid.component';
 import { ShareDialogComponent, ShareDialogData } from './share-dialog.component';
-import { ago } from '../shared/relative-time';
+import { REFRESH_CHOICES, ago, intervalLabel } from '../shared/relative-time';
 import { LayoutItem, arrange, sameLayout } from './dashboard-layout';
 import { Dataset, DatasetsService } from '../organizations/datasets.service';
 import {
@@ -69,6 +69,34 @@ export function parseFilterInput(operator: SharedFilterOperator, text: string): 
         </span>
       </mat-card-header>
       <mat-card-content>
+
+      @if (d.refresh; as schedule) {
+        @if (schedule.intervalMinutes || canEdit()) {
+          <div class="schedule no-print">
+            @if (canEdit()) {
+              <label>
+                <span>Refresh every</span>
+                <select aria-label="Refresh schedule" [disabled]="busy()" (change)="setSchedule(d, $any($event.target))">
+                  @for (choice of refreshChoices(schedule.intervalMinutes); track choice.minutes) {
+                    <option [value]="choice.minutes ?? ''" [selected]="choice.minutes === schedule.intervalMinutes">{{ choice.label }}</option>
+                  }
+                </select>
+              </label>
+            }
+            @if (schedule.intervalMinutes) {
+              <small class="status">
+                @if (!canEdit()) { Refreshed every {{ intervalText(schedule.intervalMinutes) }}. }
+                @if (schedule.lastUtc; as last) { Last refresh {{ age(last) }}. } @else { Not refreshed yet. }
+              </small>
+              @if (schedule.lastFailures > 0) {
+                <small class="fail" role="alert">
+                  {{ schedule.lastFailures }} {{ schedule.lastFailures === 1 ? 'chart' : 'charts' }} could not be refreshed@if (schedule.lastMessage) {: {{ schedule.lastMessage }}}
+                </small>
+              }
+            }
+          </div>
+        }
+      }
 
       @if (d.definition.filters.length > 0) {
         <form class="filters form-row no-print" [formGroup]="filterForm" (ngSubmit)="apply()">
@@ -210,6 +238,9 @@ export function parseFilterInput(operator: SharedFilterOperator, text: string): 
     .widget-actions { margin-left: auto; display: flex; }
     .detail > mat-card-content { flex: 1; min-height: 0; overflow: auto; padding-top: 0.75rem; }
     .filters { margin: 0.5rem 0 1rem; }
+    .schedule { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.75rem; margin: 0 0 0.75rem; }
+    .schedule label { display: flex; align-items: center; gap: 0.5rem; }
+    .schedule select { padding: 0.25rem; }
     .apply, .remove-filter { margin-top: 0.4rem; }
     /* A widget fills its cell on the grid; its chart takes what the header leaves, and a table scrolls inside. */
     .widget { height: 100%; }
@@ -396,6 +427,37 @@ export class DashboardComponent implements OnInit {
 
   protected apply(): void {
     this.execute();
+  }
+
+  /** The usual intervals, plus the current one if it was set to something else through the API. */
+  protected refreshChoices(current: number | null) {
+    return current === null || REFRESH_CHOICES.some((c) => c.minutes === current)
+      ? REFRESH_CHOICES
+      : [...REFRESH_CHOICES, { minutes: current, label: intervalLabel(current) }];
+  }
+
+  protected intervalText(minutes: number): string {
+    return intervalLabel(minutes);
+  }
+
+  /** Puts the dashboard on a schedule, or off (an empty choice). It takes effect at once and needs no Save. */
+  protected setSchedule(d: Dashboard, select: HTMLSelectElement): void {
+    const minutes = select.value === '' ? null : Number(select.value);
+    const before = d.refresh?.intervalMinutes ?? null;
+    if (minutes === before) return;
+    this.busy.set(true);
+    this.errors.set([]);
+    this.api.setRefresh(this.orgId(), d.id, minutes).subscribe({
+      next: (saved) => {
+        this.busy.set(false);
+        this.show(saved);
+      },
+      error: (e) => {
+        this.busy.set(false);
+        this.errors.set(problemMessages(e, 'Could not change the refresh schedule.'));
+        select.value = before === null ? '' : String(before); // nothing in the page changed, so put the control back by hand
+      },
+    });
   }
 
   /** How old a reused result is, for the note on a chart. */

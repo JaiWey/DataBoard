@@ -27,7 +27,8 @@ internal static class DashboardJson
 internal static class DashboardMapping
 {
     public static DashboardDto ToDto(this Dashboard d) =>
-        new(d.Id, d.Name, d.Description, DashboardJson.Deserialize(d.DefinitionJson), d.CreatedUtc, d.UpdatedUtc);
+        new(d.Id, d.Name, d.Description, DashboardJson.Deserialize(d.DefinitionJson), d.CreatedUtc, d.UpdatedUtc,
+            new DashboardRefreshDto(d.RefreshIntervalMinutes, d.NextRefreshUtc, d.LastRefreshUtc, d.LastRefreshFailures, d.LastRefreshMessage));
 }
 
 /// <summary>
@@ -229,9 +230,11 @@ public sealed class RunDashboardHandler(
         await access.RequireRoleAsync(organizationId, refresh ? OrganizationRole.Editor : OrganizationRole.Viewer, ct);
         var dashboard = await dashboards.GetAsync(organizationId, dashboardId, ct)
             ?? throw new NotFoundException("Dashboard not found.");
+        // A dashboard on a schedule keeps what a refresh fetches for as long as the schedule would, so the next viewer gets it too.
+        TimeSpan? keepFor = dashboard.RefreshIntervalMinutes is { } minutes ? ScheduledKeepTime(minutes) : null;
         return await RunWidgetsAsync(
             organizationId, DashboardJson.Deserialize(dashboard.DefinitionJson), request,
-            shared: false, refresh ? new CacheRequest(CacheMode.Refresh) : CacheRequest.Use, ct);
+            Caller.Member, refresh ? new CacheRequest(CacheMode.Refresh, keepFor) : CacheRequest.Use, ct);
     }
 
     /// <summary>
@@ -240,13 +243,43 @@ public sealed class RunDashboardHandler(
     /// </summary>
     internal Task<DashboardRunResult> HandleSharedAsync(
         Guid organizationId, DashboardDefinition definition, RunDashboardRequest? request, CancellationToken ct) =>
-        RunWidgetsAsync(organizationId, definition, request, shared: true, CacheRequest.Use, ct); // a visitor cannot force a refresh
+        RunWidgetsAsync(organizationId, definition, request, Caller.Visitor, CacheRequest.Use, ct); // a visitor cannot force a refresh
+
+    /// <summary>
+    /// The scheduled refresh: runs every chart as a viewer would see the dashboard before touching any filter, fetches
+    /// fresh data from the databases, and stores it so that the viewers who follow are served it. Nobody is signed in,
+    /// so this does not check a role; it is only reached by the scheduler, for a dashboard an editor put on a schedule.
+    /// </summary>
+    internal Task<DashboardRunResult> HandleScheduledAsync(
+        Guid organizationId, DashboardDefinition definition, TimeSpan keepFor, CancellationToken ct) =>
+        RunWidgetsAsync(organizationId, definition, null, Caller.Scheduler, new CacheRequest(CacheMode.Refresh, keepFor), ct);
+
+    /// <summary>
+    /// How long a refresh's results are kept: two intervals, so that viewers are still served stored data if the next
+    /// refresh is a little late (or fails), rather than every one of them suddenly asking the database.
+    /// </summary>
+    internal static TimeSpan ScheduledKeepTime(int intervalMinutes) => TimeSpan.FromMinutes(intervalMinutes * 2L);
 
     private const string SharedFailure = "This chart could not be shown.";
 
-    private async Task<DashboardRunResult> RunWidgetsAsync(
-        Guid organizationId, DashboardDefinition definition, RunDashboardRequest? request, bool shared, CacheRequest cache, CancellationToken ct)
+    /// <summary>Who the run is for. It decides whether a role is needed, and how much of a failure may be told.</summary>
+    private enum Caller
     {
+        /// <summary>A signed-in member: checked by the caller, and told what went wrong.</summary>
+        Member,
+
+        /// <summary>Someone with a share link: not a member, so told nothing about tables or columns.</summary>
+        Visitor,
+
+        /// <summary>The scheduler: no one is signed in; failures are recorded for the dashboard's members.</summary>
+        Scheduler,
+    }
+
+    private async Task<DashboardRunResult> RunWidgetsAsync(
+        Guid organizationId, DashboardDefinition definition, RunDashboardRequest? request, Caller caller, CacheRequest cache, CancellationToken ct)
+    {
+        var shared = caller == Caller.Visitor; // what a failure may reveal
+        var trusted = caller != Caller.Member; // no signed-in member to check
         var chosen = request?.Filters ?? new Dictionary<Guid, IReadOnlyList<JsonElement>>();
         var active = definition.Filters.Where(f => chosen.TryGetValue(f.Id, out var v) && v.Count > 0).ToList();
 
@@ -296,7 +329,7 @@ public sealed class RunDashboardHandler(
             try
             {
                 var run = query with { Filters = filters, Parameters = parameters.Count > 0 ? parameters : null };
-                var result = shared
+                var result = trusted
                     ? await runner.HandleTrustedAsync(organizationId, chart.DatasetId, run, cache, ct)
                     : await runner.HandleAsync(organizationId, chart.DatasetId, run, cache, ct);
                 results.Add(new WidgetResult(widget.Id, result, null, applied));

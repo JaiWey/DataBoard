@@ -21,6 +21,53 @@ public sealed class Dashboard : BaseEntity
     public DateTime CreatedUtc { get; private set; }
     public DateTime UpdatedUtc { get; private set; }
 
+    // ---- scheduled refresh: the server re-runs the dashboard's charts now and then, so viewers find fresh data waiting ----
+
+    public const int MinRefreshMinutes = 5;
+    public const int MaxRefreshMinutes = 1_440; // a day
+    public const int MaxRefreshMessageLength = 300;
+
+    /// <summary>How often the server refreshes the dashboard's charts, in minutes. Null means it does not.</summary>
+    public int? RefreshIntervalMinutes { get; private set; }
+
+    /// <summary>When the next refresh is due. Null when there is no schedule.</summary>
+    public DateTime? NextRefreshUtc { get; private set; }
+
+    public DateTime? LastRefreshUtc { get; private set; }
+
+    /// <summary>How many charts could not be refreshed the last time.</summary>
+    public int LastRefreshFailures { get; private set; }
+
+    /// <summary>The first problem of the last refresh, shortened; null when it went well.</summary>
+    public string? LastRefreshMessage { get; private set; }
+
+    /// <summary>
+    /// Turns the schedule on, with the first refresh due now, or off (null). Changing the interval keeps the record of
+    /// the last refresh. This is a setting of how the dashboard is served, not an edit of the dashboard.
+    /// </summary>
+    public void SetRefreshInterval(int? minutes, DateTime nowUtc)
+    {
+        if (minutes is { } m && (m < MinRefreshMinutes || m > MaxRefreshMinutes))
+            throw new ArgumentException($"A dashboard refreshes every {MinRefreshMinutes} to {MaxRefreshMinutes} minutes.", nameof(minutes));
+
+        RefreshIntervalMinutes = minutes;
+        NextRefreshUtc = minutes is null ? null : nowUtc;
+    }
+
+    /// <summary>Notes how a refresh went and, if there is still a schedule, when the next one is due.</summary>
+    public void RecordRefresh(DateTime nowUtc, int failedCharts, string? message)
+    {
+        if (failedCharts < 0)
+            throw new ArgumentOutOfRangeException(nameof(failedCharts));
+
+        LastRefreshUtc = nowUtc;
+        LastRefreshFailures = failedCharts;
+        LastRefreshMessage = failedCharts == 0 || string.IsNullOrWhiteSpace(message)
+            ? null
+            : message.Trim().Length > MaxRefreshMessageLength ? message.Trim()[..(MaxRefreshMessageLength - 1)] + "…" : message.Trim();
+        if (RefreshIntervalMinutes is { } minutes) NextRefreshUtc = nowUtc.AddMinutes(minutes);
+    }
+
     public static Dashboard Create(
         Guid organizationId, string name, string? description, string definitionJson, Guid createdByUserId, DateTime nowUtc)
     {
