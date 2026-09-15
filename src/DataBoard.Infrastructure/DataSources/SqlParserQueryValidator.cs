@@ -19,24 +19,38 @@ internal sealed partial class SqlParserQueryValidator : ISqlQueryValidator
     public const int MaxSqlLength = 20_000;
     private const int MaxNesting = 64;
 
-    // Matched against the last part of a function name, so pg_catalog.pg_read_file is caught too.
-    [GeneratedRegex(
-        "^(pg_read_file|pg_read_binary_file|pg_ls_.*|pg_stat_file|pg_sleep.*|pg_terminate_backend|pg_cancel_backend|" +
-        "pg_reload_conf|pg_rotate_logfile|pg_switch_wal|pg_promote|pg_advisory.*|pg_try_advisory.*|pg_create_.*|" +
-        "pg_drop_.*|pg_logical_.*|pg_replication_.*|pg_file_.*|pg_export_snapshot|pg_notify|pg_import_system_collations|" +
-        "lo_.*|loread|lowrite|dblink.*|set_config|nextval|setval|.*_to_xml.*|xpath.*)$",
-        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
-    private static partial Regex DeniedFunction();
+    /// <summary>What is parsed and what is refused for one kind of database.</summary>
+    /// <param name="DeniedFunction">Matched against the last part of a function name, so a schema-qualified name is caught too.</param>
+    /// <param name="DeniedRelations">Tables and views that expose the server itself (accounts, files, other sessions).</param>
+    private sealed record DialectRules(Dialect Dialect, Regex DeniedFunction, HashSet<string> DeniedRelations);
 
-    private static readonly HashSet<string> DeniedRelations = new(StringComparer.OrdinalIgnoreCase)
+    private static Regex Functions(string pattern) => new($"^({pattern})$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+    private static HashSet<string> Relations(params string[] names) => new(names, StringComparer.OrdinalIgnoreCase);
+
+    private static readonly Dictionary<DataSourceType, DialectRules> Rules = new()
     {
-        "pg_authid", "pg_shadow", "pg_user_mappings", "pg_largeobject", "pg_hba_file_rules",
-        "pg_file_settings", "pg_ident_file_mappings",
+        [DataSourceType.PostgreSql] = new(
+            new PostgreSqlDialect(),
+            Functions(
+                "pg_read_file|pg_read_binary_file|pg_ls_.*|pg_stat_file|pg_sleep.*|pg_terminate_backend|pg_cancel_backend|" +
+                "pg_reload_conf|pg_rotate_logfile|pg_switch_wal|pg_promote|pg_advisory.*|pg_try_advisory.*|pg_create_.*|" +
+                "pg_drop_.*|pg_logical_.*|pg_replication_.*|pg_file_.*|pg_export_snapshot|pg_notify|pg_import_system_collations|" +
+                "lo_.*|loread|lowrite|dblink.*|set_config|nextval|setval|.*_to_xml.*|xpath.*"),
+            Relations("pg_authid", "pg_shadow", "pg_user_mappings", "pg_largeobject", "pg_hba_file_rules",
+                "pg_file_settings", "pg_ident_file_mappings")),
+
+        // An uploaded CSV lives in a small SQLite file of its own, opened read-only. Nothing in it is secret; what is refused
+        // is whatever could reach outside it: loading code, reading or writing files.
+        [DataSourceType.Csv] = new(
+            new SQLiteDialect(),
+            Functions("load_extension|readfile|writefile|edit|fts3_tokenizer|zipfile.*|sqlite_.*dbpage.*"),
+            Relations("sqlite_dbpage", "dbstat")),
     };
 
     public string ValidateReadOnly(DataSourceType type, string sql)
     {
-        if (type != DataSourceType.PostgreSql)
+        if (!Rules.TryGetValue(type, out var rules))
             throw new ValidationException("Type", $"{type} data sources are not supported yet.");
 
         if (string.IsNullOrWhiteSpace(sql))
@@ -49,7 +63,7 @@ internal sealed partial class SqlParserQueryValidator : ISqlQueryValidator
         Sequence<Statement> statements;
         try
         {
-            statements = new SqlQueryParser().Parse(sql, new PostgreSqlDialect());
+            statements = new SqlQueryParser().Parse(sql, rules.Dialect);
         }
         catch (Exception ex)
         {
@@ -63,7 +77,7 @@ internal sealed partial class SqlParserQueryValidator : ISqlQueryValidator
         if (statements[0] is not Statement.Select select)
             throw new ValidationException("Sql", "Only SELECT queries are allowed.");
 
-        var guard = new GuardVisitor();
+        var guard = new GuardVisitor(rules);
         CheckQuery(select.Query, guard);
         ((IElement)statements[0]).Visit(guard);
 
@@ -118,7 +132,7 @@ internal sealed partial class SqlParserQueryValidator : ISqlQueryValidator
         return max;
     }
 
-    private sealed class GuardVisitor : Visitor
+    private sealed class GuardVisitor(DialectRules rules) : Visitor
     {
         public List<string> Violations { get; } = [];
 
@@ -130,15 +144,32 @@ internal sealed partial class SqlParserQueryValidator : ISqlQueryValidator
 
         public override ControlFlow PreVisitTableFactor(TableFactor tableFactor)
         {
-            // A function used as a table, for example FROM pg_ls_dir('/').
-            if (tableFactor is TableFactor.Table { Args: not null } table) CheckFunction(table.Name);
+            switch (tableFactor)
+            {
+                // A function used as a table, for example FROM pg_ls_dir('/').
+                case TableFactor.Table { Args: not null } table:
+                    CheckFunction(table.Name);
+                    break;
+
+                // A subquery used as a table, for example FROM (SELECT pg_read_file('/etc/passwd')) AS t. The visitor does not
+                // go into it by itself, so it is checked here, the same as a subquery anywhere else (this covers LATERAL too).
+                case TableFactor.Derived derived:
+                    CheckQuery(derived.SubQuery, this);
+                    ((IElement)derived.SubQuery).Visit(this);
+                    break;
+
+                // A join in parentheses, for example FROM (a JOIN (SELECT ...) b ON ...): what is inside is not entered either.
+                case TableFactor.NestedJoin nested:
+                    ((IElement)nested.TableWithJoins).Visit(this);
+                    break;
+            }
             return ControlFlow.Continue;
         }
 
         public override ControlFlow PreVisitRelation(ObjectName relation)
         {
             var name = relation.Values.LastOrDefault()?.Value;
-            if (name is not null && DeniedRelations.Contains(name))
+            if (name is not null && rules.DeniedRelations.Contains(name))
                 Violations.Add($"Reading {name} is not allowed.");
             return ControlFlow.Continue;
         }
@@ -152,7 +183,7 @@ internal sealed partial class SqlParserQueryValidator : ISqlQueryValidator
         private void CheckFunction(ObjectName name)
         {
             var last = name.Values.LastOrDefault()?.Value;
-            if (last is not null && DeniedFunction().IsMatch(last))
+            if (last is not null && rules.DeniedFunction.IsMatch(last))
                 Violations.Add($"The function {last} is not allowed.");
         }
     }

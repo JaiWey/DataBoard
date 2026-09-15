@@ -39,7 +39,7 @@ describe('AddDataSourceDialogComponent', () => {
         provideHttpClient(),
         provideHttpClientTesting(),
         { provide: MAT_DIALOG_DATA, useValue: { orgId: ORG } },
-        { provide: MatDialogRef, useValue: { close } },
+        { provide: MatDialogRef, useValue: { close, disableClose: false } },
       ],
     });
     fixture = TestBed.createComponent(AddDataSourceDialogComponent);
@@ -98,5 +98,116 @@ describe('AddDataSourceDialogComponent', () => {
     expect(close).not.toHaveBeenCalled();
     expect(el().querySelector('[role=alert]')?.textContent).toContain('already exists');
     expect(button('Save').disabled).toBe(false); // the user can fix the name and try again
+  });
+
+  describe('a CSV file', () => {
+    const csvFile = () => new File(['a,b\n1,2\n'], 'Q1 sales.csv', { type: 'text/csv' });
+
+    const chooseType = (value: string) => {
+      const select = el().querySelector('select[aria-label=Type]') as HTMLSelectElement;
+      select.value = value;
+      select.dispatchEvent(new Event('change'));
+      fixture.detectChanges();
+    };
+
+    const pick = (file: File) => {
+      const input = el().querySelector('input[type=file]') as HTMLInputElement;
+      Object.defineProperty(input, 'files', { value: { item: () => file, length: 1 }, configurable: true });
+      input.dispatchEvent(new Event('change'));
+      fixture.detectChanges();
+    };
+
+    const result = {
+      dataSource: { id: 'x', organizationId: ORG, name: 'Q1 sales', type: 'Csv', createdUtc: '' },
+      tableName: 'q1_sales',
+      rowCount: 1,
+      columns: [{ name: 'a', dataType: 'bigint' }, { name: 'b', dataType: 'bigint' }],
+    };
+
+    it('offers the type and swaps the form for a file form', () => {
+      expect(el().querySelector('input[type=file]')).toBeNull();
+
+      chooseType('csv');
+
+      expect(el().querySelector('input[type=file]')).not.toBeNull();
+      expect(el().querySelector('input[formcontrolname=host]')).toBeNull();
+      expect(button('Test connection')).toBeUndefined(); // there is nothing to connect to
+    });
+
+    it('cannot upload until there is a file, and takes the name from the file', () => {
+      chooseType('csv');
+      expect(button('Upload').disabled).toBe(true);
+
+      pick(csvFile());
+
+      expect((el().querySelector('input[formcontrolname=name]') as HTMLInputElement).value).toBe('Q1 sales');
+      expect(button('Upload').disabled).toBe(false);
+    });
+
+    it('keeps a name that was typed', () => {
+      chooseType('csv');
+      set('input[formcontrolname=name]', 'Mine');
+
+      pick(csvFile());
+
+      expect((el().querySelector('input[formcontrolname=name]') as HTMLInputElement).value).toBe('Mine');
+    });
+
+    it('uploads the file with its options, shows what was read, and closes with the data source on Done', () => {
+      chooseType('csv');
+      pick(csvFile());
+      set('input[formcontrolname=tableName]', ' sales ');
+      const delimiter = el().querySelector('select[formcontrolname=delimiter]') as HTMLSelectElement;
+      delimiter.value = delimiter.querySelector('option[value=tab]')!.getAttribute('value')!;
+      delimiter.dispatchEvent(new Event('change'));
+      fixture.detectChanges();
+
+      (el().querySelector('form') as HTMLFormElement).dispatchEvent(new Event('submit'));
+
+      const req = http.expectOne({ method: 'POST', url: `/api/organizations/${ORG}/data-sources/csv` });
+      const body = req.request.body as FormData;
+      expect(body.get('Name')).toBe('Q1 sales');
+      expect((body.get('File') as File).name).toBe('Q1 sales.csv');
+      expect(body.get('TableName')).toBe('sales');
+      expect(body.get('Delimiter')).toBe('tab');
+      expect(body.has('HasHeader')).toBe(false); // the first row is the header unless said otherwise
+      req.flush(result);
+      fixture.detectChanges();
+
+      expect(close).not.toHaveBeenCalled();
+      expect(el().textContent).toContain('Read 1 row into the table q1_sales');
+      expect(el().textContent).toContain('SELECT * FROM q1_sales');
+      expect(el().querySelectorAll('table.columns tbody tr').length).toBe(2);
+
+      button('Done').click();
+      expect(close).toHaveBeenCalledWith(result.dataSource);
+    });
+
+    it('says when the first row is not a header', () => {
+      chooseType('csv');
+      pick(csvFile());
+      (el().querySelector('mat-checkbox input') as HTMLInputElement).click();
+      fixture.detectChanges();
+
+      (el().querySelector('form') as HTMLFormElement).dispatchEvent(new Event('submit'));
+
+      const req = http.expectOne({ method: 'POST', url: `/api/organizations/${ORG}/data-sources/csv` });
+      expect((req.request.body as FormData).get('HasHeader')).toBe('false');
+      req.flush(result);
+    });
+
+    it('shows why a file was refused and lets the person choose another', () => {
+      chooseType('csv');
+      pick(csvFile());
+
+      (el().querySelector('form') as HTMLFormElement).dispatchEvent(new Event('submit'));
+      http.expectOne(`/api/organizations/${ORG}/data-sources/csv`)
+        .flush({ errors: { File: ['Row 3 has 3 values but there are 2 columns.'] } }, { status: 400, statusText: 'Bad Request' });
+      fixture.detectChanges();
+
+      expect(el().querySelector('[role=alert]')?.textContent).toContain('Row 3 has 3 values');
+      expect(close).not.toHaveBeenCalled();
+      expect(button('Upload').disabled).toBe(false);
+    });
   });
 });

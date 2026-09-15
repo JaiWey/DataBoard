@@ -77,11 +77,27 @@ type Panel = 'schema' | 'query';
               @if (canEdit()) {
                 <button mat-stroked-button type="button" (click)="open(source, 'query')">Query</button>
                 <button mat-button type="button" (click)="testSaved(source)">Test</button>
+                @if (source.type === 'Csv') {
+                  <button mat-button type="button" (click)="fileInput.click()" [disabled]="busy()">Replace file</button>
+                  <input #fileInput type="file" hidden aria-label="New CSV file" accept=".csv,.tsv,.txt,text/csv,text/plain"
+                         (change)="replaceFile(source, $any($event.target))" />
+                }
+              }
+              @if (isOwner()) {
+                <button mat-button type="button" class="danger" (click)="remove(source)" [disabled]="busy()">Delete</button>
               }
             </span>
           </mat-card-header>
 
           <mat-card-content>
+            @if (replaced(); as r) {
+              @if (r.id === source.id) {
+                <p class="ok" role="status">
+                  Replaced: {{ r.rowCount }} {{ r.rowCount === 1 ? 'row' : 'rows' }} now in <code>{{ r.tableName }}</code>.
+                  Datasets and charts built on it use the new data.
+                </p>
+              }
+            }
             @if (savedTest(); as t) {
               @if (t.id === source.id) {
                 <p [class]="t.result.success ? 'ok' : 'fail'" role="status">{{ t.result.message }}</p>
@@ -195,6 +211,7 @@ type Panel = 'schema' | 'query';
     .sql-field { width: 100%; }
     textarea { font-family: monospace; }
     .save { margin-top: 0.75rem; }
+    .danger { color: var(--mat-sys-error); }
   `,
 })
 export class DataSourcesComponent implements OnInit {
@@ -212,6 +229,8 @@ export class DataSourcesComponent implements OnInit {
     const role = this.organization()?.role;
     return role === 'Editor' || role === 'Owner';
   });
+  protected readonly isOwner = computed(() => this.organization()?.role === 'Owner');
+  protected readonly replaced = signal<{ id: string; tableName: string; rowCount: number } | null>(null);
   protected readonly sources = signal<DataSource[]>([]);
   protected readonly loaded = signal(false);
 
@@ -255,6 +274,7 @@ export class DataSourcesComponent implements OnInit {
     this.panelError.set([]);
     this.savedDataset.set(null);
     this.savedTest.set(null);
+    this.replaced.set(null);
     this.queryForm.reset();
     this.datasetForm.reset();
   }
@@ -322,6 +342,49 @@ export class DataSourcesComponent implements OnInit {
       error: (e) => {
         this.busy.set(false);
         this.panelError.set(problemMessages(e, 'Could not save the dataset.'));
+      },
+    });
+  }
+
+  /** Puts the chosen file into a CSV data source. The table keeps its name, so what was built on it carries on. */
+  protected replaceFile(source: DataSource, input: HTMLInputElement): void {
+    const file = input.files?.item(0);
+    input.value = ''; // choosing the same file again must still count as a change
+    if (!file) return;
+
+    this.busy.set(true);
+    this.panelError.set([]);
+    this.replaced.set(null);
+    this.api.replaceCsv(this.orgId, source.id, file).subscribe({
+      next: (r) => {
+        this.busy.set(false);
+        this.replaced.set({ id: source.id, tableName: r.tableName, rowCount: r.rowCount });
+        this.schema.set(null);
+        if (this.panel() === 'schema') this.open(source, 'schema'); // the columns may have changed
+      },
+      error: (e) => {
+        this.busy.set(false);
+        this.panelError.set(problemMessages(e, 'Could not read the file.'));
+      },
+    });
+  }
+
+  /** Removes a data source with everything built on it, after asking. */
+  protected remove(source: DataSource): void {
+    if (!confirm(`Delete the data source "${source.name}"? Its datasets and the charts built on them are deleted too.`)) return;
+
+    this.busy.set(true);
+    this.panelError.set([]);
+    this.api.delete(this.orgId, source.id).subscribe({
+      next: () => {
+        this.busy.set(false);
+        this.sources.update((items) => items.filter((s) => s.id !== source.id));
+        this.selectedId.set(null);
+        this.panel.set(null);
+      },
+      error: (e) => {
+        this.busy.set(false);
+        this.panelError.set(problemMessages(e, 'Could not delete the data source.'));
       },
     });
   }

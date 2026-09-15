@@ -29,6 +29,72 @@ public class DataSourcesController : ControllerBase
 			new CreateDataSourceRequest(organizationId, body.Name, body.Type, body.ConnectionString), ct);
 		return Created($"api/organizations/{organizationId}/data-sources/{created.Id}", created);
 	}
+	/// <summary>An uploaded CSV file and how to read it. Only the file is required for a new data source (and a name).</summary>
+	public sealed class CsvUploadForm
+	{
+		public string? Name { get; set; }
+		public IFormFile? File { get; set; }
+
+		/// <summary>What the data is called in SQL. Left out, it is made from the file's name.</summary>
+		public string? TableName { get; set; }
+
+		/// <summary>One of comma, semicolon, tab or vertical bar. Left out, it is found by looking at the file.</summary>
+		public string? Delimiter { get; set; }
+
+		/// <summary>Whether the first row holds the column names. Left out, it does.</summary>
+		public bool? HasHeader { get; set; }
+
+		public CsvImportOptions Options => new(TableName, HasHeader ?? true, Delimiter);
+	}
+
+	// The file is limited by the importer; this keeps a far bigger request from being read at all.
+	private const long MaxUploadBytes = CsvLimits.MaxBytes + 1024 * 1024;
+
+	/// <summary>
+	/// Makes a data source from an uploaded CSV file: it is read into a small database of its own (each column given the type
+	/// that fits what is in it), and then works like any other data source. Editors and Owners.
+	/// </summary>
+	[HttpPost("csv")]
+	[Consumes("multipart/form-data")]
+	[RequestSizeLimit(MaxUploadBytes)]
+	[RequestFormLimits(MultipartBodyLengthLimit = MaxUploadBytes)]
+	[EnableRateLimiting("connections")]
+	public async Task<ActionResult<CsvUploadResult>> UploadCsv(
+		Guid organizationId, [FromForm] CsvUploadForm form, [FromServices] CreateCsvDataSourceHandler handler, CancellationToken ct)
+	{
+		if (form.File is null || form.File.Length == 0)
+			throw new Application.Common.ValidationException("File", "Choose a CSV file to upload.");
+
+		await using var stream = form.File.OpenReadStream();
+		var created = await handler.HandleAsync(organizationId, form.Name ?? string.Empty, form.File.FileName, stream, form.Options, ct);
+		return Created($"api/organizations/{organizationId}/data-sources/{created.DataSource.Id}", created);
+	}
+
+	/// <summary>Puts a new file into a CSV data source. It keeps its table name, so what was built on it carries on.</summary>
+	[HttpPut("{dataSourceId:guid}/csv")]
+	[Consumes("multipart/form-data")]
+	[RequestSizeLimit(MaxUploadBytes)]
+	[RequestFormLimits(MultipartBodyLengthLimit = MaxUploadBytes)]
+	[EnableRateLimiting("connections")]
+	public async Task<ActionResult<CsvUploadResult>> ReplaceCsv(
+		Guid organizationId, Guid dataSourceId, [FromForm] CsvUploadForm form, [FromServices] ReplaceCsvDataHandler handler, CancellationToken ct)
+	{
+		if (form.File is null || form.File.Length == 0)
+			throw new Application.Common.ValidationException("File", "Choose a CSV file to upload.");
+
+		await using var stream = form.File.OpenReadStream();
+		return Ok(await handler.HandleAsync(organizationId, dataSourceId, form.File.FileName, stream, form.Options, ct));
+	}
+
+	/// <summary>Removes the data source and everything built on it (datasets and their charts). Owners only.</summary>
+	[HttpDelete("{dataSourceId:guid}")]
+	public async Task<IActionResult> Delete(
+		Guid organizationId, Guid dataSourceId, [FromServices] DeleteDataSourceHandler handler, CancellationToken ct)
+	{
+		await handler.HandleAsync(organizationId, dataSourceId, ct);
+		return NoContent();
+	}
+
 	/// <summary>Tests connection details before they are saved.</summary>
 	[HttpPost("test")]
 	[EnableRateLimiting("connections")]

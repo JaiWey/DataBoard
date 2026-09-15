@@ -209,4 +209,104 @@ describe('DataSourcesComponent', () => {
 
     expect(el().textContent).toContain('Saved dataset "Regional sales"');
   });
+
+  describe('a CSV data source', () => {
+    const CSV = { ...SOURCE, id: '44444444-4444-4444-4444-444444444444', name: 'Uploads', type: 'Csv' };
+    const fileInput = () => el().querySelector('input[type=file]') as HTMLInputElement;
+
+    const chooseFile = (file: File) => {
+      Object.defineProperty(fileInput(), 'files', { value: { item: () => file, length: 1 }, configurable: true });
+      fileInput().dispatchEvent(new Event('change'));
+      fixture.detectChanges();
+    };
+
+    it('lets editors replace the file but only for a CSV source, and owners delete', () => {
+      load('Editor', [SOURCE, CSV]);
+
+      select(0);
+      expect(buttons()).not.toContain('Replace file');
+
+      select(1);
+      expect(buttons()).toContain('Replace file');
+      expect(buttons()).not.toContain('Delete'); // owners only
+    });
+
+    it('hides replacing from viewers and deleting from everyone but owners', () => {
+      load('Viewer', [CSV]);
+      select();
+      expect(buttons()).toEqual(['UploadsCsv', 'Schema']);
+    });
+
+    it('sends the new file and says what is in the table now', () => {
+      load('Editor', [CSV]);
+      select();
+
+      chooseFile(new File(['a\n1\n'], 'new.csv'));
+
+      const req = http.expectOne({ method: 'PUT', url: `/api/organizations/${ORG}/data-sources/${CSV.id}/csv` });
+      expect((req.request.body as FormData).get('File')).toBeInstanceOf(File);
+      req.flush({ dataSource: CSV, tableName: 'uploads', rowCount: 2, columns: [] });
+      fixture.detectChanges();
+
+      expect(el().querySelector('[role=status]')?.textContent).toContain('2 rows now in uploads');
+    });
+
+    it('loads the schema again after a replacement when it is open', () => {
+      load('Editor', [CSV]);
+      select();
+      button('Schema').click();
+      http.expectOne(`/api/organizations/${ORG}/data-sources/${CSV.id}/schema`).flush({ schemas: [], truncated: false });
+      fixture.detectChanges();
+
+      chooseFile(new File(['a\n1\n'], 'new.csv'));
+      http.expectOne({ method: 'PUT', url: `/api/organizations/${ORG}/data-sources/${CSV.id}/csv` })
+        .flush({ dataSource: CSV, tableName: 'uploads', rowCount: 1, columns: [] });
+
+      http.expectOne(`/api/organizations/${ORG}/data-sources/${CSV.id}/schema`).flush({ schemas: [], truncated: false });
+    });
+
+    it('shows why a replacement was refused', () => {
+      load('Editor', [CSV]);
+      select();
+
+      chooseFile(new File([''], 'empty.csv'));
+      http.expectOne({ method: 'PUT', url: `/api/organizations/${ORG}/data-sources/${CSV.id}/csv` })
+        .flush({ errors: { File: ['The file is empty.'] } }, { status: 400, statusText: 'Bad Request' });
+      fixture.detectChanges();
+
+      expect(el().querySelector('[role=alert]')?.textContent).toContain('The file is empty.');
+    });
+
+    it('asks before deleting, then removes the data source from the list', () => {
+      load('Owner', [SOURCE, CSV]);
+      select(1);
+      const ask = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true);
+
+      button('Delete').click();
+      http.expectNone(`/api/organizations/${ORG}/data-sources/${CSV.id}`);
+      expect(ask).toHaveBeenCalledTimes(1);
+
+      button('Delete').click();
+      http.expectOne({ method: 'DELETE', url: `/api/organizations/${ORG}/data-sources/${CSV.id}` }).flush(null, { status: 204, statusText: 'No Content' });
+      fixture.detectChanges();
+
+      expect(listItems().map((b) => b.querySelector('[matListItemTitle]')?.textContent?.trim())).toEqual(['Sales']);
+      expect(el().querySelector('.detail')?.textContent).toContain('Select a data source');
+      ask.mockRestore();
+    });
+
+    it('keeps the data source and says why when it cannot be deleted', () => {
+      load('Owner', [CSV]);
+      select();
+      vi.spyOn(window, 'confirm').mockReturnValue(true);
+
+      button('Delete').click();
+      http.expectOne({ method: 'DELETE', url: `/api/organizations/${ORG}/data-sources/${CSV.id}` })
+        .flush({}, { status: 403, statusText: 'Forbidden' });
+      fixture.detectChanges();
+
+      expect(listItems().length).toBe(1);
+      expect(el().querySelector('[role=alert]')?.textContent).toContain('permission');
+    });
+  });
 });

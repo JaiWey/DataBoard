@@ -22,6 +22,9 @@ public static class DependencyInjection
         services.AddScoped<AddMemberHandler>();
 
         services.AddScoped<CreateDataSourceHandler>();
+        services.AddScoped<CreateCsvDataSourceHandler>();
+        services.AddScoped<ReplaceCsvDataHandler>();
+        services.AddScoped<DeleteDataSourceHandler>();
         services.AddScoped<ListDataSourcesHandler>();
         services.AddScoped<TestNewConnectionHandler>();
         services.AddScoped<TestSavedConnectionHandler>();

@@ -149,8 +149,93 @@ public class SqlParserQueryValidatorTests
     public void Rejects_garbage() => Rejected("this is not sql at all");
 
     [Theory]
+    [InlineData("SELECT * FROM (SELECT pg_read_file('/etc/passwd')) AS t")]
+    [InlineData("SELECT * FROM sales s JOIN (SELECT pg_sleep(100) AS e) j ON true")]
+    [InlineData("SELECT * FROM (SELECT * FROM (SELECT pg_ls_dir('/')) a) b")]
+    [InlineData("SELECT * FROM sales, LATERAL (SELECT pg_read_file('x')) l")]
+    [InlineData("SELECT * FROM (SELECT * FROM pg_authid) AS t")]
+    [InlineData("SELECT * FROM sales WHERE id IN (SELECT pg_advisory_lock(1))")]
+    [InlineData("SELECT (SELECT pg_read_file('x')) AS leaked")]
+    [InlineData("SELECT * FROM (sales s JOIN (SELECT pg_read_file('x') AS f) j ON true)")]
+    [InlineData("SELECT * FROM (SELECT 1 UNION ALL SELECT pg_read_file('x')::int) AS t")]
+    [InlineData("SELECT * FROM (WITH c AS (SELECT pg_read_file('x') AS f) SELECT * FROM c) AS t")]
+    [InlineData("SELECT * FROM sales WHERE EXISTS (SELECT 1 FROM (SELECT pg_ls_dir('/')) d)")]
+    [InlineData("SELECT * FROM sales s LEFT JOIN LATERAL (SELECT pg_advisory_lock(s.id)) l ON true")]
+    [InlineData("SELECT * FROM (SELECT * FROM sales) a CROSS JOIN (SELECT * FROM pg_shadow) b")]
+    [InlineData("SELECT * FROM sales ORDER BY (SELECT pg_read_file('x'))")]
+    [InlineData("SELECT count(*) FILTER (WHERE (SELECT pg_read_file('x')) IS NOT NULL) FROM sales")]
+    public void Looks_for_the_dangerous_part_inside_a_subquery_wherever_it_is(string sql) => Rejected(sql);
+
+    [Theory]
     [InlineData(DataSourceType.SqlServer)]
-    [InlineData(DataSourceType.Csv)]
-    public void Only_postgresql_is_supported(DataSourceType type) =>
+    [InlineData((DataSourceType)99)]
+    public void A_type_without_rules_yet_is_rejected(DataSourceType type) =>
         Assert.Throws<ValidationException>(() => _validator.ValidateReadOnly(type, "SELECT 1"));
+}
+
+/// <summary>An uploaded CSV is queried with SQLite's own SQL, read-only.</summary>
+public class SqliteQueryValidatorTests
+{
+    private readonly SqlParserQueryValidator _validator = new();
+
+    private string Validate(string sql) => _validator.ValidateReadOnly(DataSourceType.Csv, sql);
+
+    private ValidationException Rejected(string sql) => Assert.Throws<ValidationException>(() => Validate(sql));
+
+    [Theory]
+    [InlineData("SELECT 1")]
+    [InlineData("SELECT * FROM sales WHERE amount > 10 ORDER BY sold_at DESC LIMIT 5")]
+    [InlineData("SELECT \"order id\", sum(amount) FROM \"main\".\"sales 2026\" GROUP BY 1 HAVING sum(amount) > 100")]
+    [InlineData("WITH a AS (SELECT 1 AS x) SELECT * FROM a")]
+    [InlineData("SELECT region FROM sales UNION SELECT region FROM refunds")]
+    [InlineData("SELECT date(sold_at, 'start of month') AS month, count(*) FROM sales GROUP BY month")]
+    [InlineData("SELECT strftime('%Y', sold_at), typeof(amount), coalesce(note, '') FROM sales")]
+    [InlineData("SELECT * FROM sales WHERE region = @databoard_p0 AND amount >= @databoard_p1")]
+    [InlineData("SELECT * FROM sales WHERE note LIKE '%50\\%%' ESCAPE '\\'")]
+    [InlineData("SELECT json_extract(data, '$.a') FROM events")]
+    [InlineData("SELECT * FROM pragma_table_info('sales')")]
+    public void Accepts_read_only_queries(string sql) => Assert.NotEmpty(Validate(sql));
+
+    [Theory]
+    [InlineData("DELETE FROM sales")]
+    [InlineData("DROP TABLE sales")]
+    [InlineData("UPDATE sales SET amount = 0")]
+    [InlineData("INSERT INTO sales VALUES (1)")]
+    [InlineData("CREATE TABLE x (a int)")]
+    [InlineData("ATTACH DATABASE 'other.db' AS other")]
+    [InlineData("PRAGMA writable_schema = ON")]
+    [InlineData("VACUUM INTO 'copy.db'")]
+    [InlineData("SELECT 1; SELECT 2")]
+    [InlineData("SELECT 1; DROP TABLE sales")]
+    [InlineData("REPLACE INTO sales VALUES (1)")]
+    public void Rejects_everything_that_is_not_one_select(string sql) => Rejected(sql);
+
+    [Theory]
+    [InlineData("SELECT load_extension('evil')", "load_extension")]
+    [InlineData("SELECT readfile('/etc/passwd')", "readfile")]
+    [InlineData("SELECT writefile('/tmp/x', 'y')", "writefile")]
+    [InlineData("SELECT edit('x')", "edit")]
+    [InlineData("SELECT fts3_tokenizer('simple')", "fts3_tokenizer")]
+    [InlineData("SELECT * FROM sqlite_dbpage", "sqlite_dbpage")]
+    public void Rejects_what_reaches_outside_the_file(string sql, string name) => Assert.Contains(name, Rejected(sql).Errors["Sql"][0]);
+
+    [Theory]
+    [InlineData("SELECT * FROM (SELECT readfile('/etc/passwd')) AS t")]
+    [InlineData("WITH x AS (SELECT load_extension('evil')) SELECT * FROM x")]
+    [InlineData("SELECT * FROM sales WHERE region IN (SELECT writefile('a', 'b'))")]
+    [InlineData("SELECT (SELECT readfile('x')) AS leaked")]
+    [InlineData("SELECT region FROM sales UNION ALL SELECT readfile('x')")]
+    [InlineData("SELECT * FROM sales WHERE EXISTS (SELECT 1 FROM sqlite_dbpage)")]
+    [InlineData("SELECT * FROM sales s JOIN (SELECT edit('x') AS e) j ON 1 = 1")]
+    public void Looks_for_the_dangerous_part_inside_other_queries_too(string sql) => Rejected(sql);
+
+    [Fact]
+    public void Keeps_the_lists_of_refused_functions_of_each_database_apart()
+    {
+        // Each list names what is dangerous in that database. A name that is only dangerous in the other is not refused here
+        // (it simply does not exist, and the database says so when the query is tried).
+        Assert.NotEmpty(Validate("SELECT pg_sleep(1)"));
+        Assert.NotEmpty(_validator.ValidateReadOnly(DataSourceType.PostgreSql, "SELECT load_extension('x')"));
+        Assert.Throws<ValidationException>(() => _validator.ValidateReadOnly(DataSourceType.PostgreSql, "SELECT pg_sleep(1)"));
+    }
 }

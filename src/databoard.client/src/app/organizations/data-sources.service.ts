@@ -32,6 +32,40 @@ export interface QueryPreview {
   truncated: boolean;
 }
 
+/** How to read a CSV file. Anything left out is worked out from the file. */
+export interface CsvOptions {
+  tableName?: string;
+  /** `,` `;` `|` or the word `tab`. */
+  delimiter?: string;
+  /** Whether the first row holds the column names (it does, if left out). */
+  hasHeader?: boolean;
+}
+
+export interface CsvUploadResult {
+  dataSource: DataSource;
+  tableName: string;
+  rowCount: number;
+  columns: { name: string; dataType: string }[];
+}
+
+/** The delimiters the file can use, as the choices offered. */
+export const CSV_DELIMITERS: { value: string; label: string }[] = [
+  { value: '', label: 'Detect' },
+  { value: ',', label: 'Comma' },
+  { value: ';', label: 'Semicolon' },
+  { value: 'tab', label: 'Tab' }, // spelled out: a form field that is only whitespace counts as left out
+  { value: '|', label: 'Vertical bar' },
+];
+
+function csvForm(file: File, options: CsvOptions): FormData {
+  const form = new FormData();
+  form.append('File', file, file.name);
+  if (options.tableName?.trim()) form.append('TableName', options.tableName.trim());
+  if (options.delimiter) form.append('Delimiter', options.delimiter);
+  if (options.hasHeader === false) form.append('HasHeader', 'false');
+  return form;
+}
+
 /** Reads the API's problem details into plain messages: validation errors, or a single detail line. */
 export function problemMessages(e: unknown, fallback: string): string[] {
   if (!(e instanceof HttpErrorResponse)) return [fallback];
@@ -58,6 +92,23 @@ export class DataSourcesService {
 
   create(orgId: string, name: string, connectionString: string): Observable<DataSource> {
     return this.http.post<DataSource>(this.url(orgId), { name, type: 'PostgreSql', connectionString });
+  }
+
+  /** Makes a data source from a CSV file. It is read into a database of its own, so nothing connects to anywhere. */
+  uploadCsv(orgId: string, name: string, file: File, options: CsvOptions = {}): Observable<CsvUploadResult> {
+    const form = csvForm(file, options);
+    form.append('Name', name);
+    return this.http.post<CsvUploadResult>(this.url(orgId, '/csv'), form);
+  }
+
+  /** Puts a new file into a CSV data source. It keeps its table name, so what was built on it carries on. */
+  replaceCsv(orgId: string, id: string, file: File, options: CsvOptions = {}): Observable<CsvUploadResult> {
+    return this.http.put<CsvUploadResult>(this.url(orgId, `/${id}/csv`), csvForm(file, options));
+  }
+
+  /** Removes a data source with the datasets and charts built on it. Owners only. */
+  delete(orgId: string, id: string): Observable<void> {
+    return this.http.delete<void>(this.url(orgId, `/${id}`));
   }
 
   testNew(orgId: string, connectionString: string): Observable<ConnectionTestResult> {

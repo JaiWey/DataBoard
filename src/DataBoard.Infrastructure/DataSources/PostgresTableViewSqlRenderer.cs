@@ -5,13 +5,14 @@ using DataBoard.Domain.DataSources;
 namespace DataBoard.Infrastructure.DataSources;
 
 /// <summary>
-/// Writes the PostgreSQL for a validated <see cref="TableViewPlan"/>. The only text that is not fixed is identifiers
-/// (schemas, tables, columns, aliases) taken from the plan, which the planner checked against the real schema, and
-/// every one is quoted with embedded quotes doubled. No value is ever written into the SQL.
+/// Writes the SQL for a validated <see cref="TableViewPlan"/>. The only text that is not fixed is identifiers (schemas,
+/// tables, columns, aliases) taken from the plan, which the planner checked against the real schema, and every one is
+/// quoted with embedded quotes doubled. No value is ever written into the SQL. Databases that quote with double quotes
+/// share this; the others override <see cref="Quote"/> and, where they lack one, the kinds of join they offer.
 /// </summary>
-internal sealed class PostgresTableViewSqlRenderer : ITableViewSqlRenderer
+internal abstract class SqlTableViewRendererBase : ITableViewSqlRenderer
 {
-    public DataSourceType Type => DataSourceType.PostgreSql;
+    public abstract DataSourceType Type { get; }
 
     public string Render(TableViewPlan plan)
     {
@@ -31,7 +32,10 @@ internal sealed class PostgresTableViewSqlRenderer : ITableViewSqlRenderer
         return sql.ToString();
     }
 
-    private static string JoinKeyword(JoinType type) => type switch
+    /// <summary>Quotes an identifier so that whatever it contains is one name.</summary>
+    protected abstract string Quote(string identifier);
+
+    protected virtual string JoinKeyword(JoinType type) => type switch
     {
         JoinType.Inner => "INNER JOIN",
         JoinType.Left => "LEFT JOIN",
@@ -40,10 +44,23 @@ internal sealed class PostgresTableViewSqlRenderer : ITableViewSqlRenderer
         _ => throw new ArgumentOutOfRangeException(nameof(type)),
     };
 
-    private static string TableName(PlannedTable table) => $"{Quote(table.Schema)}.{Quote(table.Name)}";
+    private string TableName(PlannedTable table) => $"{Quote(table.Schema)}.{Quote(table.Name)}";
 
     /// <summary>Tables get fixed short aliases, so the same table can be joined to itself.</summary>
     private static string Alias(int index) => "t" + index;
+}
 
-    internal static string Quote(string identifier) => "\"" + identifier.Replace("\"", "\"\"") + "\"";
+internal sealed class PostgresTableViewSqlRenderer : SqlTableViewRendererBase
+{
+    public override DataSourceType Type => DataSourceType.PostgreSql;
+
+    protected override string Quote(string identifier) => PostgresChartSqlRenderer.QuoteIdentifier(identifier);
+}
+
+/// <summary>The table view SQL for an uploaded CSV. SQLite quotes like PostgreSQL does, and offers every kind of join.</summary>
+internal sealed class SqliteTableViewSqlRenderer : SqlTableViewRendererBase
+{
+    public override DataSourceType Type => DataSourceType.Csv;
+
+    protected override string Quote(string identifier) => PostgresChartSqlRenderer.QuoteIdentifier(identifier);
 }

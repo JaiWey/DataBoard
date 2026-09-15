@@ -14,6 +14,11 @@ internal sealed class DataSourceRepository(AppDbContext db) : IDataSourceReposit
             .AsNoTracking()
             .SingleOrDefaultAsync(d => d.OrganizationId == organizationId && d.Id == dataSourceId, ct);
 
+    public Task<DataSource?> GetForUpdateAsync(Guid organizationId, Guid dataSourceId, CancellationToken ct = default) =>
+        db.DataSources.SingleOrDefaultAsync(d => d.OrganizationId == organizationId && d.Id == dataSourceId, ct);
+
+    public void Remove(DataSource dataSource) => db.DataSources.Remove(dataSource);
+
     public async Task<IReadOnlyList<DataSource>> ListByOrganizationAsync(Guid organizationId, CancellationToken ct = default) =>
         await db.DataSources
             .AsNoTracking()

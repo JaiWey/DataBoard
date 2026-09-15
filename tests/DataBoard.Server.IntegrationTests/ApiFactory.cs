@@ -108,8 +108,12 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
                 ["Refresh:Enabled"] = "false",
                 // The test database is on localhost, which is blocked by default; tests of the block turn it back off.
                 ["DataSourceSecurity:AllowPrivateNetworks"] = "true",
+                ["Uploads:Path"] = UploadFolder,
             }));
     }
+
+    /// <summary>Where uploaded CSV files go during the tests; removed with the factory.</summary>
+    public string UploadFolder { get; } = Path.Combine(Path.GetTempPath(), "databoard-it-" + Guid.NewGuid().ToString("N"));
 
     public HttpClient CreateApiClient(bool handleCookies = false) =>
         CreateClient(new WebApplicationFactoryClientOptions
@@ -124,6 +128,8 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
     {
         await base.DisposeAsync();
         await _postgres.DisposeAsync();
+        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+        try { Directory.Delete(UploadFolder, recursive: true); } catch (IOException) { } catch (UnauthorizedAccessException) { }
     }
 }
 

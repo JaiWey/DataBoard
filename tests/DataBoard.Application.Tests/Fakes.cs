@@ -18,11 +18,14 @@ internal sealed class FakeDataSourceRepo : IDataSourceRepository
         Task.FromResult<IReadOnlyList<DataSource>>(Items.Where(i => i.OrganizationId == org).ToList());
     public Task<DataSource?> GetAsync(Guid organizationId, Guid dataSourceId, CancellationToken ct = default) =>
         Task.FromResult(Items.SingleOrDefault(i => i.OrganizationId == organizationId && i.Id == dataSourceId));
+    public Task<DataSource?> GetForUpdateAsync(Guid organizationId, Guid dataSourceId, CancellationToken ct = default) =>
+        GetAsync(organizationId, dataSourceId, ct);
+    public void Remove(DataSource dataSource) => Items.Remove(dataSource);
 }
 
 internal sealed class FakeConnector : IDataSourceConnector
 {
-    public DataSourceType Type => DataSourceType.PostgreSql;
+    public DataSourceType Type { get; init; } = DataSourceType.PostgreSql;
     public List<string> ValidatedConnectionStrings { get; } = [];
     public List<string> UsedConnectionStrings { get; } = [];
     public string? LastSql { get; private set; }

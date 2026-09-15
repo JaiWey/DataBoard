@@ -262,7 +262,7 @@ public class PostgresChartSqlRendererTests
     [InlineData("\"; DROP TABLE x; --", "\"\"\"; DROP TABLE x; --\"")]
     [InlineData("@databoard_p0", "\"@databoard_p0\"")]
     public void Identifiers_are_quoted_with_embedded_quotes_doubled(string name, string expected) =>
-        Assert.Equal(expected, PostgresChartSqlRenderer.Quote(name));
+        Assert.Equal(expected, PostgresChartSqlRenderer.QuoteIdentifier(name));
 
     [Fact]
     public void Awkward_column_names_end_up_as_single_quoted_identifiers_everywhere()
@@ -321,7 +321,7 @@ public class PostgresChartSqlRendererTests
     [InlineData("c:\\dir", "c:\\\\dir")]
     [InlineData("%_\\", "\\%\\_\\\\")]
     public void Like_wildcards_are_escaped(string input, string expected) =>
-        Assert.Equal(expected, PostgresChartSqlRenderer.EscapeLike(input));
+        Assert.Equal(expected, SqlChartRendererBase.EscapeLike(input));
 
     [Fact]
     public void Limit_asks_for_one_extra_row_to_detect_truncation() =>

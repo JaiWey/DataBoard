@@ -73,6 +73,14 @@ public static class DependencyInjection
         services.AddSingleton<IChartSqlRenderer, PostgresChartSqlRenderer>();
         services.AddSingleton<ITableViewSqlRenderer, PostgresTableViewSqlRenderer>();
 
+        // Uploaded CSV files: imported into a small SQLite file each, then read like any other data source.
+        services.Configure<UploadOptions>(configuration.GetSection(UploadOptions.SectionName));
+        services.AddSingleton<IUploadStore, LocalUploadStore>();
+        services.AddSingleton<ICsvImporter, CsvImporter>();
+        services.AddSingleton<IDataSourceConnector, SqliteConnector>();
+        services.AddSingleton<IChartSqlRenderer, SqliteChartSqlRenderer>();
+        services.AddSingleton<ITableViewSqlRenderer, SqliteTableViewSqlRenderer>();
+
         services.AddScoped<JwtTokenService>();
         services.AddScoped<IIdentityService, IdentityService>();
         return services;

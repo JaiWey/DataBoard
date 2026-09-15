@@ -18,6 +18,18 @@ public sealed class DataSource : BaseEntity
 
     public DateTime CreatedUtc { get; private set; }
 
+    /// <summary>
+    /// Points the data source at new data, for a file that is uploaded again. It stays the same data source, so the datasets
+    /// and charts built on it carry on; results stored for the old file are no longer asked for, because the connection is
+    /// part of what identifies a stored result.
+    /// </summary>
+    public void ReplaceConnection(string encryptedConnectionString)
+    {
+        if (string.IsNullOrWhiteSpace(encryptedConnectionString))
+            throw new ArgumentException("Connection string is required.", nameof(encryptedConnectionString));
+        EncryptedConnectionString = encryptedConnectionString;
+    }
+
     public static DataSource Create(
         Guid organizationId,
         string name,
