@@ -22,7 +22,8 @@ internal sealed partial class SqlParserQueryValidator : ISqlQueryValidator
     /// <summary>What is parsed and what is refused for one kind of database.</summary>
     /// <param name="DeniedFunction">Matched against the last part of a function name, so a schema-qualified name is caught too.</param>
     /// <param name="DeniedRelations">Tables and views that expose the server itself (accounts, files, other sessions).</param>
-    private sealed record DialectRules(Dialect Dialect, Regex DeniedFunction, HashSet<string> DeniedRelations);
+    /// <param name="DeniedSchemas">Schemas (in MySQL, databases) that hold the server's own accounts and statistics, not the person's data.</param>
+    private sealed record DialectRules(Dialect Dialect, Regex DeniedFunction, HashSet<string> DeniedRelations, HashSet<string>? DeniedSchemas = null);
 
     private static Regex Functions(string pattern) => new($"^({pattern})$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
@@ -46,6 +47,17 @@ internal sealed partial class SqlParserQueryValidator : ISqlQueryValidator
             new SQLiteDialect(),
             Functions("load_extension|readfile|writefile|edit|fts3_tokenizer|zipfile.*|sqlite_.*dbpage.*"),
             Relations("sqlite_dbpage", "dbstat")),
+
+        // Whatever a MySQL account may SELECT is its owner's decision. What is refused here is what reaches outside the data:
+        // reading files, waiting, taking locks that other sessions feel, and running other code or other queries.
+        [DataSourceType.MySql] = new(
+            new MySqlDialect(),
+            Functions(
+                "load_file|sleep|benchmark|get_lock|release_lock|release_all_locks|is_free_lock|is_used_lock|" +
+                "master_pos_wait|source_pos_wait|wait_for_executed_gtid_set|wait_until_sql_thread_after_gtids|" +
+                "sys_exec|sys_eval|sys_get|sys_set|lib_mysqludf_.*|audit_log_.*|keyring_.*|group_replication_.*"),
+            Relations(), // a table called "user" is a person's own business; the server's accounts are in the mysql schema, below
+            Relations("mysql", "performance_schema", "sys")),
     };
 
     public string ValidateReadOnly(DataSourceType type, string sql)
@@ -171,6 +183,16 @@ internal sealed partial class SqlParserQueryValidator : ISqlQueryValidator
             var name = relation.Values.LastOrDefault()?.Value;
             if (name is not null && rules.DeniedRelations.Contains(name))
                 Violations.Add($"Reading {name} is not allowed.");
+
+            // mysql.user, sys.session: the parts before the table's own name say which schema it is in.
+            if (rules.DeniedSchemas is { } schemas)
+            {
+                foreach (var part in relation.Values.SkipLast(1))
+                {
+                    if (schemas.Contains(part.Value))
+                        Violations.Add($"Reading from {part.Value} is not allowed.");
+                }
+            }
             return ControlFlow.Continue;
         }
 

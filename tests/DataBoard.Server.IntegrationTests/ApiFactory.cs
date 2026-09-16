@@ -4,7 +4,9 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using MySqlConnector;
 using Npgsql;
+using Testcontainers.MySql;
 using Testcontainers.PostgreSql;
 
 namespace DataBoard.Server.IntegrationTests;
@@ -16,14 +18,70 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
 
     private readonly PostgreSqlContainer _postgres = new PostgreSqlBuilder("postgres:17").Build();
 
+    public const string MySqlReaderPassword = "reader-pw-123";
+
+    /// <summary>Testcontainers gives the root account the same password as the default user.</summary>
+    public const string MySqlRootPassword = "mysql";
+
+    // The image is the one already on a developer machine; MySQL 8 is also what most hosted MySQL is.
+    private readonly MySqlContainer _mysql = new MySqlBuilder("mysql:8").Build();
+
     public async Task InitializeAsync()
     {
-        await _postgres.StartAsync();
+        await Task.WhenAll(_postgres.StartAsync(), _mysql.StartAsync());
 
         using (var scope = Services.CreateScope())
             await scope.ServiceProvider.GetRequiredService<AppDbContext>().Database.MigrateAsync();
 
         await SeedTargetDatabaseAsync();
+        await SeedMySqlAsync();
+    }
+
+    /// <summary>
+    /// The MySQL container is the "customer database" for MySQL data sources: a small fixed table to compute expected
+    /// answers from, and a <c>reader</c> account that can only SELECT it (and not the other table).
+    /// </summary>
+    private async Task SeedMySqlAsync()
+    {
+        await using var connection = new MySqlConnection(MySqlConnectionString("root", MySqlRootPassword));
+        await connection.OpenAsync();
+        await using var command = new MySqlCommand($$"""
+            CREATE TABLE orders (
+                id INT AUTO_INCREMENT PRIMARY KEY, region VARCHAR(50) NOT NULL, product VARCHAR(50), quantity INT, price DECIMAL(10,2) NOT NULL,
+                ordered_on DATE NOT NULL, created_at DATETIME NOT NULL, paid TINYINT(1) NOT NULL, notes TEXT, data JSON);
+            INSERT INTO orders (region, product, quantity, price, ordered_on, created_at, paid, notes, data) VALUES
+              ('Auckland',     'Phone',  2, 500.00, '2026-01-15', '2026-01-15 10:00:00', 1, 'rush order',    '{"k":1}'),
+              ('Auckland',     'Laptop', 1, 1500.00,'2026-01-20', '2026-01-20 11:00:00', 0, NULL,            '{"a":1}'),
+              ('Wellington',   'Phone',  3, 500.00, '2026-02-03', '2026-02-03 09:30:00', 1, '50%_off\\ sale', NULL),
+              ('Wellington',   'Phone',  1, 450.00, '2026-02-17', '2026-02-17 23:30:00', 1, NULL,            NULL),
+              ('Christchurch', 'Tablet', 5, 300.00, '2026-03-05', '2026-03-05 00:00:00', 0, NULL,            NULL),
+              ('Christchurch', 'Phone',  4, 520.00, '2026-03-10', '2026-03-10 12:00:00', 1, 'rush order',    NULL),
+              ('Auckland',     'Phone',  1, 480.00, '2026-03-28', '2026-03-28 08:00:00', 1, NULL,            NULL),
+              ('Dunedin',      NULL,  NULL, 100.00, '2026-03-31', '2026-03-31 23:59:59', 1, NULL,            NULL);
+            CREATE TABLE secret_table (id INT, token VARCHAR(50));
+            INSERT INTO secret_table VALUES (1, 'do-not-show');
+            CREATE USER 'reader'@'%' IDENTIFIED BY '{{MySqlReaderPassword}}';
+            GRANT SELECT ON test.orders TO 'reader'@'%';
+            """, connection);
+        await command.ExecuteNonQueryAsync();
+    }
+
+    /// <summary>Connection string for the seeded MySQL database as the limited <c>reader</c> account (or root).</summary>
+    public string MySqlConnectionString(string username = "reader", string? password = MySqlReaderPassword, string? host = null, int? port = null)
+    {
+        var builder = new MySqlConnectionStringBuilder(_mysql.GetConnectionString()) { UserID = username, Password = password ?? string.Empty };
+        if (host is not null) builder.Server = host;
+        if (port is not null) builder.Port = (uint)port.Value;
+        return builder.ConnectionString;
+    }
+
+    /// <summary>Runs SQL on the MySQL container as its root account, behind the API's back.</summary>
+    public async Task ExecuteOnMySqlAsync(string sql)
+    {
+        await using var connection = new MySqlConnection(MySqlConnectionString("root", MySqlRootPassword));
+        await connection.OpenAsync();
+        await using var command = new MySqlCommand(sql, connection);
+        await command.ExecuteNonQueryAsync();
     }
 
     /// <summary>
@@ -128,6 +186,7 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
     {
         await base.DisposeAsync();
         await _postgres.DisposeAsync();
+        await _mysql.DisposeAsync();
         Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(UploadFolder, recursive: true); } catch (IOException) { } catch (UnauthorizedAccessException) { }
     }

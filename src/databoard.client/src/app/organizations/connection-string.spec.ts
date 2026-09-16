@@ -1,4 +1,4 @@
-import { buildPostgresConnectionString } from './connection-string';
+import { buildMySqlConnectionString, buildPostgresConnectionString } from './connection-string';
 
 const base = {
   host: 'db.example.com',
@@ -39,5 +39,30 @@ describe('buildPostgresConnectionString', () => {
 
   it('quotes an empty password', () => {
     expect(buildPostgresConnectionString({ ...base, password: '' })).toContain('Password="";');
+  });
+});
+
+describe('buildMySqlConnectionString', () => {
+  const mysql = { ...base, port: 3306, sslMode: 'Prefer' as const };
+
+  it('builds the plain form with the names MySQL uses', () => {
+    expect(buildMySqlConnectionString(mysql)).toBe(
+      'Server=db.example.com;Port=3306;Database=sales;User ID=reader;Password=secret;SSL Mode=Preferred',
+    );
+  });
+
+  it.each([
+    ['Prefer', 'Preferred'],
+    ['Require', 'Required'],
+    ['Disable', 'None'],
+  ] as const)('writes the SSL choice %s as %s', (choice, written) => {
+    expect(buildMySqlConnectionString({ ...mysql, sslMode: choice })).toContain(`SSL Mode=${written}`);
+  });
+
+  it('quotes values that contain separators so they cannot add options', () => {
+    const cs = buildMySqlConnectionString({ ...mysql, password: 'a;AllowLoadLocalInfile=true', username: 'u;SslCert=/x' });
+
+    expect(cs).toContain('Password="a;AllowLoadLocalInfile=true";');
+    expect(cs).toContain('User ID="u;SslCert=/x";');
   });
 });

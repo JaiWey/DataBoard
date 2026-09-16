@@ -73,6 +73,10 @@ public static class DependencyInjection
         services.AddSingleton<IChartSqlRenderer, PostgresChartSqlRenderer>();
         services.AddSingleton<ITableViewSqlRenderer, PostgresTableViewSqlRenderer>();
 
+        services.AddSingleton<IDataSourceConnector, MySqlDataSourceConnector>();
+        services.AddSingleton<IChartSqlRenderer, MySqlChartSqlRenderer>();
+        services.AddSingleton<ITableViewSqlRenderer, MySqlTableViewSqlRenderer>();
+
         // Uploaded CSV files: imported into a small SQLite file each, then read like any other data source.
         services.Configure<UploadOptions>(configuration.GetSection(UploadOptions.SectionName));
         services.AddSingleton<IUploadStore, LocalUploadStore>();

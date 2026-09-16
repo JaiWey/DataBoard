@@ -100,6 +100,61 @@ describe('AddDataSourceDialogComponent', () => {
     expect(button('Save').disabled).toBe(false); // the user can fix the name and try again
   });
 
+  describe('a MySQL database', () => {
+    const chooseMySql = () => {
+      const select = el().querySelector('select[aria-label=Type]') as HTMLSelectElement;
+      select.value = 'mysql';
+      select.dispatchEvent(new Event('change'));
+      fixture.detectChanges();
+    };
+    const mysqlString = 'Server=db.example.com;Port=3306;Database=wh;User ID=reader;Password=pw;SSL Mode=Preferred';
+
+    it('uses the same fields and switches the port to the one MySQL listens on', () => {
+      chooseMySql();
+
+      expect((el().querySelector('input[formcontrolname=port]') as HTMLInputElement).value).toBe('3306');
+      expect(el().querySelector('input[formcontrolname=host]')).not.toBeNull();
+      expect(el().querySelector('input[type=file]')).toBeNull();
+    });
+
+    it('keeps a port the person typed', () => {
+      set('input[formcontrolname=port]', '3307');
+      fixture.detectChanges();
+
+      chooseMySql();
+
+      expect((el().querySelector('input[formcontrolname=port]') as HTMLInputElement).value).toBe('3307');
+    });
+
+    it('tests with a MySQL connection string and says which database answered', () => {
+      chooseMySql();
+      fill();
+
+      button('Test connection').click();
+
+      const req = http.expectOne(`/api/organizations/${ORG}/data-sources/test`);
+      expect(req.request.body).toEqual({ type: 'MySql', connectionString: mysqlString });
+      req.flush({ success: true, message: 'Connection successful.', serverVersion: '8.4.0', latencyMs: 7 });
+      fixture.detectChanges();
+
+      expect(el().textContent).toContain('MySQL 8.4.0');
+    });
+
+    it('saves it as a MySQL data source', () => {
+      chooseMySql();
+      fill();
+
+      (el().querySelector('form') as HTMLFormElement).dispatchEvent(new Event('submit'));
+
+      const req = http.expectOne({ method: 'POST', url: `/api/organizations/${ORG}/data-sources` });
+      expect(req.request.body).toEqual({ name: 'Warehouse', type: 'MySql', connectionString: mysqlString });
+      const created = { id: 'x', organizationId: ORG, name: 'Warehouse', type: 'MySql', createdUtc: '' };
+      req.flush(created);
+
+      expect(close).toHaveBeenCalledWith(created);
+    });
+  });
+
   describe('a CSV file', () => {
     const csvFile = () => new File(['a,b\n1,2\n'], 'Q1 sales.csv', { type: 'text/csv' });
 

@@ -11,6 +11,9 @@ export interface DataSource {
   createdUtc: string;
 }
 
+/** The kinds of data source that are connected to with a connection string (a CSV file is uploaded instead). */
+export type DatabaseType = 'PostgreSql' | 'MySql';
+
 export interface ConnectionTestResult {
   success: boolean;
   message: string;
@@ -90,8 +93,8 @@ export class DataSourcesService {
     return this.http.get<DataSource[]>(this.url(orgId));
   }
 
-  create(orgId: string, name: string, connectionString: string): Observable<DataSource> {
-    return this.http.post<DataSource>(this.url(orgId), { name, type: 'PostgreSql', connectionString });
+  create(orgId: string, name: string, connectionString: string, type: DatabaseType = 'PostgreSql'): Observable<DataSource> {
+    return this.http.post<DataSource>(this.url(orgId), { name, type, connectionString });
   }
 
   /** Makes a data source from a CSV file. It is read into a database of its own, so nothing connects to anywhere. */
@@ -111,8 +114,8 @@ export class DataSourcesService {
     return this.http.delete<void>(this.url(orgId, `/${id}`));
   }
 
-  testNew(orgId: string, connectionString: string): Observable<ConnectionTestResult> {
-    return this.http.post<ConnectionTestResult>(this.url(orgId, '/test'), { type: 'PostgreSql', connectionString });
+  testNew(orgId: string, connectionString: string, type: DatabaseType = 'PostgreSql'): Observable<ConnectionTestResult> {
+    return this.http.post<ConnectionTestResult>(this.url(orgId, '/test'), { type, connectionString });
   }
 
   testSaved(orgId: string, id: string): Observable<ConnectionTestResult> {
