@@ -35,10 +35,16 @@ internal abstract class SqlChartRendererBase : IChartSqlRenderer
         var select = plan.Dimensions.Select(d => $"{DimensionExpression(d)} AS {Quote(d.Alias)}")
             .Concat(plan.Measures.Select(m => $"{MeasureExpression(m)} AS {Quote(m.Alias)}"));
 
+        // Some databases do not allow a WITH (or an ORDER BY) inside a subquery; they take the dataset apart and put its
+        // CTEs in front of ours.
+        var (datasetCtes, datasetBody) = SplitDataset(datasetSql);
+        datasetSql = datasetBody;
+
         var sql = new StringBuilder();
         // With a series limit the grouped query becomes a CTE, so the top series can be picked from its rows.
         var limitSeries = plan.SeriesLimit is not null && plan.Dimensions.Count >= 2 && plan.Measures.Count > 0;
-        if (limitSeries) sql.Append("WITH ").Append(Quote(BaseAlias)).Append(" AS (\n");
+        if (datasetCtes is not null) sql.Append("WITH ").Append(datasetCtes).Append(limitSeries ? ",\n" : "\n");
+        if (limitSeries) sql.Append(datasetCtes is null ? "WITH " : string.Empty).Append(Quote(BaseAlias)).Append(" AS (\n");
 
         // In the CTE the query is cut by nothing; the outer query takes the limit.
         sql.Append("SELECT ").Append(limitSeries ? string.Empty : TopPrefix(plan.Limit + 1)).AppendJoin(", ", select);
@@ -115,6 +121,15 @@ internal abstract class SqlChartRendererBase : IChartSqlRenderer
     /// <summary>The clause at the end of the query that keeps only the first <paramref name="rows"/> rows (LIMIT), or nothing.</summary>
     protected virtual string LimitSuffix(int rows) => "LIMIT " + rows;
 
+    /// <summary>
+    /// The dataset's SQL as the part that goes inside <c>FROM ( ... )</c>, and the CTE definitions (the text between WITH and the
+    /// main query) that must come before the whole query, or null. Databases that accept the dataset as it is return it as it is.
+    /// </summary>
+    protected virtual (string? Ctes, string Body) SplitDataset(string datasetSql) => (null, datasetSql);
+
+    /// <summary>Makes text safe to be the middle of a LIKE pattern: wildcards in it match themselves.</summary>
+    protected virtual string EscapePattern(string text) => EscapeLike(text);
+
     /// <summary>The keyword for a case-insensitive pattern match.</summary>
     protected virtual string LikeKeyword => "LIKE";
 
@@ -151,8 +166,8 @@ internal abstract class SqlChartRendererBase : IChartSqlRenderer
             FilterOperator.In => $"{expression} IN ({string.Join(", ", values.Select(bind))})",
             FilterOperator.NotIn => $"{expression} NOT IN ({string.Join(", ", values.Select(bind))})",
             FilterOperator.Between => $"{expression} BETWEEN {bind(values[0])} AND {bind(values[1])}",
-            FilterOperator.Contains => $"{expression} {LikeKeyword} {bind("%" + EscapeLike((string)values[0]) + "%")} {LikeEscape}",
-            FilterOperator.StartsWith => $"{expression} {LikeKeyword} {bind(EscapeLike((string)values[0]) + "%")} {LikeEscape}",
+            FilterOperator.Contains => $"{expression} {LikeKeyword} {bind("%" + EscapePattern((string)values[0]) + "%")} {LikeEscape}",
+            FilterOperator.StartsWith => $"{expression} {LikeKeyword} {bind(EscapePattern((string)values[0]) + "%")} {LikeEscape}",
             FilterOperator.IsNull => $"{expression} IS NULL",
             FilterOperator.IsNotNull => $"{expression} IS NOT NULL",
             _ => throw new ArgumentOutOfRangeException(nameof(op)),

@@ -29,6 +29,25 @@ export function buildPostgresConnectionString(d: PostgresConnectionDetails): str
   ].join(';');
 }
 
+/**
+ * The same details for SQL Server: the port is part of the server ("host,1433"), and the SSL choice is whether the connection
+ * is encrypted and whether the server's certificate must be trusted (Prefer encrypts without checking it).
+ */
+export function buildSqlServerConnectionString(d: PostgresConnectionDetails): string {
+  const encryption = {
+    Prefer: 'Encrypt=True;Trust Server Certificate=True',
+    Require: 'Encrypt=True',
+    Disable: 'Encrypt=False',
+  }[d.sslMode];
+  return [
+    `Server=${quote(`${d.host.trim()},${d.port}`)}`,
+    `Database=${quote(d.database.trim())}`,
+    `User ID=${quote(d.username.trim())}`,
+    `Password=${quote(d.password)}`,
+    encryption,
+  ].join(';');
+}
+
 /** The same details for MySQL, which names the options and the SSL modes differently. */
 export function buildMySqlConnectionString(d: MySqlConnectionDetails): string {
   const sslMode = { Prefer: 'Preferred', Require: 'Required', Disable: 'None' }[d.sslMode];

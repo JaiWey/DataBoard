@@ -155,6 +155,63 @@ describe('AddDataSourceDialogComponent', () => {
     });
   });
 
+  describe('a SQL Server database', () => {
+    const chooseSqlServer = () => {
+      const select = el().querySelector('select[aria-label=Type]') as HTMLSelectElement;
+      select.value = 'mssql';
+      select.dispatchEvent(new Event('change'));
+      fixture.detectChanges();
+    };
+    // "Prefer" encrypts without insisting on a certificate the server may not have
+    const mssqlString = 'Server=db.example.com,1433;Database=wh;User ID=reader;Password=pw;Encrypt=True;Trust Server Certificate=True';
+
+    it('switches the port to the one SQL Server listens on', () => {
+      chooseSqlServer();
+
+      expect((el().querySelector('input[formcontrolname=port]') as HTMLInputElement).value).toBe('1433');
+    });
+
+    it('moves the port back and forth between databases but keeps one that was typed', () => {
+      chooseSqlServer();
+      const select = el().querySelector('select[aria-label=Type]') as HTMLSelectElement;
+      select.value = 'mysql';
+      select.dispatchEvent(new Event('change'));
+      fixture.detectChanges();
+      expect((el().querySelector('input[formcontrolname=port]') as HTMLInputElement).value).toBe('3306');
+
+      set('input[formcontrolname=port]', '14330');
+      fixture.detectChanges();
+      chooseSqlServer();
+
+      expect((el().querySelector('input[formcontrolname=port]') as HTMLInputElement).value).toBe('14330');
+    });
+
+    it('tests with a SQL Server connection string and names the product', () => {
+      chooseSqlServer();
+      fill();
+
+      button('Test connection').click();
+
+      const req = http.expectOne(`/api/organizations/${ORG}/data-sources/test`);
+      expect(req.request.body).toEqual({ type: 'SqlServer', connectionString: mssqlString });
+      req.flush({ success: true, message: 'Connection successful.', serverVersion: '16.00.4175', latencyMs: 9 });
+      fixture.detectChanges();
+
+      expect(el().textContent).toContain('SQL Server 16.00.4175');
+    });
+
+    it('saves it as a SQL Server data source', () => {
+      chooseSqlServer();
+      fill();
+
+      (el().querySelector('form') as HTMLFormElement).dispatchEvent(new Event('submit'));
+
+      const req = http.expectOne({ method: 'POST', url: `/api/organizations/${ORG}/data-sources` });
+      expect(req.request.body).toEqual({ name: 'Warehouse', type: 'SqlServer', connectionString: mssqlString });
+      req.flush({ id: 'x', organizationId: ORG, name: 'Warehouse', type: 'SqlServer', createdUtc: '' });
+    });
+  });
+
   describe('a CSV file', () => {
     const csvFile = () => new File(['a,b\n1,2\n'], 'Q1 sales.csv', { type: 'text/csv' });
 

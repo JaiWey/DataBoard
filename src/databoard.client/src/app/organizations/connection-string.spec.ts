@@ -1,4 +1,4 @@
-import { buildMySqlConnectionString, buildPostgresConnectionString } from './connection-string';
+import { buildMySqlConnectionString, buildPostgresConnectionString, buildSqlServerConnectionString } from './connection-string';
 
 const base = {
   host: 'db.example.com',
@@ -39,6 +39,31 @@ describe('buildPostgresConnectionString', () => {
 
   it('quotes an empty password', () => {
     expect(buildPostgresConnectionString({ ...base, password: '' })).toContain('Password="";');
+  });
+});
+
+describe('buildSqlServerConnectionString', () => {
+  const mssql = { ...base, port: 1433 };
+
+  it('puts the port in the server, as SQL Server writes it', () => {
+    expect(buildSqlServerConnectionString({ ...mssql, sslMode: 'Require' })).toBe(
+      'Server=db.example.com,1433;Database=sales;User ID=reader;Password=secret;Encrypt=True',
+    );
+  });
+
+  it.each([
+    ['Prefer', 'Encrypt=True;Trust Server Certificate=True'],
+    ['Require', 'Encrypt=True'],
+    ['Disable', 'Encrypt=False'],
+  ] as const)('writes the SSL choice %s as %s', (choice, written) => {
+    expect(buildSqlServerConnectionString({ ...mssql, sslMode: choice }).endsWith(`;${written}`)).toBe(true);
+  });
+
+  it('quotes values that contain separators so they cannot add options', () => {
+    const cs = buildSqlServerConnectionString({ ...mssql, password: 'a;Integrated Security=True', username: 'u;Authentication=x' });
+
+    expect(cs).toContain('Password="a;Integrated Security=True";');
+    expect(cs).toContain('User ID="u;Authentication=x";');
   });
 });
 

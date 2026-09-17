@@ -48,6 +48,16 @@ internal sealed partial class SqlParserQueryValidator : ISqlQueryValidator
             Functions("load_extension|readfile|writefile|edit|fts3_tokenizer|zipfile.*|sqlite_.*dbpage.*"),
             Relations("sqlite_dbpage", "dbstat")),
 
+        // SQL Server cannot hold a connection to reading only, so this list matters more here: no way out to other servers,
+        // files, the operating system or the server's catalogs. Whatever else the account may SELECT is its owner's decision.
+        [DataSourceType.SqlServer] = new(
+            new MsSqlDialect(),
+            Functions(
+                "openrowset|openquery|opendatasource|openxml|xp_.*|sp_.*|fn_get_audit_file|fn_xe_file_target_read_file|" +
+                "fn_dump_dblog|fn_trace_.*|fn_virtualfilestats|fn_servershareddrives"),
+            Relations(),
+            Relations("sys", "master", "msdb", "tempdb", "model")),
+
         // Whatever a MySQL account may SELECT is its owner's decision. What is refused here is what reaches outside the data:
         // reading files, waiting, taking locks that other sessions feel, and running other code or other queries.
         [DataSourceType.MySql] = new(

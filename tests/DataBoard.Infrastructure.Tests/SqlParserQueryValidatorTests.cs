@@ -167,7 +167,6 @@ public class SqlParserQueryValidatorTests
     public void Looks_for_the_dangerous_part_inside_a_subquery_wherever_it_is(string sql) => Rejected(sql);
 
     [Theory]
-    [InlineData(DataSourceType.SqlServer)]
     [InlineData((DataSourceType)99)]
     public void A_type_without_rules_yet_is_rejected(DataSourceType type) =>
         Assert.Throws<ValidationException>(() => _validator.ValidateReadOnly(type, "SELECT 1"));

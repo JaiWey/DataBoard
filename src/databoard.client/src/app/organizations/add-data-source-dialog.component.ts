@@ -5,7 +5,7 @@ import { MatCheckboxModule } from '@angular/material/checkbox';
 import { MAT_DIALOG_DATA, MatDialogModule, MatDialogRef } from '@angular/material/dialog';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
-import { buildMySqlConnectionString, buildPostgresConnectionString } from './connection-string';
+import { buildMySqlConnectionString, buildPostgresConnectionString, buildSqlServerConnectionString } from './connection-string';
 import {
   CSV_DELIMITERS,
   ConnectionTestResult,
@@ -20,9 +20,10 @@ export interface AddDataSourceDialogData {
   orgId: string;
 }
 
-type Kind = 'postgres' | 'mysql' | 'csv';
+type Kind = 'postgres' | 'mysql' | 'mssql' | 'csv';
 
-const DEFAULT_PORT = { postgres: 5432, mysql: 3306 } as const;
+const DEFAULT_PORT = { postgres: 5432, mysql: 3306, mssql: 1433 } as const;
+const PRODUCT = { postgres: 'PostgreSQL', mysql: 'MySQL', mssql: 'SQL Server' } as const;
 
 /** Closes with the created data source, or with nothing if the user cancelled. */
 @Component({
@@ -36,6 +37,7 @@ const DEFAULT_PORT = { postgres: 5432, mysql: 3306 } as const;
         <select matNativeControl aria-label="Type" [value]="kind()" (change)="setKind($any($event.target).value)" [disabled]="uploaded() !== null">
           <option value="postgres">PostgreSQL database</option>
           <option value="mysql">MySQL database</option>
+          <option value="mssql">SQL Server database</option>
           <option value="csv">CSV file</option>
         </select>
       </mat-form-field>
@@ -64,7 +66,7 @@ const DEFAULT_PORT = { postgres: 5432, mysql: 3306 } as const;
 
           @if (draftTest(); as t) {
             <p [class]="t.success ? 'ok' : 'fail'" role="status">
-              {{ t.message }}@if (t.success && t.serverVersion) { ({{ kind() === 'mysql' ? 'MySQL' : 'PostgreSQL' }} {{ t.serverVersion }},{{ t.latencyMs }} ms) }
+              {{ t.message }}@if (t.success && t.serverVersion) { ({{ product() }} {{ t.serverVersion }}, {{ t.latencyMs }} ms) }
             </p>
           }
           @for (message of errors(); track message) {
@@ -182,7 +184,7 @@ export class AddDataSourceDialogComponent {
   protected setKind(kind: Kind): void {
     // The port follows the database, unless the person already typed their own.
     const port = this.form.controls.port;
-    if (kind !== 'csv' && Object.values(DEFAULT_PORT).includes(port.value as 5432 | 3306)) port.setValue(DEFAULT_PORT[kind]);
+    if (kind !== 'csv' && (Object.values(DEFAULT_PORT) as number[]).includes(port.value)) port.setValue(DEFAULT_PORT[kind]);
     this.kind.set(kind);
     this.errors.set([]);
     this.draftTest.set(null);
@@ -250,13 +252,19 @@ export class AddDataSourceDialogComponent {
     });
   }
 
+  /** The name of the database product the form is for (the CSV form has no connection test to name one in). */
+  protected product(): string {
+    const kind = this.kind();
+    return kind === 'csv' ? 'CSV' : PRODUCT[kind];
+  }
+
   private databaseType(): DatabaseType {
-    return this.kind() === 'mysql' ? 'MySql' : 'PostgreSql';
+    return { postgres: 'PostgreSql', mysql: 'MySql', mssql: 'SqlServer', csv: 'PostgreSql' }[this.kind()] as DatabaseType;
   }
 
   private connectionString(): string {
     const v = this.form.getRawValue();
-    const build = this.kind() === 'mysql' ? buildMySqlConnectionString : buildPostgresConnectionString;
+    const build = { postgres: buildPostgresConnectionString, mysql: buildMySqlConnectionString, mssql: buildSqlServerConnectionString, csv: buildPostgresConnectionString }[this.kind()];
     return build({
       host: v.host,
       port: v.port,

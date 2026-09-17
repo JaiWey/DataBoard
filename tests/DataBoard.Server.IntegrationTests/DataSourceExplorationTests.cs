@@ -135,7 +135,7 @@ public class DataSourceExplorationTests(ApiFactory factory)
         var org = await CreateOrgAsync(client);
 
         var response = await client.PostAsJsonAsync(Url(org.Id),
-            new { name = "Mssql", type = "SqlServer", connectionString = "Server=x;Database=d;User Id=u;Password=p" });
+            new { name = "Unknown", type = 99, connectionString = "Server=x;Database=d;User Id=u;Password=p" });
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }

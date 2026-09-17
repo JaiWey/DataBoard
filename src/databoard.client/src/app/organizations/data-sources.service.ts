@@ -12,7 +12,7 @@ export interface DataSource {
 }
 
 /** The kinds of data source that are connected to with a connection string (a CSV file is uploaded instead). */
-export type DatabaseType = 'PostgreSql' | 'MySql';
+export type DatabaseType = 'PostgreSql' | 'MySql' | 'SqlServer';
 
 export interface ConnectionTestResult {
   success: boolean;

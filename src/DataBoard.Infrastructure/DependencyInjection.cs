@@ -73,6 +73,10 @@ public static class DependencyInjection
         services.AddSingleton<IChartSqlRenderer, PostgresChartSqlRenderer>();
         services.AddSingleton<ITableViewSqlRenderer, PostgresTableViewSqlRenderer>();
 
+        services.AddSingleton<IDataSourceConnector, MsSqlDataSourceConnector>();
+        services.AddSingleton<IChartSqlRenderer, MsSqlChartSqlRenderer>();
+        services.AddSingleton<ITableViewSqlRenderer, MsSqlTableViewSqlRenderer>();
+
         services.AddSingleton<IDataSourceConnector, MySqlDataSourceConnector>();
         services.AddSingleton<IChartSqlRenderer, MySqlChartSqlRenderer>();
         services.AddSingleton<ITableViewSqlRenderer, MySqlTableViewSqlRenderer>();
