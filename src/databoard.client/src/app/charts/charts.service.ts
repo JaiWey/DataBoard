@@ -4,7 +4,7 @@ import { Observable } from 'rxjs';
 import { ChartQuery, ChartResult } from '../organizations/datasets.service';
 
 /** How a saved chart is drawn: ECharts kinds, plus a plain table and a single big number. */
-export type ChartType = 'Table' | 'Bar' | 'Line' | 'Pie' | 'Area' | 'BarHorizontal' | 'Donut' | 'Number';
+export type ChartType = 'Table' | 'Bar' | 'Line' | 'Pie' | 'Area' | 'BarHorizontal' | 'Donut' | 'Number' | 'Heatmap' | 'Scatter';
 
 export const CHART_TYPES: { value: ChartType; label: string }[] = [
   { value: 'Table', label: 'Table' },
@@ -15,6 +15,8 @@ export const CHART_TYPES: { value: ChartType; label: string }[] = [
   { value: 'Pie', label: 'Pie' },
   { value: 'Donut', label: 'Donut' },
   { value: 'Number', label: 'Number' },
+  { value: 'Heatmap', label: 'Heatmap' },
+  { value: 'Scatter', label: 'Scatter / bubble' },
 ];
 
 export const PALETTE_NAMES = ['default', 'warm', 'cool', 'mono'];
@@ -25,9 +27,11 @@ export interface ChartStyle {
   palette: string;
   /** Series are piled on top of each other (bars, lines and areas). */
   stack: boolean;
+  /** Stacked, and each category scaled to 100%. Implies `stack`. */
+  percent: boolean;
 }
 
-export const defaultChartStyle = (): ChartStyle => ({ legend: true, labels: false, palette: 'default', stack: false });
+export const defaultChartStyle = (): ChartStyle => ({ legend: true, labels: false, palette: 'default', stack: false, percent: false });
 
 /** The stored part of a chart: its query (row limit and sorting included) and style. */
 export interface ChartDefinition {

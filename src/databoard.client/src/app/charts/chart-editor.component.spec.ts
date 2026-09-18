@@ -453,7 +453,7 @@ describe('ChartEditorComponent', () => {
     saveButton().click();
 
     const req = http.expectOne({ method: 'POST', url: `/api/organizations/${ORG}/charts` });
-    expect(req.request.body.definition.style).toEqual({ legend: false, labels: true, palette: 'cool', stack: false });
+    expect(req.request.body.definition.style).toEqual({ legend: false, labels: true, palette: 'cool', stack: false, percent: false });
     req.flush({ ...saved(), id: 'new-id' });
   });
 
@@ -483,7 +483,7 @@ describe('ChartEditorComponent', () => {
           dimensions: [{ column: 'region', alias: 'region' }],
           measures: [{ aggregation: 'Sum', column: 'price', alias: 'sum_price' }],
         },
-        style: { legend: true, labels: false, palette: 'default', stack: false },
+        style: { legend: true, labels: false, palette: 'default', stack: false, percent: false },
       },
     });
     req.flush({ ...saved(), id: 'c9' });
@@ -519,7 +519,7 @@ describe('ChartEditorComponent', () => {
     const req = http.expectOne({ method: 'PUT', url: `/api/organizations/${ORG}/charts/c1` });
     expect(req.request.body.name).toBe('Revenue (2026)');
     expect(req.request.body.definition.query.limit).toBe(20);
-    expect(req.request.body.definition.style).toEqual({ legend: false, labels: true, palette: 'warm', stack: false });
+    expect(req.request.body.definition.style).toEqual({ legend: false, labels: true, palette: 'warm', stack: false, percent: false });
     req.flush(saved());
     fixture.detectChanges();
 
@@ -673,6 +673,71 @@ describe('ChartEditorComponent', () => {
     const box = Array.from(el().querySelectorAll('mat-checkbox')).find((c) => c.textContent?.includes('Stack series'))!.querySelector('input') as HTMLInputElement;
     expect(box.disabled).toBe(true);
     preview();
+  });
+
+  describe('100% stacking', () => {
+    const box = (text: string) =>
+      Array.from(el().querySelectorAll('mat-checkbox')).find((c) => c.textContent?.includes(text))!.querySelector('input') as HTMLInputElement;
+
+    it('makes the chart stacked, is saved, and turning stacking off turns it off too', () => {
+      open();
+      click('Add region');
+      click('Add price');
+      typeInto('Chart name', 'Share');
+      openTab(1);
+      expect(box('100%').disabled).toBe(false);
+
+      box('100%').click();
+      fixture.detectChanges();
+      expect(box('Stack series').checked).toBe(true); // 100% is a way of stacking
+      vi.advanceTimersByTime(300);
+      http.expectOne({ method: 'POST', url: queryUrl() }).flush(result());
+      saveButton().click();
+      const first = http.expectOne({ method: 'POST', url: `/api/organizations/${ORG}/charts` });
+      expect(first.request.body.definition.style).toMatchObject({ stack: true, percent: true });
+      first.flush({ ...saved(), id: 'c8' });
+
+      box('Stack series').click();
+      fixture.detectChanges();
+      expect(box('100%').checked).toBe(false);
+      vi.advanceTimersByTime(300);
+      http.match({ method: 'POST', url: queryUrl() });
+    });
+
+    it('is not offered for a pie, and is not sent after switching to one', () => {
+      open();
+      click('Add region');
+      click('Add price');
+      typeInto('Chart name', 'Share');
+      openTab(1);
+      box('100%').click();
+      fixture.detectChanges();
+
+      click('Pie');
+      expect(box('100%').disabled).toBe(true);
+      vi.advanceTimersByTime(300);
+      http.expectOne({ method: 'POST', url: queryUrl() }).flush(result());
+      saveButton().click();
+
+      const req = http.expectOne({ method: 'POST', url: `/api/organizations/${ORG}/charts` });
+      expect(req.request.body.definition.style.percent).toBe(false);
+      req.flush({ ...saved(), id: 'c10' });
+    });
+  });
+
+  it('offers a heatmap and a scatter chart, and says what each one needs', () => {
+    open();
+    click('Add region');
+    click('Add price');
+
+    click('Heatmap');
+    expect(el().querySelector('.problems')?.textContent).toContain('A heatmap needs two dimensions');
+    click('Scatter / bubble');
+    expect(el().querySelector('.problems')?.textContent).toContain('A scatter chart needs two metrics');
+    click('Add price');
+    expect(el().querySelector('.problems')).toBeNull();
+    vi.advanceTimersByTime(300);
+    http.match({ method: 'POST', url: queryUrl() });
   });
 
   // ---- the dataset's parameters ----

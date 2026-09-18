@@ -197,7 +197,10 @@ interface Organization {
             <div class="tab">
               <mat-checkbox [checked]="state().style.legend" (change)="patchStyle({ legend: $event.checked })">Show legend</mat-checkbox>
               <mat-checkbox [checked]="state().style.labels" (change)="patchStyle({ labels: $event.checked })">Show value labels</mat-checkbox>
-              <mat-checkbox [checked]="state().style.stack" [disabled]="!axisChart()" (change)="patchStyle({ stack: $event.checked })">Stack series</mat-checkbox>
+              <mat-checkbox [checked]="state().style.stack" [disabled]="!axisChart()"
+                            (change)="patchStyle($event.checked ? { stack: true } : { stack: false, percent: false })">Stack series</mat-checkbox>
+              <mat-checkbox [checked]="state().style.percent" [disabled]="!axisChart()"
+                            (change)="patchStyle($event.checked ? { stack: true, percent: true } : { percent: false })">Show as 100% (shares)</mat-checkbox>
               <label class="row">
                 <span>Colours</span>
                 <select aria-label="Colour palette" (change)="patchStyle({ palette: $any($event.target).value })">
@@ -260,6 +263,12 @@ interface Organization {
                   @case ('Pie') { <circle cx="12" cy="12" r="8" /><path d="M12 12V4M12 12l6.5 4.5" /> }
                   @case ('Donut') { <circle cx="12" cy="12" r="8" /><circle cx="12" cy="12" r="3.5" /> }
                   @case ('Number') { <text x="2.5" y="16" font-size="11" font-weight="700" fill="currentColor" stroke="none">123</text> }
+                  @case ('Heatmap') {
+                    <rect x="3" y="3" width="5" height="5" fill="currentColor" fill-opacity="0.85" /><rect x="9.5" y="3" width="5" height="5" fill="currentColor" fill-opacity="0.3" /><rect x="16" y="3" width="5" height="5" fill="currentColor" fill-opacity="0.55" />
+                    <rect x="3" y="9.5" width="5" height="5" fill="currentColor" fill-opacity="0.4" /><rect x="9.5" y="9.5" width="5" height="5" fill="currentColor" fill-opacity="0.9" /><rect x="16" y="9.5" width="5" height="5" fill="currentColor" fill-opacity="0.2" />
+                    <rect x="3" y="16" width="5" height="5" fill="currentColor" fill-opacity="0.6" /><rect x="9.5" y="16" width="5" height="5" fill="currentColor" fill-opacity="0.25" /><rect x="16" y="16" width="5" height="5" fill="currentColor" fill-opacity="0.75" />
+                  }
+                  @case ('Scatter') { <path d="M3 3v18h18" /><circle cx="9" cy="14" r="2" /><circle cx="13" cy="9" r="3.2" /><circle cx="18" cy="15" r="1.6" /> }
                 }
               </svg>
             </button>

@@ -16,7 +16,7 @@ import {
   toQuery,
   toSaveChart,
 } from './chart-editor-model';
-import { Chart } from './charts.service';
+import { Chart, defaultChartStyle } from './charts.service';
 
 const region: DatasetColumn = { name: 'region', dataType: 'text', role: 'Dimension' };
 const price: DatasetColumn = { name: 'price', dataType: 'numeric(10,2)', role: 'Measure' };
@@ -149,7 +149,17 @@ describe('toSaveChart', () => {
     expect(save.description).toBeNull();
     expect(save.type).toBe('Donut');
     expect(save.datasetId).toBe('ds-1');
-    expect(save.definition.style).toEqual({ legend: true, labels: false, palette: 'default', stack: false });
+    expect(save.definition.style).toEqual({ legend: true, labels: false, palette: 'default', stack: false, percent: false });
+  });
+
+  it('keeps 100% only for charts that stack, so a leftover from another type is not sent', () => {
+    const percent = { ...emptyEditorState('ds-1'), name: 'x', style: { ...defaultChartStyle(), stack: true, percent: true } };
+
+    expect(toSaveChart({ ...percent, type: 'Area' }).definition.style).toMatchObject({ stack: true, percent: true });
+    expect(toSaveChart({ ...percent, type: 'BarHorizontal' }).definition.style.percent).toBe(true);
+    expect(toSaveChart({ ...percent, type: 'Pie' }).definition.style.percent).toBe(false);
+    expect(toSaveChart({ ...percent, type: 'Heatmap' }).definition.style.percent).toBe(false);
+    expect(toSaveChart({ ...percent, type: 'Table' }).definition.style.percent).toBe(false);
   });
 });
 
@@ -158,7 +168,7 @@ describe('fromChart', () => {
     id: 'c1', name: 'Revenue', description: 'Per region', datasetId: 'ds-1', type: 'Line',
     createdUtc: '', updatedUtc: '',
     definition: {
-      style: { legend: false, labels: true, palette: 'cool', stack: false },
+      style: { legend: false, labels: true, palette: 'cool', stack: false, percent: false },
       query: {
         dimensions: [{ column: 'region', alias: 'region', grain: null }, { column: 'ordered_on', alias: 'ordered_on', grain: 'Year' }],
         measures: [{ aggregation: 'Sum', column: 'price', alias: 'sum_price' }, { aggregation: 'Count', column: null, alias: 'count' }],
@@ -180,7 +190,7 @@ describe('fromChart', () => {
     expect(s.sortBy).toBe('count');
     expect(s.sortDirection).toBe('Asc');
     expect(s.limit).toBe(50);
-    expect(s.style).toEqual({ legend: false, labels: true, palette: 'cool', stack: false });
+    expect(s.style).toEqual({ legend: false, labels: true, palette: 'cool', stack: false, percent: false });
   });
 
   it('brings back the parameter values, and does not share them with the saved chart', () => {
@@ -237,7 +247,7 @@ describe('fromChart', () => {
     const chart = saved();
     (chart.definition as { style: unknown }).style = {};
 
-    expect(fromChart(chart, dataset()).style).toEqual({ legend: true, labels: false, palette: 'default', stack: false });
+    expect(fromChart(chart, dataset()).style).toEqual({ legend: true, labels: false, palette: 'default', stack: false, percent: false });
   });
 });
 
@@ -270,6 +280,29 @@ describe('problemsOf', () => {
     expect(problemsOf(one)).toEqual([]);
     expect(problemsOf({ ...one, metrics: [rowCountMetric(), metricFor(price)] })).toContain('A number shows exactly one metric and no dimensions.');
     expect(problemsOf({ ...one, dimensions: [dimensionFor(region)] })).toContain('A number shows exactly one metric and no dimensions.');
+  });
+
+  it('wants a heatmap to have two dimensions and one metric', () => {
+    const ok = state({ type: 'Heatmap', dimensions: [dimensionFor(region), dimensionFor(ordered)], metrics: [metricFor(price)] });
+    const message = 'A heatmap needs two dimensions (across, then down) and one metric (the colour).';
+
+    expect(problemsOf(ok)).toEqual([]);
+    expect(problemsOf({ ...ok, dimensions: [dimensionFor(region)] })).toContain(message);
+    expect(problemsOf({ ...ok, dimensions: [...ok.dimensions, dimensionFor(region)] })).toContain(message);
+    expect(problemsOf({ ...ok, metrics: [] })).toContain(message);
+    expect(problemsOf({ ...ok, metrics: [metricFor(price), rowCountMetric()] })).toContain(message);
+  });
+
+  it('wants a scatter chart to have a dimension for the points and two or three metrics', () => {
+    const ok = state({ type: 'Scatter', dimensions: [dimensionFor(region)], metrics: [metricFor(price), rowCountMetric()] });
+
+    expect(problemsOf(ok)).toEqual([]);
+    expect(problemsOf({ ...ok, metrics: [...ok.metrics, metricFor(price)] })).toEqual([]); // the third is the size
+    expect(problemsOf({ ...ok, dimensions: [...ok.dimensions, dimensionFor(ordered)] })).toEqual([]); // the second is the colour
+    expect(problemsOf({ ...ok, dimensions: [] })).toEqual(expect.arrayContaining([expect.stringContaining('one dimension')]));
+    expect(problemsOf({ ...ok, dimensions: [dimensionFor(region), dimensionFor(ordered), dimensionFor(region)] })).toHaveLength(1);
+    expect(problemsOf({ ...ok, metrics: [metricFor(price)] })).toEqual(expect.arrayContaining([expect.stringContaining('two metrics')]));
+    expect(problemsOf({ ...ok, metrics: [...ok.metrics, metricFor(price), rowCountMetric()] })).toHaveLength(1);
   });
 
   it('keeps the row limit within what the server accepts', () => {

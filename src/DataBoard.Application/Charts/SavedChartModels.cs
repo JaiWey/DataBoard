@@ -7,7 +7,10 @@ namespace DataBoard.Application.Charts;
 /// <summary>How a saved chart is drawn. Only the stored choices; the data comes from the query.</summary>
 /// <param name="Palette">One of <see cref="ChartDefinitionValidator.Palettes"/>.</param>
 /// <param name="Stack">Bars, lines and areas with several series are piled on top of each other instead of side by side.</param>
-public sealed record ChartStyle(bool Legend = true, bool Labels = false, string Palette = "default", bool Stack = false);
+/// <param name="Percent">
+/// Stacked, and each category scaled to 100%, so what is shown is each series' share. Implies <paramref name="Stack"/>.
+/// </param>
+public sealed record ChartStyle(bool Legend = true, bool Labels = false, string Palette = "default", bool Stack = false, bool Percent = false);
 
 /// <summary>The part of a saved chart that is stored as one JSON document: its query (row limit and sorting included) and style.</summary>
 public sealed record ChartDefinition(ChartQuery Query, ChartStyle? Style = null)

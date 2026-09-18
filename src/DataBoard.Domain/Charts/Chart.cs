@@ -12,6 +12,13 @@ public enum ChartType
     BarHorizontal,
     Donut,
     Number,
+    /// <summary>Two dimensions as a grid (X and Y), one measure as the colour of each cell.</summary>
+    Heatmap,
+    /// <summary>
+    /// Points: each row of the result is a point. One dimension names the point (a second splits points into coloured
+    /// series), two measures give X and Y, and an optional third gives the size (a bubble chart).
+    /// </summary>
+    Scatter,
 }
 
 /// <summary>

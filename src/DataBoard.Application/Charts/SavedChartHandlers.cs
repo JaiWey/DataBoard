@@ -34,14 +34,35 @@ internal static class ChartDefinitionValidator
 
         var query = request.Definition?.Query ?? new ChartQuery();
         ChartQueryPlanner.Plan(dataset.Columns, query); // throws a ValidationException that names the problem
+        CheckShape(request.Type, query);
         // The values the chart gives the dataset's parameters have to fit them (and every parameter needs a value or a default).
         SqlParameters.Bind(dataset.Sql, DatasetParametersJson.FromJson(dataset.ParametersJson), query.Parameters);
 
         var style = request.Definition?.Style ?? new ChartStyle();
         if (!Palettes.Contains(style.Palette))
             throw new ValidationException("Style", $"Palette must be one of: {string.Join(", ", Palettes)}.");
+        if (style.Percent && request.Type is not (ChartType.Bar or ChartType.BarHorizontal or ChartType.Line or ChartType.Area))
+            throw new ValidationException("Style", "100% stacking is for bar, horizontal bar, line and area charts.");
 
-        return new ChartDefinition(query, style);
+        // 100% is a way of stacking.
+        return new ChartDefinition(query, style.Percent ? style with { Stack = true } : style);
+    }
+
+    /// <summary>What the types that need a particular shape of result need. The others draw whatever they are given.</summary>
+    private static void CheckShape(ChartType type, ChartQuery query)
+    {
+        var dimensions = query.Dimensions?.Count ?? 0;
+        var measures = query.Measures?.Count ?? 0;
+
+        switch (type)
+        {
+            case ChartType.Heatmap when dimensions != 2 || measures != 1:
+                throw new ValidationException("Type", "A heatmap needs exactly two dimensions (across and down) and one measure (the colour).");
+            case ChartType.Scatter when dimensions is < 1 or > 2 || measures is < 2 or > 3:
+                throw new ValidationException("Type",
+                    "A scatter chart needs one dimension (what each point is) and two measures (X and Y). " +
+                    "A second dimension splits the points into coloured series, and a third measure sizes them.");
+        }
     }
 }
 

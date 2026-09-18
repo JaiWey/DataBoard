@@ -94,6 +94,9 @@ export const emptyEditorState = (datasetId = ''): EditorState => ({
 /** Charts with an X-axis: the first dimension is the axis and the next ones split the data into series. */
 export const isAxisType = (type: ChartType): boolean => ['Bar', 'BarHorizontal', 'Line', 'Area'].includes(type);
 
+/** Types whose series can be piled up, and shown as shares of 100%. The same ones that have an X-axis. */
+export const isStackable = isAxisType;
+
 export const isDateType =(dataType: string): boolean => /^(date|timestamp)/i.test(dataType);
 const isNumberType = (column: Pick<DatasetColumn, 'role'>): boolean => column.role === 'Measure';
 
@@ -200,7 +203,9 @@ export function toQuery(state: EditorState): ChartQuery {
 }
 
 export function toSaveChart(state: EditorState): SaveChart {
-  const definition: ChartDefinition = { query: toQuery(state), style: { ...state.style } };
+  // 100% is only for charts that stack; a leftover from another type would be refused by the server.
+  const style = { ...state.style, percent: state.style.percent && isStackable(state.type) };
+  const definition: ChartDefinition = { query: toQuery(state), style };
   return {
     name: state.name.trim(),
     description: state.description.trim() || null,
@@ -267,6 +272,19 @@ export function problemsOf(state: EditorState, options: { forSave: boolean } = {
       if (state.metrics.length !== 1 || state.dimensions.length > 0) problems.push('A number shows exactly one metric and no dimensions.');
       break;
     case 'Table':
+      break;
+    case 'Heatmap':
+      if (state.dimensions.length !== 2 || state.metrics.length !== 1) {
+        problems.push('A heatmap needs two dimensions (across, then down) and one metric (the colour).');
+      }
+      break;
+    case 'Scatter':
+      if (state.dimensions.length < 1 || state.dimensions.length > 2) {
+        problems.push('A scatter chart needs one dimension for what each point is (a second splits the points into colours).');
+      }
+      if (state.metrics.length < 2 || state.metrics.length > 3) {
+        problems.push('A scatter chart needs two metrics (X, then Y); a third sets the size of each point.');
+      }
       break;
     default:
       if (state.metrics.length === 0) problems.push('This chart type needs at least one metric.');

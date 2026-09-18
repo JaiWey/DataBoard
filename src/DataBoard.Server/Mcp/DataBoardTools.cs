@@ -237,7 +237,7 @@ public sealed record DashboardInfo(Guid Id, string Name, string? Description, IR
 /// <summary>The part of the query format an assistant needs, kept next to the tools that take it.</summary>
 internal static class QueryHelp
 {
-    public const string Type = "Table, Bar, BarHorizontal, Line, Area, Pie, Donut or Number. Bar, BarHorizontal, Line and Area have an X-axis. Pie and Donut need one dimension and one measure. Number needs exactly one measure and no dimensions.";
+    public const string Type = "Table, Bar, BarHorizontal, Line, Area, Pie, Donut, Number, Heatmap or Scatter. Bar, BarHorizontal, Line and Area have an X-axis. Pie and Donut need one dimension and one measure. Number needs exactly one measure and no dimensions. Heatmap needs exactly two dimensions (across, then down) and one measure (the colour). Scatter needs one dimension (what each point is, such as a customer) and two measures (X, then Y); a second dimension splits the points into coloured series and a third measure sizes them (a bubble chart).";
 
     public const string Query =
         "What to show, as a description (never SQL). dimensions: columns to group by, e.g. {\"column\":\"region\"}; a date or timestamp column can add \"grain\": Day, Week, Month, Quarter or Year. " +
@@ -248,5 +248,5 @@ internal static class QueryHelp
         "seriesLimit: keep only the largest N series (1 to 100) when there are two dimensions. " +
         "parameters: values for the dataset's own parameters (listed by list_datasets), as {\"region\":\"Auckland\"}; a parameter not given uses its default. Use only column names from list_datasets.";
 
-    public const string Style = "How it looks. Optional. legend (true), labels (false: show values on the chart), palette (default, warm, cool or mono), stack (false: pile series on top of each other on bar, line and area charts).";
+    public const string Style = "How it looks. Optional. legend (true), labels (false: show values on the chart), palette (default, warm, cool or mono), stack (false: pile series on top of each other on bar, line and area charts), percent (false: stack and scale each category to 100%, to compare shares).";
 }

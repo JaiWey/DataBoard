@@ -105,6 +105,103 @@ public class ChartApiTests(ApiFactory factory)
         Assert.Equal(type, created.GetProperty("type").GetString());
     }
 
+    private static object Shaped(Guid dataset, string type, object[] dimensions, object[] measures, object? style = null) => new
+    {
+        name = $"{type} {Guid.NewGuid():N}",
+        datasetId = dataset,
+        type,
+        definition = new { query = new { dimensions, measures }, style },
+    };
+
+    private static readonly object Region = new { column = "region" };
+    private static readonly object Product = new { column = "product" };
+    private static readonly object Revenue1 = new { aggregation = "Sum", column = "price", alias = "revenue" };
+    private static readonly object Quantity = new { aggregation = "Avg", column = "quantity", alias = "quantity" };
+    private static readonly object Orders1 = new { aggregation = "Count", alias = "orders" };
+
+    [Fact]
+    public async Task A_heatmap_has_two_dimensions_and_one_measure()
+    {
+        var f = await NewFixtureAsync();
+
+        var created = await ReadAsync(await f.Owner.PostAsJsonAsync(Url(f.Org), Shaped(f.Orders, "Heatmap", [Region, Product], [Revenue1])));
+        Assert.Equal("Heatmap", created.GetProperty("type").GetString());
+
+        foreach (var wrong in new[]
+        {
+            Shaped(f.Orders, "Heatmap", [Region], [Revenue1]),
+            Shaped(f.Orders, "Heatmap", [Region, Product], []),
+            Shaped(f.Orders, "Heatmap", [Region, Product], [Revenue1, Orders1]),
+            Shaped(f.Orders, "Heatmap", [], [Revenue1]),
+        })
+        {
+            var response = await f.Owner.PostAsJsonAsync(Url(f.Org), wrong);
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+            Assert.Contains("heatmap", await response.Content.ReadAsStringAsync());
+        }
+    }
+
+    [Fact]
+    public async Task A_scatter_chart_has_one_or_two_dimensions_and_two_or_three_measures()
+    {
+        var f = await NewFixtureAsync();
+
+        foreach (var right in new[]
+        {
+            Shaped(f.Orders, "Scatter", [Region], [Revenue1, Quantity]),
+            Shaped(f.Orders, "Scatter", [Region], [Revenue1, Quantity, Orders1]),            // bubbles
+            Shaped(f.Orders, "Scatter", [Region, Product], [Revenue1, Quantity]),            // coloured series
+        })
+        {
+            Assert.Equal("Scatter", (await ReadAsync(await f.Owner.PostAsJsonAsync(Url(f.Org), right))).GetProperty("type").GetString());
+        }
+
+        foreach (var wrong in new[]
+        {
+            Shaped(f.Orders, "Scatter", [], [Revenue1, Quantity]),
+            Shaped(f.Orders, "Scatter", [Region], [Revenue1]),
+            Shaped(f.Orders, "Scatter", [Region], [Revenue1, Quantity, Orders1, new { aggregation = "Max", column = "price", alias = "top" }]),
+        })
+        {
+            var response = await f.Owner.PostAsJsonAsync(Url(f.Org), wrong);
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+            Assert.Contains("scatter", await response.Content.ReadAsStringAsync());
+        }
+    }
+
+    [Theory]
+    [InlineData("Bar")]
+    [InlineData("BarHorizontal")]
+    [InlineData("Line")]
+    [InlineData("Area")]
+    public async Task A_percent_chart_is_stacked_and_kept_that_way(string type)
+    {
+        var f = await NewFixtureAsync();
+
+        var created = await ReadAsync(await f.Owner.PostAsJsonAsync(Url(f.Org),
+            Shaped(f.Orders, type, [Region, Product], [Revenue1], new { percent = true })));
+
+        var style = created.GetProperty("definition").GetProperty("style");
+        Assert.True(style.GetProperty("percent").GetBoolean());
+        Assert.True(style.GetProperty("stack").GetBoolean()); // 100% is a way of stacking, even when stack was not sent
+    }
+
+    [Theory]
+    [InlineData("Pie")]
+    [InlineData("Donut")]
+    [InlineData("Table")]
+    [InlineData("Heatmap")]
+    public async Task Percent_is_only_for_charts_that_stack(string type)
+    {
+        var f = await NewFixtureAsync();
+        var dimensions = type == "Heatmap" ? new[] { Region, Product } : [Region];
+
+        var response = await f.Owner.PostAsJsonAsync(Url(f.Org), Shaped(f.Orders, type, dimensions, [Revenue1], new { percent = true }));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("100%", await response.Content.ReadAsStringAsync());
+    }
+
     [Fact]
     public async Task A_missing_style_gets_the_defaults()
     {
@@ -117,6 +214,7 @@ public class ChartApiTests(ApiFactory factory)
         Assert.False(style.GetProperty("labels").GetBoolean());
         Assert.Equal("default", style.GetProperty("palette").GetString());
         Assert.False(style.GetProperty("stack").GetBoolean());
+        Assert.False(style.GetProperty("percent").GetBoolean());
     }
 
     [Fact]
