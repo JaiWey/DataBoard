@@ -120,6 +120,25 @@ internal sealed class FakeDatasetRepo : IDatasetRepository
             && string.Equals(d.Name, name, StringComparison.OrdinalIgnoreCase) && d.Id != excludeDatasetId));
 }
 
+internal sealed class FakeFolderRepo : IDatasetFolderRepository
+{
+    public List<DatasetFolder> Items { get; } = [];
+    /// <summary>The datasets the "has contents" check looks at; tests that care point it at their dataset repo.</summary>
+    public FakeDatasetRepo? Datasets { get; set; }
+
+    public Task AddAsync(DatasetFolder folder, CancellationToken ct = default) { Items.Add(folder); return Task.CompletedTask; }
+    public void Remove(DatasetFolder folder) => Items.Remove(folder);
+    public Task<DatasetFolder?> GetAsync(Guid organizationId, Guid folderId, CancellationToken ct = default) =>
+        Task.FromResult(Items.SingleOrDefault(f => f.OrganizationId == organizationId && f.Id == folderId));
+    public Task<IReadOnlyList<DatasetFolder>> ListByOrganizationAsync(Guid organizationId, CancellationToken ct = default) =>
+        Task.FromResult<IReadOnlyList<DatasetFolder>>(Items.Where(f => f.OrganizationId == organizationId).ToList());
+    public Task<bool> NameExistsAsync(Guid organizationId, Guid? parentId, string name, Guid? excludeFolderId, CancellationToken ct = default) =>
+        Task.FromResult(Items.Any(f => f.OrganizationId == organizationId && f.ParentId == parentId
+            && string.Equals(f.Name, name, StringComparison.OrdinalIgnoreCase) && f.Id != excludeFolderId));
+    public Task<bool> HasContentsAsync(Guid folderId, CancellationToken ct = default) =>
+        Task.FromResult(Items.Any(f => f.ParentId == folderId) || (Datasets?.Items.Any(d => d.FolderId == folderId) ?? false));
+}
+
 internal sealed class FakeOrganizationRepo : IOrganizationRepository
 {
     public List<Organization> Organizations { get; } = [];

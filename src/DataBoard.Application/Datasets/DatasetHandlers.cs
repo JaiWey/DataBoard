@@ -10,7 +10,8 @@ namespace DataBoard.Application.Datasets;
 /// <param name="Sql">Required for SQL datasets. For a table view it is ignored: the SQL is generated from <paramref name="Definition"/>.</param>
 public sealed record CreateDatasetRequest(
     Guid DataSourceId, string Name, string? Description, string? Sql,
-    DatasetKind Kind = DatasetKind.Sql, TableViewDefinition? Definition = null, IReadOnlyList<DatasetParameter>? Parameters = null);
+    DatasetKind Kind = DatasetKind.Sql, TableViewDefinition? Definition = null, IReadOnlyList<DatasetParameter>? Parameters = null,
+    Guid? FolderId = null);
 
 /// <summary>The kind of a dataset cannot change, so an update carries the SQL or the definition, whichever the dataset uses.</summary>
 public sealed record UpdateDatasetRequest(
@@ -31,7 +32,8 @@ public sealed record DatasetDto(
     DatasetKind Kind = DatasetKind.Sql,
     TableViewDefinition? Definition = null,
     IReadOnlyList<DatasetParameter>? Parameters = null,
-    int CacheSeconds = 0);
+    int CacheSeconds = 0,
+    Guid? FolderId = null);
 
 /// <param name="CacheSeconds">How long query results on the dataset are reused: 0 for never, up to 86400 (a day).</param>
 public sealed record SetDatasetCacheRequest(int CacheSeconds);
@@ -50,7 +52,8 @@ internal static class DatasetMapping
         d.Kind,
         includeSql ? TableViewDefinition.FromJson(d.DefinitionJson) : null,
         DatasetParametersJson.FromJson(d.ParametersJson),
-        d.CacheSeconds);
+        d.CacheSeconds,
+        d.FolderId);
 }
 
 /// <summary>Validates SQL and records what it returns. Shared by create and update.</summary>
@@ -144,6 +147,7 @@ internal static class DatasetQuery
 
 public sealed class CreateDatasetHandler(
     IDatasetRepository datasets,
+    IDatasetFolderRepository folders,
     IDataSourceRepository dataSources,
     ISecretProtector secrets,
     DataSourceConnectors connectors,
@@ -157,6 +161,7 @@ public sealed class CreateDatasetHandler(
     {
         await access.RequireRoleAsync(organizationId, OrganizationRole.Editor, ct);
         var userId = access.RequireUserId();
+        await FolderRules.RequireFolderAsync(folders, organizationId, request.FolderId, "FolderId", ct);
 
         var (source, connectionString) = await DataSourceLookup.LoadAsync(dataSources, secrets, organizationId, request.DataSourceId, ct);
         var (sql, columns, definitionJson, parametersJson) = await DatasetQuery.ResolveAsync(
@@ -167,7 +172,7 @@ public sealed class CreateDatasetHandler(
 
         var dataset = DatasetQuery.Guard(() => Dataset.Create(
             organizationId, source.Id, request.Name!, request.Description, sql, columns, userId, clock.UtcNow,
-            request.Kind, definitionJson, parametersJson));
+            request.Kind, definitionJson, parametersJson, request.FolderId));
 
         await datasets.AddAsync(dataset, ct);
         await unitOfWork.SaveChangesAsync(ct);

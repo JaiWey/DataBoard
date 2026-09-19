@@ -62,9 +62,15 @@ public sealed class Dataset : BaseEntity
     /// <summary>The columns the query returned when it was saved.</summary>
     public IReadOnlyList<DatasetColumn> Columns => _columns;
 
+    /// <summary>The folder it is filed in, or null for the top level.</summary>
+    public Guid? FolderId { get; private set; }
+
     public Guid CreatedByUserId { get; private set; }
     public DateTime CreatedUtc { get; private set; }
     public DateTime UpdatedUtc { get; private set; }
+
+    /// <summary>Filing a dataset is organization, not a change to the dataset, so it does not count as an update.</summary>
+    public void MoveTo(Guid? folderId) => FolderId = folderId;
 
     public static Dataset Create(
         Guid organizationId,
@@ -77,7 +83,8 @@ public sealed class Dataset : BaseEntity
         DateTime nowUtc,
         DatasetKind kind = DatasetKind.Sql,
         string? definitionJson = null,
-        string? parametersJson = null)
+        string? parametersJson = null,
+        Guid? folderId = null)
     {
         if (organizationId == Guid.Empty)
             throw new ArgumentException("Organization is required.", nameof(organizationId));
@@ -93,6 +100,7 @@ public sealed class Dataset : BaseEntity
             CreatedByUserId = createdByUserId,
             CreatedUtc = nowUtc,
             Kind = kind,
+            FolderId = folderId,
         };
         dataset.Apply(name, description, sql, columns, nowUtc, definitionJson, parametersJson);
         return dataset;

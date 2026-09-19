@@ -65,6 +65,8 @@ export class NewDatasetTabComponent implements OnInit {
 
   readonly orgId = input.required<string>();
   readonly active = input(true);
+  /** The folder the dataset is saved into (null is the top level). */
+  readonly folderId = input<string | null>(null);
   /** The dataset that was saved; the page turns this tab into that dataset's tab. */
   readonly created = output<Dataset>();
   /** True once there is SQL that would be lost by closing the tab. */
@@ -125,7 +127,7 @@ export class NewDatasetTabComponent implements OnInit {
     if (!this.canSave()) return;
     this.dialog
       .open<SaveDatasetDialogComponent, SaveDatasetDialogData, Dataset>(SaveDatasetDialogComponent, {
-        data: { orgId: this.orgId(), dataSourceId: this.sourceId(), sql: this.sql(), parameters: this.parameters() },
+        data: { orgId: this.orgId(), dataSourceId: this.sourceId(), sql: this.sql(), parameters: this.parameters(), folderId: this.folderId() },
         width: '28rem',
         maxWidth: '95vw',
       })

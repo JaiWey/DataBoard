@@ -44,6 +44,12 @@ public class DatasetsController : ControllerBase
 		Guid organizationId, Guid datasetId, SetDatasetCacheRequest body, [FromServices] SetDatasetCacheHandler handler, CancellationToken ct) =>
 		Ok(await handler.HandleAsync(organizationId, datasetId, body, ct));
 
+	/// <summary>Files the dataset in a folder (folderId null is the top level). Editors and Owners.</summary>
+	[HttpPut("{datasetId:guid}/folder")]
+	public async Task<ActionResult<DatasetDto>> Move(
+		Guid organizationId, Guid datasetId, MoveDatasetRequest body, [FromServices] MoveDatasetHandler handler, CancellationToken ct) =>
+		Ok(await handler.HandleAsync(organizationId, datasetId, body, ct));
+
 	[HttpDelete("{datasetId:guid}")]
 	public async Task<IActionResult> Delete(
 		Guid organizationId, Guid datasetId, [FromServices] DeleteDatasetHandler handler, CancellationToken ct)

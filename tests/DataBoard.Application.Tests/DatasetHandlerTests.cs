@@ -34,8 +34,10 @@ public class DatasetHandlerTests
     private void Join(OrganizationRole role, Guid? org = null) =>
         _orgs.Members.Add(OrganizationMember.Create(org ?? _org, _user.UserId!.Value, role, DateTime.UtcNow));
 
+    private readonly FakeFolderRepo _folders = new();
+
     private CreateDatasetHandler Create() =>
-        new(_datasets, _sources, new FakeSecrets(), Connectors(), Renderers(), _validator, _uow, new FixedClock(), Access());
+        new(_datasets, _folders, _sources, new FakeSecrets(), Connectors(), Renderers(), _validator, _uow, new FixedClock(), Access());
 
     private UpdateDatasetHandler Update() =>
         new(_datasets, _sources, new FakeSecrets(), Connectors(), Renderers(), _validator, _uow, new FixedClock(), Access());

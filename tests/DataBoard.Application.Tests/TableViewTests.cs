@@ -226,7 +226,7 @@ public class TableViewDatasetHandlerTests
         _orgs.Members.Add(OrganizationMember.Create(_org, _user.UserId!.Value, role, DateTime.UtcNow));
 
     private CreateDatasetHandler Create() =>
-        new(_datasets, _sources, new FakeSecrets(), Connectors(), Renderers(), _validator, _uow, new FixedClock(), Access());
+        new(_datasets, new FakeFolderRepo(), _sources, new FakeSecrets(), Connectors(), Renderers(), _validator, _uow, new FixedClock(), Access());
 
     private UpdateDatasetHandler Update() =>
         new(_datasets, _sources, new FakeSecrets(), Connectors(), Renderers(), _validator, _uow, new FixedClock(), Access());

@@ -34,9 +34,10 @@ describe('DatasetsComponent', () => {
   const buttonText = () => Array.from(el().querySelectorAll('.detail button')).map((b) => b.textContent?.trim());
 
   /** Loads the page and, unless told otherwise, clicks the first dataset in the list to show its details. */
-  const load = (role: 'Viewer' | 'Editor' | 'Owner', items: unknown[], selectFirst = true) => {
+  const load = (role: 'Viewer' | 'Editor' | 'Owner', items: unknown[], selectFirst = true, folders: unknown[] = []) => {
     fixture.detectChanges();
     http.expectOne('/api/organizations').flush([{ id: ORG, name: 'Acme', role }]);
+    http.expectOne(`/api/organizations/${ORG}/dataset-folders`).flush(folders);
     http.expectOne(`/api/organizations/${ORG}/datasets`).flush(items);
     fixture.detectChanges();
     if (selectFirst && items.length > 0) {
@@ -88,12 +89,12 @@ describe('DatasetsComponent', () => {
   it('lists datasets on the left and asks for a selection on the right', () => {
     load('Viewer', [dataset(null)], false);
 
-    expect(el().querySelector('button.item [matListItemTitle]')?.textContent?.trim()).toBe('Orders');
+    expect(el().querySelector('button.item .name')?.textContent?.trim()).toBe('Orders');
     expect(el().querySelector('.detail')?.textContent).toContain('Select a dataset to see its details.');
   });
 
   it('opens each clicked dataset in its own tab and keeps the earlier one as it was', () => {
-    const second = { ...dataset(null), id: '55555555-5555-5555-5555-555555555555', name: 'Customers' };
+    const second = { ...dataset(null), id: '55555555-5555-5555-5555-555555555555', name: 'Returns' };
     load('Viewer', [dataset(null), second]);
     (Array.from(el().querySelectorAll('.detail button')).find((b) => b.textContent?.trim() === 'Preview') as HTMLButtonElement).click();
     http.expectOne(`/api/organizations/${ORG}/datasets/${dataset(null).id}/preview`).flush({
@@ -105,8 +106,8 @@ describe('DatasetsComponent', () => {
     itemButton(1).click();
     fixture.detectChanges();
 
-    expect(tabNames()).toEqual(['Orders', 'Customers']);
-    expect(activeTab()).toBe('Customers');
+    expect(tabNames()).toEqual(['Orders', 'Returns']);
+    expect(activeTab()).toBe('Returns');
     expect(el().querySelectorAll('app-dataset-tab.inactive').length).toBe(1);
 
     (el().querySelectorAll('[role=tab]')[0] as HTMLButtonElement).click();
@@ -116,19 +117,19 @@ describe('DatasetsComponent', () => {
   });
 
   it('shows the tab of a dataset that is already open instead of opening it twice', () => {
-    const second = { ...dataset(null), id: '55555555-5555-5555-5555-555555555555', name: 'Customers' };
+    const second = { ...dataset(null), id: '55555555-5555-5555-5555-555555555555', name: 'Returns' };
     load('Viewer', [dataset(null), second], false);
     itemButton(0).click();
     itemButton(1).click();
     itemButton(0).click();
     fixture.detectChanges();
 
-    expect(tabNames()).toEqual(['Orders', 'Customers']);
+    expect(tabNames()).toEqual(['Orders', 'Returns']);
     expect(activeTab()).toBe('Orders');
   });
 
   it('closes a tab and moves to its right neighbour, else its left', () => {
-    const second = { ...dataset(null), id: '55555555-5555-5555-5555-555555555555', name: 'Customers' };
+    const second = { ...dataset(null), id: '55555555-5555-5555-5555-555555555555', name: 'Returns' };
     const third = { ...dataset(null), id: '66666666-6666-6666-6666-666666666666', name: 'Products' };
     load('Viewer', [dataset(null), second, third], false);
     [0, 1, 2].forEach((i) => itemButton(i).click());
@@ -136,7 +137,7 @@ describe('DatasetsComponent', () => {
     (el().querySelectorAll('[role=tab]')[1] as HTMLButtonElement).click();
     fixture.detectChanges();
 
-    (el().querySelector('button[aria-label="Close Customers"]') as HTMLButtonElement).click();
+    (el().querySelector('button[aria-label="Close Returns"]') as HTMLButtonElement).click();
     fixture.detectChanges();
     expect(tabNames()).toEqual(['Orders', 'Products']);
     expect(activeTab()).toBe('Products');
@@ -152,7 +153,7 @@ describe('DatasetsComponent', () => {
   });
 
   it('remembers the open tabs across a reload', () => {
-    const second = { ...dataset(null), id: '55555555-5555-5555-5555-555555555555', name: 'Customers' };
+    const second = { ...dataset(null), id: '55555555-5555-5555-5555-555555555555', name: 'Returns' };
     load('Viewer', [dataset(null), second], false);
     itemButton(0).click();
     itemButton(1).click();
@@ -162,8 +163,8 @@ describe('DatasetsComponent', () => {
     fixture = TestBed.createComponent(DatasetsComponent);
     load('Viewer', [dataset(null), second], false);
 
-    expect(tabNames()).toEqual(['Orders', 'Customers']);
-    expect(activeTab()).toBe('Customers');
+    expect(tabNames()).toEqual(['Orders', 'Returns']);
+    expect(activeTab()).toBe('Returns');
   });
 
   // ---- adding a dataset ----
@@ -219,17 +220,17 @@ describe('DatasetsComponent', () => {
     pickSource.dispatchEvent(new Event('change'));
     monaco.editors[0].type('SELECT region FROM sales');
     await settle();
-    const created = { ...dataset('SELECT region FROM sales'), id: '55555555-5555-5555-5555-555555555555', name: 'Customers' };
+    const created = { ...dataset('SELECT region FROM sales'), id: '55555555-5555-5555-5555-555555555555', name: 'Returns' };
     const open = vi.spyOn(TestBed.inject(MatDialog), 'open').mockReturnValue({ afterClosed: () => of(created) } as never);
 
     (Array.from(el().querySelectorAll('.detail button')).find((b) => b.textContent?.trim() === 'Save') as HTMLButtonElement).click();
 
-    expect((open.mock.calls[0][1] as { data: unknown }).data).toEqual({ orgId: ORG, dataSourceId: 'src-2', sql: 'SELECT region FROM sales', parameters: [] });
+    expect((open.mock.calls[0][1] as { data: unknown }).data).toEqual({ orgId: ORG, dataSourceId: 'src-2', sql: 'SELECT region FROM sales', parameters: [], folderId: null });
     http.expectOne(`/api/organizations/${ORG}/datasets`).flush([dataset(null), created]);
     await settle();
 
-    expect(tabNames()).toEqual(['Customers']);
-    expect(activeTab()).toBe('Customers');
+    expect(tabNames()).toEqual(['Returns']);
+    expect(activeTab()).toBe('Returns');
     expect(el().querySelector('.tab .dot')).toBeNull();
     expect(el().querySelectorAll('button.item').length).toBe(2);
   });
@@ -265,7 +266,7 @@ describe('DatasetsComponent', () => {
       tables: [
         { name: 'orders', kind: 'Table', columns: [
           { name: 'id', dataType: 'integer', nullable: false }, { name: 'customer_id', dataType: 'integer', nullable: false } ] },
-        { name: 'customers', kind: 'Table', columns: [
+        { name: 'Returns', kind: 'Table', columns: [
           { name: 'id', dataType: 'integer', nullable: false }, { name: 'name', dataType: 'text', nullable: true } ] },
       ],
     }],
@@ -311,7 +312,7 @@ describe('DatasetsComponent', () => {
     expect(monaco.editors.length).toBe(0); // no SQL editor: this kind is built from tables
     expect(el().textContent).toContain('Step 1 · Main table');
     const tables = Array.from(el().querySelectorAll('select[aria-label="Table of step 1"] option')).map((o) => o.textContent?.trim());
-    expect(tables).toEqual(['Choose a table…', 'public.orders', 'public.customers']);
+    expect(tables).toEqual(['Choose a table…', 'public.orders', 'public.Returns']);
   });
 
   it('guides through the main table, its fields and a run of just that step', async () => {
@@ -363,7 +364,7 @@ describe('DatasetsComponent', () => {
       main: { schema: 'public', name: 'orders', fields: ['id'] },
       joins: [{
         type: 'Left',
-        table: { schema: 'public', name: 'customers', fields: ['name'] },
+        table: { schema: 'public', name: 'Returns', fields: ['name'] },
         on: [{ leftStep: 0, leftField: 'customer_id', rightField: 'id' }],
       }],
     });
@@ -420,6 +421,7 @@ describe('DatasetsComponent', () => {
       orgId: ORG,
       dataSourceId: 'src-1',
       definition: { main: { schema: 'public', name: 'orders', fields: ['id'] }, joins: [] },
+      folderId: null,
     });
     http.expectOne(`/api/organizations/${ORG}/datasets`).flush([created]);
     await settle();
@@ -479,7 +481,7 @@ describe('DatasetsComponent', () => {
     expect(monaco.editors.length).toBe(1);
     expect(monaco.editors[0].readOnly).toBe(true);
     expect(monaco.editors[0].value).toContain('FROM "public"."orders"');
-    expect(el().querySelector('button.item [matListItemLine]')?.textContent).toContain('table view');
+    expect(el().querySelector('button.item .sub')?.textContent).toContain('table view');
   });
 
   it('saves an edited table view with its definition, not SQL', async () => {
@@ -582,7 +584,7 @@ describe('DatasetsComponent', () => {
     await settle();
 
     expect(el().querySelector('.tab .dot')).toBeNull();
-    expect(el().querySelector('button.item [matListItemLine]')?.textContent).toContain('1 columns');
+    expect(el().querySelector('button.item .sub')?.textContent).toContain('1 columns');
   });
 
   it('saves with Ctrl+S in the editor', async () => {
@@ -829,7 +831,7 @@ describe('DatasetsComponent', () => {
     load('Editor', [withParameters()]);
     await settle();
 
-    expect(el().querySelector('.name')?.textContent).toBe('{{region}}');
+    expect(el().querySelector('app-parameters-panel .name')?.textContent).toBe('{{region}}');
     expect((control('Type of region') as HTMLSelectElement).value).toBe('Text');
     expect((control('Default of region') as HTMLInputElement).value).toBe('Auckland');
     expect(el().textContent).toContain('Charts and dashboards can choose its value');
@@ -849,7 +851,7 @@ describe('DatasetsComponent', () => {
     monaco.editors[0].type(PARAMETER_SQL);
     await settle();
 
-    expect(el().querySelector('.name')?.textContent).toBe('{{region}}');
+    expect(el().querySelector('app-parameters-panel .name')?.textContent).toBe('{{region}}');
     expect(el().textContent).toContain('Give region a default');
     expect(saveButton().disabled).toBe(true);
     expect(runButton().disabled).toBe(true);

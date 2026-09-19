@@ -34,6 +34,7 @@ public static class DependencyInjection
         services.AddScoped<IDataSourceRepository, DataSourceRepository>();
         services.AddScoped<IOrganizationRepository, OrganizationRepository>();
         services.AddScoped<IDatasetRepository, DatasetRepository>();
+        services.AddScoped<IDatasetFolderRepository, DatasetFolderRepository>();
         services.AddScoped<IDashboardRepository, DashboardRepository>();
         services.AddScoped<IDashboardShareRepository, DashboardShareRepository>();
         services.AddScoped<IApiTokenRepository, ApiTokenRepository>();

@@ -5,6 +5,21 @@ namespace DataBoard.Domain.Tests;
 public class DatasetTests
 {
     [Fact]
+    public void Starts_at_the_top_level_and_is_filed_in_a_folder_without_counting_as_an_edit()
+    {
+        var dataset = New();
+        var updated = dataset.UpdatedUtc;
+        var folder = Guid.NewGuid();
+
+        Assert.Null(dataset.FolderId);
+        dataset.MoveTo(folder);
+        Assert.Equal(folder, dataset.FolderId);
+        dataset.MoveTo(null);
+        Assert.Null(dataset.FolderId);
+        Assert.Equal(updated, dataset.UpdatedUtc);
+    }
+
+    [Fact]
     public void Keeps_no_results_until_told_to() => Assert.Equal(0, New().CacheSeconds);
 
     [Theory]

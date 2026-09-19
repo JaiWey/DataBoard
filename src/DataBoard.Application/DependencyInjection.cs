@@ -37,6 +37,11 @@ public static class DependencyInjection
         services.AddScoped<UpdateDatasetHandler>();
         services.AddScoped<DeleteDatasetHandler>();
         services.AddScoped<SetDatasetCacheHandler>();
+        services.AddScoped<ListFoldersHandler>();
+        services.AddScoped<CreateFolderHandler>();
+        services.AddScoped<UpdateFolderHandler>();
+        services.AddScoped<DeleteFolderHandler>();
+        services.AddScoped<MoveDatasetHandler>();
         services.AddScoped<PreviewDatasetHandler>();
         services.AddScoped<PreviewTableViewHandler>();
         services.AddScoped<RunChartQueryHandler>();

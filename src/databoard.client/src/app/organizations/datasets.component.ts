@@ -2,14 +2,18 @@ import { HttpClient } from '@angular/common/http';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatCardModule } from '@angular/material/card';
-import { MatListModule } from '@angular/material/list';
+import { MatDialog } from '@angular/material/dialog';
 import { MatMenuModule } from '@angular/material/menu';
 import { ActivatedRoute } from '@angular/router';
 import { TabStripComponent } from '../shared/tab-strip.component';
+import { problemMessages } from './data-sources.service';
 import { DatasetTabComponent } from './dataset-tab.component';
+import { TreeItem, folderPath } from './dataset-tree';
+import { DatasetTreeComponent } from './dataset-tree.component';
 import { NewDatasetTabComponent } from './new-dataset-tab.component';
 import { NewTableViewTabComponent } from './new-table-view-tab.component';
-import { Dataset, DatasetsService } from './datasets.service';
+import { FolderNameDialogComponent, FolderNameDialogData, MoveDialogComponent, MoveDialogData } from './folder-dialogs.component';
+import { Dataset, DatasetFolder, DatasetFoldersService, DatasetsService } from './datasets.service';
 
 const NEW_PREFIX = 'new:';
 const NEW_VIEW_PREFIX = 'new:view:';
@@ -23,7 +27,7 @@ interface Organization {
 /** Datasets of an organization: a list on the left, and the datasets opened from it as tabs on the right. */
 @Component({
   selector: 'app-datasets',
-  imports: [MatCardModule, MatListModule, MatButtonModule, MatMenuModule, TabStripComponent, DatasetTabComponent, NewDatasetTabComponent, NewTableViewTabComponent],
+  imports: [MatCardModule, MatButtonModule, MatMenuModule, TabStripComponent, DatasetTabComponent, DatasetTreeComponent, NewDatasetTabComponent, NewTableViewTabComponent],
   template: `
     <h2>{{ organization()?.name }} <small>datasets</small></h2>
 
@@ -34,23 +38,21 @@ interface Organization {
           @if (canEdit()) {
             <button mat-flat-button type="button" class="add" [matMenuTriggerFor]="addMenu">Add dataset</button>
             <mat-menu #addMenu="matMenu">
-              <button mat-menu-item type="button" (click)="addDataset('sql')">SQL dataset</button>
-              <button mat-menu-item type="button" (click)="addDataset('view')">Table view dataset</button>
+              <button mat-menu-item type="button" (click)="addDataset('sql', selectedFolderId())">SQL dataset</button>
+              <button mat-menu-item type="button" (click)="addDataset('view', selectedFolderId())">Table view dataset</button>
             </mat-menu>
           }
         </mat-card-header>
         <mat-card-content>
-          @if (loaded() && datasets().length === 0) {
-            <p><em>No datasets yet.</em></p>
+          @for (message of treeErrors(); track message) {
+            <p class="fail" role="alert">{{ message }}</p>
           }
-          <mat-action-list>
-            @for (item of datasets(); track item.id) {
-              <button mat-list-item type="button" class="item" [activated]="activeId() === item.id" (click)="open(item)">
-                <span matListItemTitle>{{ item.name }}</span>
-                <span matListItemLine>{{ item.columns.length }} columns · {{ item.kind === 'TableView' ? 'table view' : 'SQL' }}</span>
-              </button>
-            }
-          </mat-action-list>
+          <app-dataset-tree [folders]="folders()" [datasets]="datasets()" [activeId]="activeId()" [canEdit]="canEdit()"
+                            [selectedFolderId]="selectedFolderId()" [storageKey]="treeStorageKey"
+                            (open)="open($event)" (selectFolder)="selectedFolderId.set($event)"
+                            (createFolder)="newFolder($event)" (renameFolder)="renameFolder($event)" (deleteFolder)="deleteFolder($event)"
+                            (addDataset)="addDataset($event.kind, $event.folderId)" (move)="moveItem($event.item, $event.targetId)"
+                            (moveTo)="chooseDestination($event)" />
         </mat-card-content>
       </mat-card>
 
@@ -63,10 +65,10 @@ interface Organization {
               <app-dataset-tab [dataset]="dataset" [orgId]="orgId" [canEdit]="canEdit()" [active]="tab.id === activeId()"
                                (updated)="replace($event)" (deleted)="onDeleted($event)" (dirtyChange)="setDirty(tab.id, $event)" />
             } @else if (tab.id.startsWith(NEW_VIEW_PREFIX)) {
-              <app-new-table-view-tab [orgId]="orgId" [active]="tab.id === activeId()"
+              <app-new-table-view-tab [orgId]="orgId" [active]="tab.id === activeId()" [folderId]="newTabFolders()[tab.id] ?? null"
                                       (created)="onCreated(tab.id, $event)" (dirtyChange)="setDirty(tab.id, $event)" />
             } @else {
-              <app-new-dataset-tab [orgId]="orgId" [active]="tab.id === activeId()"
+              <app-new-dataset-tab [orgId]="orgId" [active]="tab.id === activeId()" [folderId]="newTabFolders()[tab.id] ?? null"
                                    (created)="onCreated(tab.id, $event)" (dirtyChange)="setDirty(tab.id, $event)" />
             }
           }
@@ -85,7 +87,9 @@ interface Organization {
     /* Both columns are exactly as tall as the space under the title (so the page itself never scrolls) and scroll inside. */
     .layout { display: grid; grid-template-columns: 20rem 1fr; gap: 1.25rem; height: calc(100vh - 16rem); min-height: 24rem; }
     .list { height: 100%; min-height: 0; }
-    .list mat-card-content { flex: 1; overflow-y: auto; }
+    .list mat-card-content { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+    .list app-dataset-tree { flex: 1; }
+    .fail { color: var(--mat-sys-error); margin: 0 0 0.5rem; }
     .workspace { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
     .workspace > app-dataset-tab, .workspace > app-new-dataset-tab { flex: 1; min-height: 0; }
     .workspace > .empty { flex: 1; }
@@ -107,8 +111,18 @@ export class DatasetsComponent implements OnInit {
   private readonly route = inject(ActivatedRoute);
   private readonly http = inject(HttpClient);
   private readonly api = inject(DatasetsService);
+  private readonly foldersApi = inject(DatasetFoldersService);
+  private readonly dialog = inject(MatDialog);
 
   protected orgId = '';
+  protected treeStorageKey = '';
+  protected readonly folders = signal<DatasetFolder[]>([]);
+  /** The folder a new dataset goes in: the last folder clicked, or the folder of the dataset last opened (null is the top level). */
+  protected readonly selectedFolderId = signal<string | null>(null);
+  /** Problems with moving or deleting something in the tree. */
+  protected readonly treeErrors = signal<string[]>([]);
+  /** The folder each unsaved new-dataset tab will save into, fixed when the tab was opened. */
+  protected readonly newTabFolders = signal<Record<string, string | null>>({});
   protected readonly organization = signal<Organization | null>(null);
   protected readonly canEdit = computed(() => {
     const role = this.organization()?.role;
@@ -134,9 +148,11 @@ export class DatasetsComponent implements OnInit {
 
   ngOnInit(): void {
     this.orgId = this.route.snapshot.paramMap.get('id') ?? '';
+    this.treeStorageKey = `databoard.datasetFolders.${this.orgId}`;
     this.http.get<Organization[]>('/api/organizations').subscribe({
       next: (orgs) => this.organization.set(orgs.find((o) => o.id === this.orgId) ?? null),
     });
+    this.foldersApi.list(this.orgId).subscribe({ next: (items) => this.folders.set(items) });
     this.reload();
   }
 
@@ -144,7 +160,72 @@ export class DatasetsComponent implements OnInit {
   protected open(dataset: Dataset): void {
     if (!this.openIds().includes(dataset.id)) this.openIds.update((ids) => [...ids, dataset.id]);
     this.activeId.set(dataset.id);
+    this.selectedFolderId.set(dataset.folderId ?? null);
     this.remember();
+  }
+
+  // ---- folders -----------------------------------------------------------------------------------------------
+
+  protected newFolder(parentId: string | null): void {
+    this.dialog
+      .open<FolderNameDialogComponent, FolderNameDialogData, DatasetFolder>(FolderNameDialogComponent, {
+        data: { orgId: this.orgId, parentId }, width: '24rem', maxWidth: '95vw',
+      })
+      .afterClosed()
+      .subscribe((created) => {
+        if (created) this.folders.update((items) => [...items, created]);
+      });
+  }
+
+  protected renameFolder(folder: DatasetFolder): void {
+    this.dialog
+      .open<FolderNameDialogComponent, FolderNameDialogData, DatasetFolder>(FolderNameDialogComponent, {
+        data: { orgId: this.orgId, parentId: folder.parentId, folder }, width: '24rem', maxWidth: '95vw',
+      })
+      .afterClosed()
+      .subscribe((saved) => {
+        if (saved) this.folders.update((items) => items.map((f) => (f.id === saved.id ? saved : f)));
+      });
+  }
+
+  protected deleteFolder(folder: DatasetFolder): void {
+    if (!confirm(`Delete the folder "${folder.name}"?`)) return;
+    this.treeErrors.set([]);
+    this.foldersApi.remove(this.orgId, folder.id).subscribe({
+      next: () => {
+        this.folders.update((items) => items.filter((f) => f.id !== folder.id));
+        if (this.selectedFolderId() === folder.id) this.selectedFolderId.set(folder.parentId);
+      },
+      error: (e) => this.treeErrors.set(problemMessages(e, 'Could not delete the folder.')),
+    });
+  }
+
+  /** The "Move to…" menu entry: asks where to, then moves. */
+  protected chooseDestination(item: TreeItem): void {
+    this.dialog
+      .open<MoveDialogComponent, MoveDialogData, { targetId: string | null }>(MoveDialogComponent, {
+        data: { folders: this.folders(), datasets: this.datasets(), item }, width: '26rem', maxWidth: '95vw',
+      })
+      .afterClosed()
+      .subscribe((chosen) => {
+        if (chosen) this.moveItem(item, chosen.targetId);
+      });
+  }
+
+  /** Files a dataset or a folder in another folder (null is the top level). Used by dropping and by the Move to… dialog. */
+  protected moveItem(item: TreeItem, targetId: string | null): void {
+    this.treeErrors.set([]);
+    const fail = (e: unknown) => this.treeErrors.set(problemMessages(e, `Could not move it to ${targetId ? folderPath(this.folders(), targetId) : 'the top level'}.`));
+    if (item.kind === 'dataset') {
+      this.api.move(this.orgId, item.id, targetId).subscribe({ next: (saved) => this.replace(saved), error: fail });
+      return;
+    }
+    const folder = this.folders().find((f) => f.id === item.id);
+    if (!folder) return;
+    this.foldersApi.update(this.orgId, folder.id, folder.name, targetId).subscribe({
+      next: (saved) => this.folders.update((items) => items.map((f) => (f.id === saved.id ? saved : f))),
+      error: fail,
+    });
   }
 
   protected close(id: string): void {
@@ -173,8 +254,9 @@ export class DatasetsComponent implements OnInit {
   }
 
   /** Opens an empty editor (or the table view builder) in a new tab; the dataset is only created when that tab is saved. */
-  protected addDataset(kind: 'sql' | 'view'): void {
+  protected addDataset(kind: 'sql' | 'view', folderId: string | null = null): void {
     const id = kind === 'view' ? `${NEW_VIEW_PREFIX}${++this.newCount}` : `${NEW_PREFIX}sql:${++this.newCount}`;
+    this.newTabFolders.update((map) => ({ ...map, [id]: folderId }));
     this.openIds.update((ids) => [...ids, id]);
     this.activeId.set(id);
   }

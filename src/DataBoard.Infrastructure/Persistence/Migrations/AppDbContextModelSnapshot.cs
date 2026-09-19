@@ -246,6 +246,9 @@ namespace DataBoard.Infrastructure.Persistence.Migrations
                         .HasMaxLength(1000)
                         .HasColumnType("character varying(1000)");
 
+                    b.Property<Guid?>("FolderId")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("Kind")
                         .IsRequired()
                         .ValueGeneratedOnAdd()
@@ -278,10 +281,57 @@ namespace DataBoard.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("DataSourceId");
 
+                    b.HasIndex("FolderId");
+
                     b.HasIndex("OrganizationId", "Name")
                         .IsUnique();
 
                     b.ToTable("datasets", (string)null);
+                });
+
+            modelBuilder.Entity("DataBoard.Domain.Datasets.DatasetFolder", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("CreatedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("ParentId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("UpdatedUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedByUserId");
+
+                    b.HasIndex("ParentId");
+
+                    b.HasIndex("OrganizationId", "Name")
+                        .IsUnique()
+                        .HasDatabaseName("ix_dataset_folders_top_level_name")
+                        .HasFilter("\"ParentId\" IS NULL");
+
+                    b.HasIndex("OrganizationId", "ParentId", "Name")
+                        .IsUnique()
+                        .HasDatabaseName("ix_dataset_folders_sibling_name")
+                        .HasFilter("\"ParentId\" IS NOT NULL");
+
+                    b.ToTable("dataset_folders", (string)null);
                 });
 
             modelBuilder.Entity("DataBoard.Domain.Organizations.Organization", b =>
@@ -685,6 +735,11 @@ namespace DataBoard.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
+                    b.HasOne("DataBoard.Domain.Datasets.DatasetFolder", null)
+                        .WithMany()
+                        .HasForeignKey("FolderId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("DataBoard.Domain.Organizations.Organization", null)
                         .WithMany()
                         .HasForeignKey("OrganizationId")
@@ -720,6 +775,26 @@ namespace DataBoard.Infrastructure.Persistence.Migrations
                         });
 
                     b.Navigation("Columns");
+                });
+
+            modelBuilder.Entity("DataBoard.Domain.Datasets.DatasetFolder", b =>
+                {
+                    b.HasOne("DataBoard.Infrastructure.Identity.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("CreatedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("DataBoard.Domain.Organizations.Organization", null)
+                        .WithMany()
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("DataBoard.Domain.Datasets.DatasetFolder", null)
+                        .WithMany()
+                        .HasForeignKey("ParentId")
+                        .OnDelete(DeleteBehavior.Restrict);
                 });
 
             modelBuilder.Entity("DataBoard.Domain.Organizations.OrganizationMember", b =>

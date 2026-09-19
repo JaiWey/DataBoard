@@ -16,6 +16,8 @@ export interface SaveDatasetDialogData {
   /** The values the SQL takes ({{placeholders}}), each with a type and a default. */
   parameters?: DatasetParameter[];
   definition?: TableViewDefinition;
+  /** The folder to file the dataset in; missing or null is the top level. */
+  folderId?: string | null;
 }
 
 /** Asks for the name of a new dataset and saves it. Closes with the created dataset, or with nothing if cancelled. */
@@ -69,10 +71,10 @@ export class SaveDatasetDialogComponent {
     this.errors.set([]);
 
     const v = this.form.getRawValue();
-    const { orgId, dataSourceId, sql, definition, parameters } = this.data;
+    const { orgId, dataSourceId, sql, definition, parameters, folderId } = this.data;
     const request = definition
-      ? this.api.createTableView(orgId, dataSourceId, v.name, definition, v.description || undefined)
-      : this.api.create(orgId, dataSourceId, v.name, sql ?? '', v.description || undefined, parameters ?? []);
+      ? this.api.createTableView(orgId, dataSourceId, v.name, definition, v.description || undefined, folderId)
+      : this.api.create(orgId, dataSourceId, v.name, sql ?? '', v.description || undefined, parameters ?? [], folderId);
     request.subscribe({
       next: (created) => this.ref.close(created),
       error: (e) => {

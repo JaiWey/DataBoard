@@ -70,8 +70,44 @@ export interface Dataset {
   parameters?: DatasetParameter[];
   /** How long results of queries on this dataset are reused, in seconds. 0 (or missing) means every run is live. */
   cacheSeconds?: number;
+  /** The folder the dataset is filed in; null or missing means the top level. */
+  folderId?: string | null;
   createdUtc: string;
   updatedUtc: string;
+}
+
+/** A folder that organizes datasets. Folders nest; a null parent is the top level. */
+export interface DatasetFolder {
+  id: string;
+  parentId: string | null;
+  name: string;
+}
+
+@Injectable({ providedIn: 'root' })
+export class DatasetFoldersService {
+  private readonly http = inject(HttpClient);
+
+  private url(orgId: string, suffix = ''): string {
+    return `/api/organizations/${orgId}/dataset-folders${suffix}`;
+  }
+
+  list(orgId: string): Observable<DatasetFolder[]> {
+    return this.http.get<DatasetFolder[]>(this.url(orgId));
+  }
+
+  create(orgId: string, name: string, parentId: string | null): Observable<DatasetFolder> {
+    return this.http.post<DatasetFolder>(this.url(orgId), { name, parentId });
+  }
+
+  /** Renames the folder and/or moves it (the parent is always sent; null is the top level). */
+  update(orgId: string, id: string, name: string, parentId: string | null): Observable<DatasetFolder> {
+    return this.http.put<DatasetFolder>(this.url(orgId, `/${id}`), { name, parentId });
+  }
+
+  /** Only an empty folder can be deleted. */
+  remove(orgId: string, id: string): Observable<void> {
+    return this.http.delete<void>(this.url(orgId, `/${id}`));
+  }
 }
 
 @Injectable({ providedIn: 'root' })
@@ -86,15 +122,26 @@ export class DatasetsService {
     return this.http.get<Dataset[]>(this.url(orgId));
   }
 
-  create(orgId: string, dataSourceId: string, name: string, sql: string, description?: string, parameters: DatasetParameter[] = []): Observable<Dataset> {
+  create(
+    orgId: string, dataSourceId: string, name: string, sql: string, description?: string, parameters: DatasetParameter[] = [], folderId?: string | null,
+  ): Observable<Dataset> {
     return this.http.post<Dataset>(this.url(orgId), {
-      dataSourceId, name, description: description ?? null, sql, ...(parameters.length > 0 ? { parameters } : {}),
+      dataSourceId, name, description: description ?? null, sql, ...(parameters.length > 0 ? { parameters } : {}), ...(folderId ? { folderId } : {}),
     });
   }
 
   /** A table view sends its definition; the server generates the SQL. */
-  createTableView(orgId: string, dataSourceId: string, name: string, definition: TableViewDefinition, description?: string): Observable<Dataset> {
-    return this.http.post<Dataset>(this.url(orgId), { dataSourceId, name, description: description ?? null, kind: 'TableView', definition });
+  createTableView(
+    orgId: string, dataSourceId: string, name: string, definition: TableViewDefinition, description?: string, folderId?: string | null,
+  ): Observable<Dataset> {
+    return this.http.post<Dataset>(this.url(orgId), {
+      dataSourceId, name, description: description ?? null, kind: 'TableView', definition, ...(folderId ? { folderId } : {}),
+    });
+  }
+
+  /** Files the dataset in a folder (null for the top level). */
+  move(orgId: string, id: string, folderId: string | null): Observable<Dataset> {
+    return this.http.put<Dataset>(this.url(orgId, `/${id}/folder`), { folderId });
   }
 
   /** An update replaces everything, so leaving the parameters out removes them. */

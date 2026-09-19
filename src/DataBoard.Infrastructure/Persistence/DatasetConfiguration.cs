@@ -30,9 +30,11 @@ internal sealed class DatasetConfiguration : IEntityTypeConfiguration<Dataset>
 
         builder.HasIndex(d => new { d.OrganizationId, d.Name }).IsUnique();
         builder.HasIndex(d => d.DataSourceId);
+        builder.HasIndex(d => d.FolderId);
 
         builder.HasOne<Organization>().WithMany().HasForeignKey(d => d.OrganizationId).OnDelete(DeleteBehavior.Cascade);
         builder.HasOne<DataSource>().WithMany().HasForeignKey(d => d.DataSourceId).OnDelete(DeleteBehavior.Cascade);
+        builder.HasOne<DatasetFolder>().WithMany().HasForeignKey(d => d.FolderId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<AppUser>().WithMany().HasForeignKey(d => d.CreatedByUserId).OnDelete(DeleteBehavior.Restrict);
     }
 }
