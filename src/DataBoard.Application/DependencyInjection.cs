@@ -3,6 +3,7 @@ using DataBoard.Application.Charts;
 using DataBoard.Application.Dashboards;
 using DataBoard.Application.DataSources;
 using DataBoard.Application.Datasets;
+using DataBoard.Application.Folders;
 using DataBoard.Application.Organizations;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -42,6 +43,8 @@ public static class DependencyInjection
         services.AddScoped<UpdateFolderHandler>();
         services.AddScoped<DeleteFolderHandler>();
         services.AddScoped<MoveDatasetHandler>();
+        services.AddScoped<MoveChartHandler>();
+        services.AddScoped<MoveDashboardHandler>();
         services.AddScoped<PreviewDatasetHandler>();
         services.AddScoped<PreviewTableViewHandler>();
         services.AddScoped<RunChartQueryHandler>();

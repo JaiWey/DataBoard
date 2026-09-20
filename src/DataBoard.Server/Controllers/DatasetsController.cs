@@ -1,6 +1,7 @@
 using DataBoard.Application.Charts;
 using DataBoard.Application.DataSources;
 using DataBoard.Application.Datasets;
+using DataBoard.Application.Folders;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
@@ -47,7 +48,7 @@ public class DatasetsController : ControllerBase
 	/// <summary>Files the dataset in a folder (folderId null is the top level). Editors and Owners.</summary>
 	[HttpPut("{datasetId:guid}/folder")]
 	public async Task<ActionResult<DatasetDto>> Move(
-		Guid organizationId, Guid datasetId, MoveDatasetRequest body, [FromServices] MoveDatasetHandler handler, CancellationToken ct) =>
+		Guid organizationId, Guid datasetId, MoveToFolderRequest body, [FromServices] MoveDatasetHandler handler, CancellationToken ct) =>
 		Ok(await handler.HandleAsync(organizationId, datasetId, body, ct));
 
 	[HttpDelete("{datasetId:guid}")]

@@ -1,8 +1,10 @@
 using DataBoard.Application.Abstractions;
 using DataBoard.Application.Common;
 using DataBoard.Application.DataSources;
+using DataBoard.Application.Folders;
 using DataBoard.Application.Organizations;
 using DataBoard.Domain.Datasets;
+using DataBoard.Domain.Folders;
 using DataBoard.Domain.Organizations;
 
 namespace DataBoard.Application.Datasets;
@@ -147,7 +149,7 @@ internal static class DatasetQuery
 
 public sealed class CreateDatasetHandler(
     IDatasetRepository datasets,
-    IDatasetFolderRepository folders,
+    IFolderRepository folders,
     IDataSourceRepository dataSources,
     ISecretProtector secrets,
     DataSourceConnectors connectors,
@@ -161,7 +163,7 @@ public sealed class CreateDatasetHandler(
     {
         await access.RequireRoleAsync(organizationId, OrganizationRole.Editor, ct);
         var userId = access.RequireUserId();
-        await FolderRules.RequireFolderAsync(folders, organizationId, request.FolderId, "FolderId", ct);
+        await FolderRules.RequireFolderAsync(folders, organizationId, FolderKind.Dataset, request.FolderId, "FolderId", ct);
 
         var (source, connectionString) = await DataSourceLookup.LoadAsync(dataSources, secrets, organizationId, request.DataSourceId, ct);
         var (sql, columns, definitionJson, parametersJson) = await DatasetQuery.ResolveAsync(

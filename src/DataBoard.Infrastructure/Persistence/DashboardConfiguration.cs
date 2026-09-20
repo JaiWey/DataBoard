@@ -1,4 +1,5 @@
 using DataBoard.Domain.Dashboards;
+using DataBoard.Domain.Folders;
 using DataBoard.Domain.Organizations;
 using DataBoard.Infrastructure.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -27,6 +28,8 @@ internal sealed class DashboardConfiguration : IEntityTypeConfiguration<Dashboar
         builder.HasIndex(d => d.NextRefreshUtc).HasFilter("refresh_interval_minutes IS NOT NULL");
 
         builder.HasOne<Organization>().WithMany().HasForeignKey(d => d.OrganizationId).OnDelete(DeleteBehavior.Cascade);
+        builder.HasIndex(d => d.FolderId);
+        builder.HasOne<Folder>().WithMany().HasForeignKey(d => d.FolderId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<AppUser>().WithMany().HasForeignKey(d => d.CreatedByUserId).OnDelete(DeleteBehavior.Restrict);
     }
 }

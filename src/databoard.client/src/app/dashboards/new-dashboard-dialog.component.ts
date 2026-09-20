@@ -9,6 +9,8 @@ import { Dashboard, DashboardsService } from './dashboards.service';
 
 export interface NewDashboardDialogData {
   orgId: string;
+  /** The folder the dashboard is filed in; missing or null is the top level. */
+  folderId?: string | null;
 }
 
 /** Asks for a name and creates an empty dashboard. Closes with the created dashboard, or with nothing if cancelled. */
@@ -60,7 +62,7 @@ export class NewDashboardDialogComponent {
     this.errors.set([]);
 
     const v = this.form.getRawValue();
-    this.api.create(this.data.orgId, v.name, undefined, v.description || undefined).subscribe({
+    this.api.create(this.data.orgId, v.name, undefined, v.description || undefined, this.data.folderId).subscribe({
       next: (created) => this.ref.close(created),
       error: (e) => {
         this.busy.set(false);

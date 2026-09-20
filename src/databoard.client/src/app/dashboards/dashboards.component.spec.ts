@@ -37,11 +37,13 @@ describe('DashboardsComponent', () => {
   const toggle = (label: string) =>
     Array.from(el().querySelectorAll('mat-button-toggle button')).find((b) => b.textContent?.trim() === label) as HTMLButtonElement;
 
-  const start = (role: 'Viewer' | 'Editor' | 'Owner', dashboards: unknown[], charts: unknown[] = []) => {
+  const start = (role: 'Viewer' | 'Editor' | 'Owner', dashboards: unknown[], charts: unknown[] = [], dashboardFolders: unknown[] = [], chartFolders: unknown[] = []) => {
     fixture = TestBed.createComponent(DashboardsComponent);
     fixture.detectChanges();
     http.expectOne('/api/organizations').flush([{ id: ORG, name: 'Acme', role }]);
     http.expectOne(`/api/organizations/${ORG}/datasets`).flush(datasets);
+    http.expectOne(`/api/organizations/${ORG}/folders?kind=Dashboard`).flush(dashboardFolders);
+    http.expectOne(`/api/organizations/${ORG}/folders?kind=Chart`).flush(chartFolders);
     http.expectOne({ method: 'GET', url: `/api/organizations/${ORG}/dashboards` }).flush(dashboards);
     http.expectOne({ method: 'GET', url: `/api/organizations/${ORG}/charts` }).flush(charts);
     fixture.detectChanges();
@@ -90,9 +92,9 @@ describe('DashboardsComponent', () => {
   // ---- dashboards ----
 
   it('lists dashboards on the left with their chart counts and asks for a selection on the right', () => {
-    start('Viewer', [summary('d1', 'Sales', 3), summary('d2', 'Empty', 1)]);
+    start('Viewer', [summary('d1', 'Sales', 3), summary('d2', 'Zero', 1)]);
 
-    const lines = Array.from(el().querySelectorAll('button.item [matListItemLine]')).map((l) => l.textContent?.trim());
+    const lines = Array.from(el().querySelectorAll('button.item .sub')).map((l) => l.textContent?.trim());
     expect(lines).toEqual(['3 charts', '1 chart']);
     expect(el().querySelector('.detail')?.textContent).toContain('Select a dashboard to see it.');
   });
@@ -114,38 +116,38 @@ describe('DashboardsComponent', () => {
   });
 
   it('shows the clicked dashboard on the right and marks it in the list', () => {
-    start('Viewer', [summary('d1', 'Sales'), summary('d2', 'Costs')]);
+    start('Viewer', [summary('d1', 'Sales'), summary('d2', 'Travel')]);
 
     item(0).click();
     fixture.detectChanges();
     answerDashboard('d1', 'Sales');
 
     expect(el().querySelector('app-dashboard mat-card-title')?.textContent).toContain('Sales');
-    expect(item(0).classList.contains('mdc-list-item--activated')).toBe(true);
-    expect(item(1).classList.contains('mdc-list-item--activated')).toBe(false);
+    expect(item(0).closest('.row')?.classList.contains('active')).toBe(true);
+    expect(item(1).closest('.row')?.classList.contains('active')).toBe(false);
   });
 
   it('replaces the dashboard on the right when another one is clicked', () => {
-    start('Viewer', [summary('d1', 'Sales'), summary('d2', 'Costs')]);
+    start('Viewer', [summary('d1', 'Sales'), summary('d2', 'Travel')]);
     item(0).click();
     fixture.detectChanges();
     answerDashboard('d1', 'Sales');
 
     item(1).click();
     fixture.detectChanges();
-    answerDashboard('d2', 'Costs');
+    answerDashboard('d2', 'Travel');
 
     expect(el().querySelectorAll('app-dashboard').length).toBe(1);
-    expect(el().querySelector('app-dashboard mat-card-title')?.textContent).toContain('Costs');
+    expect(el().querySelector('app-dashboard mat-card-title')?.textContent).toContain('Travel');
   });
 
   it('opens the dashboard named in the address', () => {
     routeParams = { id: ORG, dashboardId: 'd2' };
 
-    start('Viewer', [summary('d1', 'Sales'), summary('d2', 'Costs')]);
-    answerDashboard('d2', 'Costs');
+    start('Viewer', [summary('d1', 'Sales'), summary('d2', 'Travel')]);
+    answerDashboard('d2', 'Travel');
 
-    expect(el().querySelector('app-dashboard mat-card-title')?.textContent).toContain('Costs');
+    expect(el().querySelector('app-dashboard mat-card-title')?.textContent).toContain('Travel');
   });
 
   it('opens the new dashboard dialog and then shows the created dashboard', () => {
@@ -154,13 +156,13 @@ describe('DashboardsComponent', () => {
 
     button('New dashboard').click();
 
-    expect((open.mock.calls[0][1] as { data: unknown }).data).toEqual({ orgId: ORG });
+    expect((open.mock.calls[0][1] as { data: unknown }).data).toEqual({ orgId: ORG, folderId: null });
     fixture.detectChanges();
     http.expectOne({ method: 'GET', url: `/api/organizations/${ORG}/dashboards` }).flush([summary('d9', 'Fresh')]);
     answerDashboard('d9', 'Fresh');
 
     expect(el().querySelector('app-dashboard mat-card-title')?.textContent).toContain('Fresh');
-    expect(el().querySelector('button.item [matListItemLine]')?.textContent).toContain('0 charts');
+    expect(el().querySelector('button.item .sub')?.textContent).toContain('0 charts');
   });
 
   it('keeps a dashboard\'s chart count in the list current after its charts change', () => {
@@ -176,7 +178,7 @@ describe('DashboardsComponent', () => {
     http.expectOne(`/api/organizations/${ORG}/dashboards/d1/run`).flush({ widgets: [] });
     fixture.detectChanges();
 
-    expect(el().querySelector('button.item [matListItemLine]')?.textContent).toContain('1 chart');
+    expect(el().querySelector('button.item .sub')?.textContent).toContain('1 chart');
   });
 
   it('clears the right side and reloads the list when the shown dashboard is deleted', () => {
@@ -203,8 +205,8 @@ describe('DashboardsComponent', () => {
     toggle('Charts').click();
     fixture.detectChanges();
 
-    const names = Array.from(el().querySelectorAll('button.item [matListItemTitle]')).map((n) => n.textContent?.trim());
-    const lines = Array.from(el().querySelectorAll('button.item [matListItemLine]')).map((l) => l.textContent?.trim());
+    const names = Array.from(el().querySelectorAll('button.item .name')).map((n) => n.textContent?.trim());
+    const lines = Array.from(el().querySelectorAll('button.item .sub')).map((l) => l.textContent?.trim());
     expect(names).toEqual(['Revenue', 'Share']);
     expect(lines).toEqual(['Bar · Orders', 'Donut · Orders']);
     expect(el().querySelector('.detail')?.textContent).toContain('Select a chart to see it.');
@@ -236,7 +238,7 @@ describe('DashboardsComponent', () => {
 
   it('shows a clicked chart on the right, drawn, with where it is used and an Edit link', () => {
     const c1 = chart('c1', 'Revenue');
-    start('Editor', [summary('d1', 'Sales', 1, ['c1']), summary('d2', 'Costs', 0, [])], [c1]);
+    start('Editor', [summary('d1', 'Sales', 1, ['c1']), summary('d2', 'Travel', 0, [])], [c1]);
     toggle('Charts').click();
     fixture.detectChanges();
 

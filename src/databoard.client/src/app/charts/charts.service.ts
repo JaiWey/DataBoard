@@ -48,6 +48,8 @@ export interface Chart {
   definition: ChartDefinition;
   createdUtc: string;
   updatedUtc: string;
+  /** The folder the chart is filed in; null or missing means the top level. */
+  folderId?: string | null;
 }
 
 export interface SaveChart {
@@ -56,6 +58,8 @@ export interface SaveChart {
   datasetId: string;
   type: ChartType;
   definition: ChartDefinition;
+  /** Where a new chart is filed (used when creating; moving a chart is a separate call). */
+  folderId?: string | null;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -80,6 +84,11 @@ export class ChartsService {
 
   update(orgId: string, id: string, chart: SaveChart): Observable<Chart> {
     return this.http.put<Chart>(this.url(orgId, `/${id}`), chart);
+  }
+
+  /** Files the chart in a folder (null for the top level). */
+  move(orgId: string, id: string, folderId: string | null): Observable<Chart> {
+    return this.http.put<Chart>(this.url(orgId, `/${id}/folder`), { folderId });
   }
 
   /** Also takes the chart off every dashboard that showed it. */

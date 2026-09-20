@@ -1,3 +1,4 @@
+using DataBoard.Domain.Folders;
 using DataBoard.Domain.DataSources;
 using DataBoard.Domain.Datasets;
 using DataBoard.Domain.Organizations;
@@ -34,7 +35,7 @@ internal sealed class DatasetConfiguration : IEntityTypeConfiguration<Dataset>
 
         builder.HasOne<Organization>().WithMany().HasForeignKey(d => d.OrganizationId).OnDelete(DeleteBehavior.Cascade);
         builder.HasOne<DataSource>().WithMany().HasForeignKey(d => d.DataSourceId).OnDelete(DeleteBehavior.Cascade);
-        builder.HasOne<DatasetFolder>().WithMany().HasForeignKey(d => d.FolderId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne<Folder>().WithMany().HasForeignKey(d => d.FolderId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<AppUser>().WithMany().HasForeignKey(d => d.CreatedByUserId).OnDelete(DeleteBehavior.Restrict);
     }
 }

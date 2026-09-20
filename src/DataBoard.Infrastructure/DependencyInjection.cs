@@ -1,3 +1,4 @@
+using DataBoard.Application.Folders;
 using DataBoard.Application.Abstractions;
 using DataBoard.Application.Charts;
 using DataBoard.Application.DataSources;
@@ -34,7 +35,7 @@ public static class DependencyInjection
         services.AddScoped<IDataSourceRepository, DataSourceRepository>();
         services.AddScoped<IOrganizationRepository, OrganizationRepository>();
         services.AddScoped<IDatasetRepository, DatasetRepository>();
-        services.AddScoped<IDatasetFolderRepository, DatasetFolderRepository>();
+        services.AddScoped<IFolderRepository, FolderRepository>();
         services.AddScoped<IDashboardRepository, DashboardRepository>();
         services.AddScoped<IDashboardShareRepository, DashboardShareRepository>();
         services.AddScoped<IApiTokenRepository, ApiTokenRepository>();

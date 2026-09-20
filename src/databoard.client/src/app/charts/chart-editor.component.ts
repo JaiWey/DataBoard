@@ -621,7 +621,11 @@ export class ChartEditorComponent implements OnInit {
     this.saving.set(true);
     this.saveErrors.set([]);
 
-    const request = id ? this.chartsApi.update(this.orgId, id, payload) : this.chartsApi.create(this.orgId, payload);
+    // A new chart goes in the folder it was started from (?folder=...); an existing one stays where it is.
+    const folder = this.route.snapshot.queryParamMap.get('folder');
+    const request = id
+      ? this.chartsApi.update(this.orgId, id, payload)
+      : this.chartsApi.create(this.orgId, folder ? { ...payload, folderId: folder } : payload);
     request.subscribe({
       next: (chart) => {
         this.saving.set(false);

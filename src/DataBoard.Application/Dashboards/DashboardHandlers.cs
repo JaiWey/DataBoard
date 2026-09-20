@@ -4,8 +4,10 @@ using DataBoard.Application.Abstractions;
 using DataBoard.Application.Charts;
 using DataBoard.Application.Common;
 using DataBoard.Application.Datasets;
+using DataBoard.Application.Folders;
 using DataBoard.Application.Organizations;
 using DataBoard.Domain.Dashboards;
+using DataBoard.Domain.Folders;
 using DataBoard.Domain.Organizations;
 
 namespace DataBoard.Application.Dashboards;
@@ -28,7 +30,8 @@ internal static class DashboardMapping
 {
     public static DashboardDto ToDto(this Dashboard d) =>
         new(d.Id, d.Name, d.Description, DashboardJson.Deserialize(d.DefinitionJson), d.CreatedUtc, d.UpdatedUtc,
-            new DashboardRefreshDto(d.RefreshIntervalMinutes, d.NextRefreshUtc, d.LastRefreshUtc, d.LastRefreshFailures, d.LastRefreshMessage));
+            new DashboardRefreshDto(d.RefreshIntervalMinutes, d.NextRefreshUtc, d.LastRefreshUtc, d.LastRefreshFailures, d.LastRefreshMessage),
+            d.FolderId);
 }
 
 /// <summary>
@@ -132,7 +135,7 @@ internal static class DashboardValidator
 }
 
 public sealed class CreateDashboardHandler(
-    IDashboardRepository dashboards, IChartRepository charts, IUnitOfWork unitOfWork, IClock clock, OrganizationAccess access)
+    IDashboardRepository dashboards, IChartRepository charts, IFolderRepository folders, IUnitOfWork unitOfWork, IClock clock, OrganizationAccess access)
 {
     public async Task<DashboardDto> HandleAsync(Guid organizationId, SaveDashboardRequest request, CancellationToken ct = default)
     {
@@ -142,9 +145,10 @@ public sealed class CreateDashboardHandler(
         if (await dashboards.NameExistsAsync(organizationId, request.Name?.Trim() ?? string.Empty, null, ct))
             throw new ConflictException("A dashboard with that name already exists.");
 
+        await FolderRules.RequireFolderAsync(folders, organizationId, FolderKind.Dashboard, request.FolderId, "FolderId", ct);
         var definition = await DashboardValidator.NormalizeAsync(request.Definition, charts, organizationId, new HashSet<Guid>(), ct);
         var dashboard = DatasetQuery.Guard(() => Dashboard.Create(
-            organizationId, request.Name!, request.Description, DashboardJson.Serialize(definition), userId, clock.UtcNow));
+            organizationId, request.Name!, request.Description, DashboardJson.Serialize(definition), userId, clock.UtcNow, request.FolderId));
 
         await dashboards.AddAsync(dashboard, ct);
         await unitOfWork.SaveChangesAsync(ct);
@@ -161,7 +165,7 @@ public sealed class ListDashboardsHandler(IDashboardRepository dashboards, Organ
         return items
             .Select(d => new DashboardSummaryDto(
                 d.Id, d.Name, d.Description, DashboardJson.Deserialize(d.DefinitionJson).Widgets.Count, d.UpdatedUtc,
-                DashboardJson.Deserialize(d.DefinitionJson).Widgets.Select(w => w.ChartId).ToList()))
+                DashboardJson.Deserialize(d.DefinitionJson).Widgets.Select(w => w.ChartId).ToList(), d.FolderId))
             .ToList();
     }
 }

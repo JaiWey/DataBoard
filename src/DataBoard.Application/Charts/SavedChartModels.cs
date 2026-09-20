@@ -26,7 +26,8 @@ public sealed record ChartDefinition(ChartQuery Query, ChartStyle? Style = null)
         JsonSerializer.Deserialize<ChartDefinition>(json, Options) ?? new ChartDefinition(new ChartQuery(), new ChartStyle());
 }
 
-public sealed record SaveChartRequest(string Name, string? Description, Guid DatasetId, ChartType Type, ChartDefinition? Definition);
+/// <param name="FolderId">Where a new chart is filed (create only; moving a chart is a separate call). Null is the top level.</param>
+public sealed record SaveChartRequest(string Name, string? Description, Guid DatasetId, ChartType Type, ChartDefinition? Definition, Guid? FolderId = null);
 
 public sealed record ChartDto(
     Guid Id,
@@ -36,4 +37,5 @@ public sealed record ChartDto(
     ChartType Type,
     ChartDefinition Definition,
     DateTime CreatedUtc,
-    DateTime UpdatedUtc);
+    DateTime UpdatedUtc,
+    Guid? FolderId = null);

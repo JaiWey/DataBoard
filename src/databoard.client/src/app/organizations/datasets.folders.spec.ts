@@ -9,7 +9,7 @@ import { MONACO_LOADER } from '../sql-editor/sql-editor.component';
 import { DatasetsComponent } from './datasets.component';
 
 const ORG = '11111111-1111-1111-1111-111111111111';
-const FOLDERS = `/api/organizations/${ORG}/dataset-folders`;
+const FOLDERS = `/api/organizations/${ORG}/folders`;
 
 const dataset = (id: string, name: string, folderId: string | null = null) => ({
   id, name, folderId, dataSourceId: '22222222-2222-2222-2222-222222222222', description: null, sql: 'SELECT 1', kind: 'Sql', definition: null,
@@ -24,13 +24,13 @@ describe('DatasetsComponent folders', () => {
   const el = () => fixture.nativeElement as HTMLElement;
   const names = () => Array.from(el().querySelectorAll('.list .row .name')).map((n) => n.textContent?.trim());
   const row = (name: string) => Array.from(el().querySelectorAll<HTMLElement>('.list .row')).find((r) => r.querySelector('.name')?.textContent?.trim() === name)!;
-  const tree = () => fixture.debugElement.query((d) => d.name === 'app-dataset-tree').componentInstance;
+  const tree = () => fixture.debugElement.query((d) => d.name === 'app-folder-tree').componentInstance;
   const dialog = (result: unknown) => vi.spyOn(TestBed.inject(MatDialog), 'open').mockReturnValue({ afterClosed: () => of(result) } as never);
 
   const load = (role: 'Viewer' | 'Editor' | 'Owner' = 'Editor') => {
     fixture.detectChanges();
     http.expectOne('/api/organizations').flush([{ id: ORG, name: 'Acme', role }]);
-    http.expectOne(FOLDERS).flush([folder('sales', 'Sales'), folder('europe', 'Europe', 'sales'), folder('archive', 'Archive')]);
+    http.expectOne(`${FOLDERS}?kind=Dataset`).flush([folder('sales', 'Sales'), folder('europe', 'Europe', 'sales'), folder('archive', 'Archive')]);
     http.expectOne(`/api/organizations/${ORG}/datasets`).flush([dataset('orders', 'Orders', 'europe'), dataset('zebra', 'Zebra')]);
     fixture.detectChanges();
   };
@@ -82,7 +82,7 @@ describe('DatasetsComponent folders', () => {
   it('moves a dataset into a folder and shows it there', () => {
     load();
 
-    tree().move.emit({ item: { kind: 'dataset', id: 'zebra' }, targetId: 'archive' });
+    tree().move.emit({ item: { kind: 'item', id: 'zebra' }, targetId: 'archive' });
     http.expectOne({ method: 'PUT', url: `/api/organizations/${ORG}/datasets/zebra/folder` }).flush(dataset('zebra', 'Zebra', 'archive'));
     fixture.detectChanges();
 
@@ -120,11 +120,11 @@ describe('DatasetsComponent folders', () => {
     load();
     const open = dialog({ targetId: null });
 
-    tree().moveTo.emit({ kind: 'dataset', id: 'orders' });
+    tree().moveTo.emit({ kind: 'item', id: 'orders' });
     http.expectOne({ method: 'PUT', url: `/api/organizations/${ORG}/datasets/orders/folder` }).flush(dataset('orders', 'Orders', null));
     fixture.detectChanges();
 
-    expect(open.mock.calls[0][1]).toMatchObject({ data: { item: { kind: 'dataset', id: 'orders' } } });
+    expect(open.mock.calls[0][1]).toMatchObject({ data: { item: { kind: 'item', id: 'orders' } } });
     expect(names()).toEqual(['Archive', 'Sales', 'Orders', 'Zebra']);
   });
 
@@ -132,7 +132,7 @@ describe('DatasetsComponent folders', () => {
     load();
     dialog(undefined);
 
-    tree().moveTo.emit({ kind: 'dataset', id: 'orders' });
+    tree().moveTo.emit({ kind: 'item', id: 'orders' });
   });
 
   it('deletes an empty folder after asking', () => {
@@ -170,7 +170,7 @@ describe('DatasetsComponent folders', () => {
   it('starts a new dataset in the folder it was asked for, and saves it there', () => {
     load();
 
-    tree().addDataset.emit({ kind: 'sql', folderId: 'sales' });
+    tree().addItem.emit({ action: 'sql', folderId: 'sales' });
     fixture.detectChanges();
     http.expectOne(`/api/organizations/${ORG}/data-sources`).flush([]);
 

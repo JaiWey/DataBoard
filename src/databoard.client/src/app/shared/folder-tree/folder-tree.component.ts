@@ -1,7 +1,7 @@
 import { Component, computed, effect, input, output, signal } from '@angular/core';
 import { MatMenuModule } from '@angular/material/menu';
-import { TreeItem, ancestorIds, buildRows, canMoveTo } from './dataset-tree';
-import { Dataset, DatasetFolder } from './datasets.service';
+import { TreeEntry, TreeItem, ancestorIds, buildRows, canMoveTo } from './folder-tree';
+import { Folder } from './folders.service';
 
 export interface MoveRequest {
   item: TreeItem;
@@ -9,23 +9,29 @@ export interface MoveRequest {
   targetId: string | null;
 }
 
-/** What "Add dataset" in a folder's menu asks for. */
-export interface AddDatasetRequest {
-  kind: 'sql' | 'view';
+/** An entry of a folder's menu that makes something new in it (a SQL dataset, a chart...). */
+export interface AddAction {
+  id: string;
+  label: string;
+}
+
+export interface AddRequest {
+  action: string;
+  /** The folder to make it in; null is the top level. */
   folderId: string | null;
 }
 
 /**
- * The datasets of an organization as a tree of folders. It only shows and reports what the user did (open, move, add,
+ * Datasets, charts or dashboards as a tree of folders. It only shows and reports what the user did (open, move, add,
  * rename, delete); the page does the work. Editors can drag a row onto a folder (or the empty space, for the top
  * level), and every row also has a menu with the same actions for the keyboard.
  */
 @Component({
-  selector: 'app-dataset-tree',
+  selector: 'app-folder-tree',
   imports: [MatMenuModule],
   template: `
     <div class="toolbar">
-      <input type="search" class="filter" placeholder="Filter datasets" aria-label="Filter datasets"
+      <input type="search" class="filter" [placeholder]="filterLabel()" [attr.aria-label]="filterLabel()"
              [value]="filter()" (input)="filter.set($any($event.target).value)" />
       @if (canEdit()) {
         <button type="button" class="new-folder" title="New folder" aria-label="New folder" (click)="createFolder.emit(null)">
@@ -34,10 +40,10 @@ export interface AddDatasetRequest {
       }
     </div>
 
-    <div class="tree" role="tree" aria-label="Datasets" [class.drop-root]="dropTarget() === ROOT"
+    <div class="tree" role="tree" [attr.aria-label]="treeLabel()" [class.drop-root]="dropTarget() === ROOT"
          (keydown)="onKey($event)" (dragover)="over(null, $event)" (dragleave)="leave()" (drop)="drop(null, $event)">
       @if (rows().length === 0) {
-        <p class="empty"><em>{{ filter().trim() ? 'No datasets match.' : 'No datasets yet.' }}</em></p>
+        <p class="empty"><em>{{ filter().trim() ? 'Nothing matches.' : emptyText() }}</em></p>
       }
       @for (row of rows(); track row.kind + row.id) {
         <div class="row" role="treeitem" [attr.aria-level]="row.depth + 1"
@@ -57,11 +63,13 @@ export interface AddDatasetRequest {
               <span class="count">{{ row.childCount }}</span>
             </button>
           } @else {
-            <button type="button" class="main item" (click)="open.emit(row.dataset)">
+            <button type="button" class="main item" (click)="open.emit(row.entry)">
               <span class="spacer"></span>
               <span class="text">
                 <span class="name">{{ row.name }}</span>
-                <span class="sub">{{ row.dataset.columns.length }} columns · {{ row.dataset.kind === 'TableView' ? 'table view' : 'SQL' }}</span>
+                @if (row.entry.subline) {
+                  <span class="sub">{{ row.entry.subline }}</span>
+                }
               </span>
             </button>
           }
@@ -77,8 +85,9 @@ export interface AddDatasetRequest {
       <ng-template matMenuContent let-row="row">
         @if (row.kind === 'folder') {
           <button mat-menu-item type="button" (click)="createFolder.emit(row.id)">New folder here</button>
-          <button mat-menu-item type="button" (click)="addDataset.emit({ kind: 'sql', folderId: row.id })">New SQL dataset here</button>
-          <button mat-menu-item type="button" (click)="addDataset.emit({ kind: 'view', folderId: row.id })">New table view here</button>
+          @for (action of addActions(); track action.id) {
+            <button mat-menu-item type="button" (click)="addItem.emit({ action: action.id, folderId: row.id })">{{ action.label }}</button>
+          }
           <button mat-menu-item type="button" (click)="renameFolder.emit(row.folder)">Rename</button>
         }
         <button mat-menu-item type="button" (click)="moveTo.emit({ kind: row.kind, id: row.id })">Move to…</button>
@@ -116,26 +125,32 @@ export interface AddDatasetRequest {
     svg { flex: none; }
   `,
 })
-export class DatasetTreeComponent {
+export class FolderTreeComponent {
   protected readonly ROOT = '__root__';
 
-  readonly folders = input.required<DatasetFolder[]>();
-  readonly datasets = input.required<Dataset[]>();
-  /** Which dataset's tab is showing; its folders open so it can be seen. */
+  readonly folders = input.required<Folder[]>();
+  readonly entries = input.required<TreeEntry[]>();
+  /** What the filter box and the tree are called, and what an empty tree says. */
+  readonly filterLabel = input('Filter');
+  readonly treeLabel = input('Items');
+  readonly emptyText = input('Nothing here yet.');
+  /** What a folder's menu can make in it. */
+  readonly addActions = input<AddAction[]>([]);
+  /** Which entry is showing (a dataset's tab, the selected chart...); its folders open so it can be seen. */
   readonly activeId = input<string | null>(null);
   readonly canEdit = input(false);
-  /** The folder "Add dataset" would put a new dataset in. */
+  /** The folder a new item would go in. */
   readonly selectedFolderId = input<string | null>(null);
   /** Where the open folders are remembered (per organization); empty means they are not. */
   readonly storageKey = input('');
 
-  readonly open = output<Dataset>();
+  readonly open = output<TreeEntry>();
   readonly selectFolder = output<string | null>();
   /** A new folder is wanted inside this folder (null for the top level). */
   readonly createFolder = output<string | null>();
-  readonly renameFolder = output<DatasetFolder>();
-  readonly deleteFolder = output<DatasetFolder>();
-  readonly addDataset = output<AddDatasetRequest>();
+  readonly renameFolder = output<Folder>();
+  readonly deleteFolder = output<Folder>();
+  readonly addItem = output<AddRequest>();
   /** A row was dropped on a folder (or the top level). */
   readonly move = output<MoveRequest>();
   /** "Move to…" was chosen in a row's menu; the page asks where to. */
@@ -147,7 +162,7 @@ export class DatasetTreeComponent {
   private dragging: TreeItem | null = null;
   private restored = '';
 
-  protected readonly rows = computed(() => buildRows(this.folders(), this.datasets(), this.expanded(), this.filter()));
+  protected readonly rows = computed(() => buildRows(this.folders(), this.entries(), this.expanded(), this.filter()));
 
   constructor() {
     // Open folders come back after a reload.
@@ -163,19 +178,19 @@ export class DatasetTreeComponent {
       }
     });
 
-    // The active dataset is never hidden inside a closed folder.
+    // The active entry is never hidden inside a closed folder.
     effect(() => {
       const id = this.activeId();
-      const dataset = this.datasets().find((d) => d.id === id);
-      if (!dataset?.folderId) return;
-      const path = ancestorIds(this.folders(), dataset.folderId);
+      const entry = this.entries().find((d) => d.id === id);
+      if (!entry?.folderId) return;
+      const path = ancestorIds(this.folders(), entry.folderId);
       const open = this.expanded();
       if (path.every((p) => open.has(p))) return;
       this.expanded.set(new Set([...open, ...path]));
     });
   }
 
-  protected toggle(folder: DatasetFolder): void {
+  protected toggle(folder: Folder): void {
     const open = new Set(this.expanded());
     if (!open.delete(folder.id)) open.add(folder.id);
     this.expanded.set(open);
@@ -228,7 +243,7 @@ export class DatasetTreeComponent {
 
   // ---- drag and drop ---------------------------------------------------------------------------------------
 
-  protected dragStart(row: { kind: 'folder' | 'dataset'; id: string }, event: DragEvent): void {
+  protected dragStart(row: { kind: 'folder' | 'item'; id: string }, event: DragEvent): void {
     if (!this.canEdit() || this.filter().trim()) {
       event.preventDefault();
       return;
@@ -245,17 +260,17 @@ export class DatasetTreeComponent {
     this.dropTarget.set(null);
   }
 
-  /** A folder is dropped on as itself; a dataset row stands for the folder it is in. */
-  private targetOf(row: { kind: 'folder' | 'dataset'; id: string; dataset?: Dataset } | null): string | null {
+  /** A folder is dropped on as itself; an item's row stands for the folder it is in. */
+  private targetOf(row: { kind: 'folder' | 'item'; id: string; entry?: TreeEntry } | null): string | null {
     if (!row) return null;
-    return row.kind === 'folder' ? row.id : (row.dataset?.folderId ?? null);
+    return row.kind === 'folder' ? row.id : (row.entry?.folderId ?? null);
   }
 
-  protected over(row: { kind: 'folder' | 'dataset'; id: string; dataset?: Dataset } | null, event: DragEvent): void {
+  protected over(row: { kind: 'folder' | 'item'; id: string; entry?: TreeEntry } | null, event: DragEvent): void {
     event.stopPropagation();
     if (!this.dragging) return;
     const target = this.targetOf(row);
-    if (!canMoveTo(this.folders(), this.datasets(), this.dragging, target)) {
+    if (!canMoveTo(this.folders(), this.entries(), this.dragging, target)) {
       this.dropTarget.set(null);
       return;
     }
@@ -268,12 +283,12 @@ export class DatasetTreeComponent {
     this.dropTarget.set(null);
   }
 
-  protected drop(row: { kind: 'folder' | 'dataset'; id: string; dataset?: Dataset } | null, event: DragEvent): void {
+  protected drop(row: { kind: 'folder' | 'item'; id: string; entry?: TreeEntry } | null, event: DragEvent): void {
     event.stopPropagation();
     const item = this.dragging;
     const target = this.targetOf(row);
     this.dragEnd();
-    if (!item || !canMoveTo(this.folders(), this.datasets(), item, target)) return;
+    if (!item || !canMoveTo(this.folders(), this.entries(), item, target)) return;
     event.preventDefault();
     this.move.emit({ item, targetId: target });
     if (target) this.setOpen(target, true);

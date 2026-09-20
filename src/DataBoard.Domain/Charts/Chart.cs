@@ -39,6 +39,8 @@ public sealed class Chart : BaseEntity
     public string? Description { get; private set; }
     public ChartType Type { get; private set; }
     public string DefinitionJson { get; private set; } = "{}";
+    /// <summary>The folder it is filed in, or null for the top level.</summary>
+    public Guid? FolderId { get; private set; }
     public Guid CreatedByUserId { get; private set; }
     public DateTime CreatedUtc { get; private set; }
     public DateTime UpdatedUtc { get; private set; }
@@ -51,17 +53,21 @@ public sealed class Chart : BaseEntity
         ChartType type,
         string definitionJson,
         Guid createdByUserId,
-        DateTime nowUtc)
+        DateTime nowUtc,
+        Guid? folderId = null)
     {
         if (organizationId == Guid.Empty)
             throw new ArgumentException("Organization is required.", nameof(organizationId));
         if (createdByUserId == Guid.Empty)
             throw new ArgumentException("User is required.", nameof(createdByUserId));
 
-        var chart = new Chart { OrganizationId = organizationId, CreatedByUserId = createdByUserId, CreatedUtc = nowUtc };
+        var chart = new Chart { OrganizationId = organizationId, CreatedByUserId = createdByUserId, CreatedUtc = nowUtc, FolderId = folderId };
         chart.Update(datasetId, name, description, type, definitionJson, nowUtc);
         return chart;
     }
+
+    /// <summary>Filing a chart is organization, not a change to the chart, so it does not count as an update.</summary>
+    public void MoveTo(Guid? folderId) => FolderId = folderId;
 
     public void Update(Guid datasetId, string name, string? description, ChartType type, string definitionJson, DateTime nowUtc)
     {

@@ -1,34 +1,46 @@
 using DataBoard.Domain.Common;
 
-namespace DataBoard.Domain.Datasets;
+namespace DataBoard.Domain.Folders;
 
-/// <summary>A folder that organizes datasets. Folders nest; a null parent means the top level.</summary>
-public sealed class DatasetFolder : BaseEntity
+/// <summary>What a folder organizes. Each kind has its own tree, so a dataset folder never holds a chart.</summary>
+public enum FolderKind
+{
+    Dataset = 1,
+    Chart = 2,
+    Dashboard = 3,
+}
+
+/// <summary>A folder that organizes datasets, charts or dashboards. Folders nest; a null parent means the top level.</summary>
+public sealed class Folder : BaseEntity
 {
     public const int MaxNameLength = 100;
 
     /// <summary>The most levels of folders one inside another, the top level folder being level 1.</summary>
     public const int MaxDepth = 8;
 
-    private DatasetFolder() { }
+    private Folder() { }
 
     public Guid OrganizationId { get; private set; }
+    public FolderKind Kind { get; private set; }
     public Guid? ParentId { get; private set; }
     public string Name { get; private set; } = string.Empty;
     public Guid CreatedByUserId { get; private set; }
     public DateTime CreatedUtc { get; private set; }
     public DateTime UpdatedUtc { get; private set; }
 
-    public static DatasetFolder Create(Guid organizationId, Guid? parentId, string name, Guid createdByUserId, DateTime nowUtc)
+    public static Folder Create(Guid organizationId, FolderKind kind, Guid? parentId, string name, Guid createdByUserId, DateTime nowUtc)
     {
         if (organizationId == Guid.Empty)
             throw new ArgumentException("Organization is required.", nameof(organizationId));
         if (createdByUserId == Guid.Empty)
             throw new ArgumentException("User is required.", nameof(createdByUserId));
+        if (!Enum.IsDefined(kind))
+            throw new ArgumentException("Folder kind is not valid.", nameof(kind));
 
-        return new DatasetFolder
+        return new Folder
         {
             OrganizationId = organizationId,
+            Kind = kind,
             ParentId = parentId,
             Name = CheckName(name),
             CreatedByUserId = createdByUserId,

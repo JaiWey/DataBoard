@@ -1,13 +1,13 @@
-using DataBoard.Domain.Datasets;
+using DataBoard.Domain.Folders;
 
 namespace DataBoard.Domain.Tests;
 
-public class DatasetFolderTests
+public class FolderTests
 {
     private static readonly DateTime Now = new(2026, 10, 10, 0, 0, 0, DateTimeKind.Utc);
 
-    private static DatasetFolder New(string name = "Sales", Guid? parent = null) =>
-        DatasetFolder.Create(Guid.NewGuid(), parent, name, Guid.NewGuid(), Now);
+    private static Folder New(string name = "Sales", Guid? parent = null) =>
+        Folder.Create(Guid.NewGuid(), FolderKind.Dataset, parent, name, Guid.NewGuid(), Now);
 
     [Fact]
     public void Trims_the_name_and_keeps_its_parent()
@@ -31,15 +31,15 @@ public class DatasetFolderTests
     [Fact]
     public void Refuses_a_name_over_the_limit_but_takes_one_at_it()
     {
-        Assert.Equal(DatasetFolder.MaxNameLength, New(new string('x', DatasetFolder.MaxNameLength)).Name.Length);
-        Assert.Throws<ArgumentException>(() => New(new string('x', DatasetFolder.MaxNameLength + 1)));
+        Assert.Equal(Folder.MaxNameLength, New(new string('x', Folder.MaxNameLength)).Name.Length);
+        Assert.Throws<ArgumentException>(() => New(new string('x', Folder.MaxNameLength + 1)));
     }
 
     [Fact]
     public void Needs_an_organization_and_a_user()
     {
-        Assert.Throws<ArgumentException>(() => DatasetFolder.Create(Guid.Empty, null, "A", Guid.NewGuid(), Now));
-        Assert.Throws<ArgumentException>(() => DatasetFolder.Create(Guid.NewGuid(), null, "A", Guid.Empty, Now));
+        Assert.Throws<ArgumentException>(() => Folder.Create(Guid.Empty, FolderKind.Dataset, null, "A", Guid.NewGuid(), Now));
+        Assert.Throws<ArgumentException>(() => Folder.Create(Guid.NewGuid(), FolderKind.Dataset, null, "A", Guid.Empty, Now));
     }
 
     [Fact]

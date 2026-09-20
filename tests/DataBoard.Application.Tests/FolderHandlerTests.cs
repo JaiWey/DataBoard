@@ -1,3 +1,5 @@
+using DataBoard.Domain.Folders;
+using DataBoard.Application.Folders;
 using DataBoard.Application.Common;
 using DataBoard.Application.Datasets;
 using DataBoard.Application.Organizations;
@@ -26,7 +28,7 @@ public class FolderHandlerTests
     private DeleteFolderHandler Delete() => new(_folders, _uow, Access());
     private MoveDatasetHandler MoveDataset() => new(_datasets, _folders, _uow, Access());
 
-    private async Task<DatasetFolderDto> Folder(string name, Guid? parent = null) =>
+    private async Task<FolderDto> MakeFolder(string name, Guid? parent = null) =>
         await Create().HandleAsync(_org, new CreateFolderRequest(name, parent));
 
     private Dataset Dataset(string name = "Orders", Guid? folder = null)
@@ -45,8 +47,8 @@ public class FolderHandlerTests
     {
         Join(OrganizationRole.Editor);
 
-        var sales = await Folder("  Sales ");
-        var europe = await Folder("Europe", sales.Id);
+        var sales = await MakeFolder("  Sales ");
+        var europe = await MakeFolder("Europe", sales.Id);
 
         Assert.Equal("Sales", sales.Name);
         Assert.Null(sales.ParentId);
@@ -59,11 +61,11 @@ public class FolderHandlerTests
     {
         Join(OrganizationRole.Viewer);
 
-        await Assert.ThrowsAsync<ForbiddenException>(() => Folder("Sales"));
+        await Assert.ThrowsAsync<ForbiddenException>(() => MakeFolder("Sales"));
         Assert.Empty(await new ListFoldersHandler(_folders, Access()).HandleAsync(_org));
 
         _user.UserId = Guid.NewGuid();
-        await Assert.ThrowsAsync<NotFoundException>(() => Folder("Sales"));
+        await Assert.ThrowsAsync<NotFoundException>(() => MakeFolder("Sales"));
         Assert.Empty(_folders.Items);
     }
 
@@ -76,20 +78,20 @@ public class FolderHandlerTests
     {
         Join(OrganizationRole.Editor);
 
-        await Assert.ThrowsAsync<ValidationException>(() => Folder(name));
+        await Assert.ThrowsAsync<ValidationException>(() => MakeFolder(name));
     }
 
     [Fact]
     public async Task Sibling_names_are_unique_ignoring_case_but_the_same_name_can_live_elsewhere()
     {
         Join(OrganizationRole.Editor);
-        var sales = await Folder("Sales");
-        await Folder("Europe", sales.Id);
+        var sales = await MakeFolder("Sales");
+        await MakeFolder("Europe", sales.Id);
 
-        await Assert.ThrowsAsync<ConflictException>(() => Folder("sales"));
-        await Assert.ThrowsAsync<ConflictException>(() => Folder("EUROPE", sales.Id));
+        await Assert.ThrowsAsync<ConflictException>(() => MakeFolder("sales"));
+        await Assert.ThrowsAsync<ConflictException>(() => MakeFolder("EUROPE", sales.Id));
 
-        await Folder("Europe"); // top level, not a sibling
+        await MakeFolder("Europe"); // top level, not a sibling
         Assert.Equal(3, _folders.Items.Count);
     }
 
@@ -98,11 +100,11 @@ public class FolderHandlerTests
     {
         Join(OrganizationRole.Editor);
 
-        await Assert.ThrowsAsync<ValidationException>(() => Folder("Orphan", Guid.NewGuid()));
+        await Assert.ThrowsAsync<ValidationException>(() => MakeFolder("Orphan", Guid.NewGuid()));
 
-        var other = DatasetFolder.Create(Guid.NewGuid(), null, "Elsewhere", Guid.NewGuid(), DateTime.UtcNow);
+        var other = Folder.Create(Guid.NewGuid(), FolderKind.Dataset, null, "Elsewhere", Guid.NewGuid(), DateTime.UtcNow);
         _folders.Items.Add(other);
-        await Assert.ThrowsAsync<ValidationException>(() => Folder("Orphan", other.Id));
+        await Assert.ThrowsAsync<ValidationException>(() => MakeFolder("Orphan", other.Id));
     }
 
     [Fact]
@@ -110,10 +112,10 @@ public class FolderHandlerTests
     {
         Join(OrganizationRole.Editor);
         Guid? parent = null;
-        for (var level = 1; level <= DatasetFolder.MaxDepth; level++)
-            parent = (await Folder($"Level {level}", parent)).Id;
+        for (var level = 1; level <= Folder.MaxDepth; level++)
+            parent = (await MakeFolder($"Level {level}", parent)).Id;
 
-        await Assert.ThrowsAsync<ValidationException>(() => Folder("Too deep", parent));
+        await Assert.ThrowsAsync<ValidationException>(() => MakeFolder("Too deep", parent));
     }
 
     // ---- rename and move -----------------------------------------------------------------------------------
@@ -122,9 +124,9 @@ public class FolderHandlerTests
     public async Task A_folder_is_renamed_and_moved_with_its_contents()
     {
         Join(OrganizationRole.Editor);
-        var sales = await Folder("Sales");
-        var archive = await Folder("Archive");
-        var europe = await Folder("Europe", sales.Id);
+        var sales = await MakeFolder("Sales");
+        var archive = await MakeFolder("Archive");
+        var europe = await MakeFolder("Europe", sales.Id);
         var inEurope = Dataset(folder: europe.Id);
 
         var moved = await Update().HandleAsync(_org, europe.Id, new UpdateFolderRequest("EMEA", archive.Id));
@@ -140,9 +142,9 @@ public class FolderHandlerTests
     public async Task A_folder_cannot_go_into_itself_or_a_folder_below_it()
     {
         Join(OrganizationRole.Editor);
-        var a = await Folder("A");
-        var b = await Folder("B", a.Id);
-        var c = await Folder("C", b.Id);
+        var a = await MakeFolder("A");
+        var b = await MakeFolder("B", a.Id);
+        var c = await MakeFolder("C", b.Id);
 
         await Assert.ThrowsAsync<ValidationException>(() => Update().HandleAsync(_org, a.Id, new UpdateFolderRequest("A", a.Id)));
         await Assert.ThrowsAsync<ValidationException>(() => Update().HandleAsync(_org, a.Id, new UpdateFolderRequest("A", c.Id)));
@@ -156,10 +158,10 @@ public class FolderHandlerTests
         Join(OrganizationRole.Editor);
         Guid? parent = null;
         Guid? deepest = null;
-        for (var level = 1; level <= DatasetFolder.MaxDepth - 1; level++)
-            deepest = parent = (await Folder($"Level {level}", parent)).Id;
-        var small = await Folder("Small");
-        var smallChild = await Folder("Small child", small.Id);
+        for (var level = 1; level <= Folder.MaxDepth - 1; level++)
+            deepest = parent = (await MakeFolder($"Level {level}", parent)).Id;
+        var small = await MakeFolder("Small");
+        var smallChild = await MakeFolder("Small child", small.Id);
 
         // Small (height 2) under level 7 would reach level 9; a single folder under level 7 reaches level 8.
         await Assert.ThrowsAsync<ValidationException>(() => Update().HandleAsync(_org, small.Id, new UpdateFolderRequest("Small", deepest)));
@@ -170,8 +172,8 @@ public class FolderHandlerTests
     public async Task Renaming_onto_a_sibling_is_a_conflict_and_keeping_the_name_is_fine()
     {
         Join(OrganizationRole.Editor);
-        var sales = await Folder("Sales");
-        await Folder("Ops");
+        var sales = await MakeFolder("Sales");
+        await MakeFolder("Ops");
 
         await Assert.ThrowsAsync<ConflictException>(() => Update().HandleAsync(_org, sales.Id, new UpdateFolderRequest("ops", null)));
         var same = await Update().HandleAsync(_org, sales.Id, new UpdateFolderRequest("Sales", null));
@@ -183,7 +185,7 @@ public class FolderHandlerTests
     public async Task Viewers_cannot_change_folders_and_unknown_ones_are_not_found()
     {
         Join(OrganizationRole.Editor);
-        var sales = await Folder("Sales");
+        var sales = await MakeFolder("Sales");
         _orgs.Members.Clear();
         Join(OrganizationRole.Viewer);
 
@@ -201,7 +203,7 @@ public class FolderHandlerTests
     public async Task An_empty_folder_is_deleted()
     {
         Join(OrganizationRole.Editor);
-        var sales = await Folder("Sales");
+        var sales = await MakeFolder("Sales");
 
         await Delete().HandleAsync(_org, sales.Id);
 
@@ -212,8 +214,8 @@ public class FolderHandlerTests
     public async Task A_folder_with_a_subfolder_or_a_dataset_is_not_deleted()
     {
         Join(OrganizationRole.Editor);
-        var sales = await Folder("Sales");
-        var europe = await Folder("Europe", sales.Id);
+        var sales = await MakeFolder("Sales");
+        var europe = await MakeFolder("Europe", sales.Id);
         Dataset(folder: europe.Id);
 
         await Assert.ThrowsAsync<ConflictException>(() => Delete().HandleAsync(_org, sales.Id));
@@ -228,15 +230,15 @@ public class FolderHandlerTests
     public async Task A_dataset_is_filed_in_a_folder_and_taken_out_again_without_counting_as_an_edit()
     {
         Join(OrganizationRole.Editor);
-        var sales = await Folder("Sales");
+        var sales = await MakeFolder("Sales");
         var dataset = Dataset();
         var updated = dataset.UpdatedUtc;
 
-        var filed = await MoveDataset().HandleAsync(_org, dataset.Id, new MoveDatasetRequest(sales.Id));
+        var filed = await MoveDataset().HandleAsync(_org, dataset.Id, new MoveToFolderRequest(sales.Id));
         Assert.Equal(sales.Id, filed.FolderId);
         Assert.Equal(sales.Id, dataset.FolderId);
 
-        var top = await MoveDataset().HandleAsync(_org, dataset.Id, new MoveDatasetRequest(null));
+        var top = await MoveDataset().HandleAsync(_org, dataset.Id, new MoveToFolderRequest(null));
         Assert.Null(top.FolderId);
         Assert.Equal(updated, dataset.UpdatedUtc);
     }
@@ -247,11 +249,62 @@ public class FolderHandlerTests
         Join(OrganizationRole.Editor);
         var dataset = Dataset();
 
-        await Assert.ThrowsAsync<ValidationException>(() => MoveDataset().HandleAsync(_org, dataset.Id, new MoveDatasetRequest(Guid.NewGuid())));
-        await Assert.ThrowsAsync<NotFoundException>(() => MoveDataset().HandleAsync(_org, Guid.NewGuid(), new MoveDatasetRequest(null)));
+        await Assert.ThrowsAsync<ValidationException>(() => MoveDataset().HandleAsync(_org, dataset.Id, new MoveToFolderRequest(Guid.NewGuid())));
+        await Assert.ThrowsAsync<NotFoundException>(() => MoveDataset().HandleAsync(_org, Guid.NewGuid(), new MoveToFolderRequest(null)));
 
         _orgs.Members.Clear();
         Join(OrganizationRole.Viewer);
-        await Assert.ThrowsAsync<ForbiddenException>(() => MoveDataset().HandleAsync(_org, dataset.Id, new MoveDatasetRequest(null)));
+        await Assert.ThrowsAsync<ForbiddenException>(() => MoveDataset().HandleAsync(_org, dataset.Id, new MoveToFolderRequest(null)));
+    }
+
+    // ---- kinds: datasets, charts and dashboards each have their own tree ---------------------------------------
+
+    [Fact]
+    public async Task Each_kind_has_its_own_tree_so_the_same_name_can_be_used_in_each()
+    {
+        Join(OrganizationRole.Editor);
+
+        await Create().HandleAsync(_org, new CreateFolderRequest("Sales", null, FolderKind.Dataset));
+        await Create().HandleAsync(_org, new CreateFolderRequest("Sales", null, FolderKind.Chart));
+        await Create().HandleAsync(_org, new CreateFolderRequest("Sales", null, FolderKind.Dashboard));
+        await Assert.ThrowsAsync<ConflictException>(() => Create().HandleAsync(_org, new CreateFolderRequest("sales", null, FolderKind.Chart)));
+
+        var list = new ListFoldersHandler(_folders, Access());
+        Assert.Equal(FolderKind.Chart, Assert.Single(await list.HandleAsync(_org, FolderKind.Chart)).Kind);
+        Assert.Single(await list.HandleAsync(_org, FolderKind.Dashboard));
+        Assert.Single(await list.HandleAsync(_org, FolderKind.Dataset));
+    }
+
+    [Fact]
+    public async Task A_folder_cannot_be_put_inside_a_folder_of_another_kind()
+    {
+        Join(OrganizationRole.Editor);
+        var datasetFolder = await MakeFolder("Datasets");
+        var chartFolder = await Create().HandleAsync(_org, new CreateFolderRequest("Charts", null, FolderKind.Chart));
+
+        await Assert.ThrowsAsync<ValidationException>(() =>
+            Create().HandleAsync(_org, new CreateFolderRequest("Inside", datasetFolder.Id, FolderKind.Chart)));
+        await Assert.ThrowsAsync<ValidationException>(() =>
+            Update().HandleAsync(_org, chartFolder.Id, new UpdateFolderRequest("Charts", datasetFolder.Id)));
+    }
+
+    [Fact]
+    public async Task A_dataset_can_only_be_filed_in_a_dataset_folder()
+    {
+        Join(OrganizationRole.Editor);
+        var chartFolder = await Create().HandleAsync(_org, new CreateFolderRequest("Charts", null, FolderKind.Chart));
+        var dataset = Dataset();
+
+        await Assert.ThrowsAsync<ValidationException>(() => MoveDataset().HandleAsync(_org, dataset.Id, new MoveToFolderRequest(chartFolder.Id)));
+
+        Assert.Null(dataset.FolderId);
+    }
+
+    [Fact]
+    public async Task An_unknown_kind_is_a_validation_error()
+    {
+        Join(OrganizationRole.Editor);
+
+        await Assert.ThrowsAsync<ValidationException>(() => Create().HandleAsync(_org, new CreateFolderRequest("X", null, (FolderKind)99)));
     }
 }

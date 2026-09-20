@@ -1,5 +1,6 @@
 using DataBoard.Domain.Charts;
 using DataBoard.Domain.Datasets;
+using DataBoard.Domain.Folders;
 using DataBoard.Domain.Organizations;
 using DataBoard.Infrastructure.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -20,9 +21,11 @@ internal sealed class ChartConfiguration : IEntityTypeConfiguration<Chart>
 
         builder.HasIndex(c => new { c.OrganizationId, c.Name }).IsUnique();
         builder.HasIndex(c => c.DatasetId);
+        builder.HasIndex(c => c.FolderId);
 
         builder.HasOne<Organization>().WithMany().HasForeignKey(c => c.OrganizationId).OnDelete(DeleteBehavior.Cascade);
         builder.HasOne<Dataset>().WithMany().HasForeignKey(c => c.DatasetId).OnDelete(DeleteBehavior.Cascade);
+        builder.HasOne<Folder>().WithMany().HasForeignKey(c => c.FolderId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<AppUser>().WithMany().HasForeignKey(c => c.CreatedByUserId).OnDelete(DeleteBehavior.Restrict);
     }
 }

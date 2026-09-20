@@ -4,10 +4,13 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatButtonToggleModule } from '@angular/material/button-toggle';
 import { MatCardModule } from '@angular/material/card';
 import { MatDialog } from '@angular/material/dialog';
-import { MatListModule } from '@angular/material/list';
-import { ActivatedRoute, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { tap } from 'rxjs';
 import { CHART_TYPES, Chart, ChartsService } from '../charts/charts.service';
 import { DatasetsService } from '../organizations/datasets.service';
+import { FolderTreeController } from '../shared/folder-tree/folder-tree-controller';
+import { TreeEntry } from '../shared/folder-tree/folder-tree';
+import { FolderTreeComponent } from '../shared/folder-tree/folder-tree.component';
 import { ChartCardComponent } from './chart-card.component';
 import { DashboardComponent } from './dashboard.component';
 import { NewDashboardDialogComponent, NewDashboardDialogData } from './new-dashboard-dialog.component';
@@ -27,7 +30,7 @@ type Mode = 'dashboards' | 'charts';
  */
 @Component({
   selector: 'app-dashboards',
-  imports: [RouterLink, MatCardModule, MatListModule, MatButtonModule, MatButtonToggleModule, DashboardComponent, ChartCardComponent],
+  imports: [RouterLink, MatCardModule, MatButtonModule, MatButtonToggleModule, FolderTreeComponent, DashboardComponent, ChartCardComponent],
   template: `
     <h2>{{ organization()?.name }} <small>dashboards</small></h2>
 
@@ -40,39 +43,38 @@ type Mode = 'dashboards' | 'charts';
           </mat-button-toggle-group>
           @if (canEdit()) {
             @if (mode() === 'dashboards') {
-              <button mat-flat-button type="button" class="add" (click)="openNewDialog()">New dashboard</button>
+              <button mat-flat-button type="button" class="add" (click)="openNewDialog(dashboardTree.selectedFolderId())">New dashboard</button>
             } @else {
-              <a mat-flat-button class="add" [routerLink]="['/organizations', orgId, 'charts', 'new']">New chart</a>
+              <a mat-flat-button class="add" [routerLink]="['/organizations', orgId, 'charts', 'new']" [queryParams]="newChartParams()">New chart</a>
             }
           }
         </mat-card-header>
         <mat-card-content>
           @if (mode() === 'dashboards') {
-            @if (loaded() && dashboards().length === 0) {
-              <p><em>No dashboards yet.</em></p>
+            @for (message of dashboardTree.errors(); track message) {
+              <p class="fail" role="alert">{{ message }}</p>
             }
-            <mat-action-list>
-              @for (item of dashboards(); track item.id) {
-                <button mat-list-item type="button" class="item" [activated]="selectedId() === item.id" (click)="select(item.id)">
-                  <span matListItemTitle>{{ item.name }}</span>
-                  <span matListItemLine>{{ item.widgetCount }} {{ item.widgetCount === 1 ? 'chart' : 'charts' }}</span>
-                </button>
-              }
-            </mat-action-list>
+            <app-folder-tree [folders]="dashboardTree.folders()" [entries]="dashboardEntries()" [activeId]="selectedId()" [canEdit]="canEdit()"
+                             [selectedFolderId]="dashboardTree.selectedFolderId()" [storageKey]="'databoard.dashboardFolders.' + orgId"
+                             filterLabel="Filter dashboards" treeLabel="Dashboards" emptyText="No dashboards yet."
+                             [addActions]="[{ id: 'new', label: 'New dashboard here' }]"
+                             (open)="select($event.id)" (selectFolder)="dashboardTree.selectedFolderId.set($event)"
+                             (createFolder)="dashboardTree.newFolder($event)" (renameFolder)="dashboardTree.renameFolder($event)"
+                             (deleteFolder)="dashboardTree.deleteFolder($event)" (addItem)="openNewDialog($event.folderId)"
+                             (move)="dashboardTree.moveItem($event.item, $event.targetId)" (moveTo)="dashboardTree.chooseDestination($event)" />
           } @else {
-            @if (chartsLoaded() && charts().length === 0) {
-              <p><em>No charts yet.</em></p>
+            @for (message of chartTree.errors(); track message) {
+              <p class="fail" role="alert">{{ message }}</p>
             }
-            <mat-action-list>
-              @for (item of charts(); track item.id) {
-                <button mat-list-item type="button" class="item" [activated]="selectedChartId() === item.id" (click)="selectChart(item.id)">
-                  <span matListItemTitle>{{ item.name }}</span>
-                  <span matListItemLine>{{ typeLabel(item.type) }} · {{ datasetNames()[item.datasetId] ?? 'unknown dataset' }}</span>
-                </button>
-              }
-            </mat-action-list>
-          }
-        </mat-card-content>
+            <app-folder-tree [folders]="chartTree.folders()" [entries]="chartEntries()" [activeId]="selectedChartId()" [canEdit]="canEdit()"
+                             [selectedFolderId]="chartTree.selectedFolderId()" [storageKey]="'databoard.chartFolders.' + orgId"
+                             filterLabel="Filter charts" treeLabel="Charts" emptyText="No charts yet."
+                             [addActions]="[{ id: 'new', label: 'New chart here' }]"
+                             (open)="selectChart($event.id)" (selectFolder)="chartTree.selectedFolderId.set($event)"
+                             (createFolder)="chartTree.newFolder($event)" (renameFolder)="chartTree.renameFolder($event)"
+                             (deleteFolder)="chartTree.deleteFolder($event)" (addItem)="newChartIn($event.folderId)"
+                             (move)="chartTree.moveItem($event.item, $event.targetId)" (moveTo)="chartTree.chooseDestination($event)" />
+          }        </mat-card-content>
       </mat-card>
 
       <section class="workspace">
@@ -107,7 +109,9 @@ type Mode = 'dashboards' | 'charts';
     /* Both columns are exactly as tall as the space under the title (so the page itself never scrolls) and scroll inside. */
     .layout { display: grid; grid-template-columns: 20rem 1fr; gap: 1.25rem; height: calc(100vh - 16rem); min-height: 24rem; }
     .list { height: 100%; min-height: 0; }
-    .list mat-card-content { flex: 1; overflow-y: auto; }
+    .list mat-card-content { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+    .list app-folder-tree { flex: 1; }
+    .fail { color: var(--mat-sys-error); margin: 0 0 0.5rem; }
     .workspace { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
     .workspace > app-dashboard, .workspace > app-chart-card { flex: 1; min-height: 0; }
     .workspace > .empty { flex: 1; }
@@ -129,6 +133,7 @@ export class DashboardsComponent implements OnInit {
   private readonly chartsApi = inject(ChartsService);
   private readonly datasetsApi = inject(DatasetsService);
   private readonly dialog = inject(MatDialog);
+  private readonly router = inject(Router);
 
   protected orgId = '';
   protected readonly organization = signal<Organization | null>(null);
@@ -138,6 +143,38 @@ export class DashboardsComponent implements OnInit {
   });
 
   protected readonly mode = signal<Mode>('dashboards');
+
+  /** The folder trees: one for dashboards, one for charts. */
+  protected readonly dashboardTree = new FolderTreeController({
+    orgId: () => this.orgId,
+    kind: 'Dashboard',
+    entries: () => this.dashboardEntries(),
+    moveEntry: (id, folderId) =>
+      this.api.move(this.orgId, id, folderId).pipe(
+        tap((saved) => this.dashboards.update((items) => items.map((d) => (d.id === saved.id ? { ...d, folderId: saved.folderId ?? null } : d)))),
+      ),
+  });
+  protected readonly chartTree = new FolderTreeController({
+    orgId: () => this.orgId,
+    kind: 'Chart',
+    entries: () => this.chartEntries(),
+    moveEntry: (id, folderId) =>
+      this.chartsApi.move(this.orgId, id, folderId).pipe(
+        tap((saved) => this.charts.update((items) => items.map((c) => (c.id === saved.id ? { ...c, folderId: saved.folderId ?? null } : c)))),
+      ),
+  });
+  protected readonly dashboardEntries = computed<TreeEntry[]>(() =>
+    this.dashboards().map((d) => ({
+      id: d.id, name: d.name, folderId: d.folderId ?? null,
+      subline: `${d.widgetCount} ${d.widgetCount === 1 ? 'chart' : 'charts'}`,
+    })),
+  );
+  protected readonly chartEntries = computed<TreeEntry[]>(() =>
+    this.charts().map((c) => ({
+      id: c.id, name: c.name, folderId: c.folderId ?? null,
+      subline: `${this.typeLabel(c.type)} · ${this.datasetNames()[c.datasetId] ?? 'unknown dataset'}`,
+    })),
+  );
 
   protected readonly dashboards = signal<DashboardSummary[]>([]);
   protected readonly loaded = signal(false);
@@ -169,6 +206,8 @@ export class DashboardsComponent implements OnInit {
     this.datasetsApi.list(this.orgId).subscribe({
       next: (items) => this.datasetNames.set(Object.fromEntries(items.map((d) => [d.id, d.name]))),
     });
+    this.dashboardTree.load();
+    this.chartTree.load();
     this.reload();
     this.reloadCharts(query.get('chart'));
   }
@@ -185,12 +224,13 @@ export class DashboardsComponent implements OnInit {
 
   protected select(id: string): void {
     this.selectedId.set(id);
+    this.dashboardTree.selectedFolderId.set(this.dashboards().find((d) => d.id === id)?.folderId ?? null);
   }
 
-  protected openNewDialog(): void {
+  protected openNewDialog(folderId: string | null = null): void {
     this.dialog
       .open<NewDashboardDialogComponent, NewDashboardDialogData, Dashboard>(NewDashboardDialogComponent, {
-        data: { orgId: this.orgId },
+        data: { orgId: this.orgId, folderId },
         width: '28rem',
         maxWidth: '95vw',
       })
@@ -204,6 +244,7 @@ export class DashboardsComponent implements OnInit {
           widgetCount: 0,
           updatedUtc: created.updatedUtc,
           chartIds: [],
+          folderId: created.folderId ?? null,
         };
         this.dashboards.update((items) => [...items, entry]);
         this.select(created.id);
@@ -246,6 +287,18 @@ export class DashboardsComponent implements OnInit {
 
   protected selectChart(id: string): void {
     this.selectedChartId.set(id);
+    this.chartTree.selectedFolderId.set(this.charts().find((c) => c.id === id)?.folderId ?? null);
+  }
+
+  /** The editor's address for a new chart: it files the chart in the folder last clicked. */
+  protected newChartParams(): { folder: string } | null {
+    const folder = this.chartTree.selectedFolderId();
+    return folder ? { folder } : null;
+  }
+
+  /** "New chart here" in a folder's menu. */
+  protected newChartIn(folderId: string | null): void {
+    void this.router.navigate(['/organizations', this.orgId, 'charts', 'new'], { queryParams: folderId ? { folder: folderId } : {} });
   }
 
   protected onChartDeleted(id: string): void {

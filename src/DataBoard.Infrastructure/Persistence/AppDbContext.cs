@@ -1,3 +1,4 @@
+using DataBoard.Domain.Folders;
 using DataBoard.Application.Abstractions;
 using DataBoard.Application.Common;
 using DataBoard.Domain.Charts;
@@ -19,7 +20,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
 {
     public DbSet<DataSource> DataSources => Set<DataSource>();
     public DbSet<Dataset> Datasets => Set<Dataset>();
-    public DbSet<DatasetFolder> DatasetFolders => Set<DatasetFolder>();
+    public DbSet<Folder> Folders => Set<Folder>();
     public DbSet<Dashboard> Dashboards => Set<Dashboard>();
     public DbSet<DashboardShare> DashboardShares => Set<DashboardShare>();
     public DbSet<Chart> Charts => Set<Chart>();

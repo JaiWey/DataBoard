@@ -2,18 +2,17 @@ import { HttpClient } from '@angular/common/http';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatCardModule } from '@angular/material/card';
-import { MatDialog } from '@angular/material/dialog';
 import { MatMenuModule } from '@angular/material/menu';
 import { ActivatedRoute } from '@angular/router';
+import { tap } from 'rxjs';
 import { TabStripComponent } from '../shared/tab-strip.component';
-import { problemMessages } from './data-sources.service';
 import { DatasetTabComponent } from './dataset-tab.component';
-import { TreeItem, folderPath } from './dataset-tree';
-import { DatasetTreeComponent } from './dataset-tree.component';
+import { FolderTreeController } from '../shared/folder-tree/folder-tree-controller';
+import { TreeEntry } from '../shared/folder-tree/folder-tree';
+import { FolderTreeComponent } from '../shared/folder-tree/folder-tree.component';
 import { NewDatasetTabComponent } from './new-dataset-tab.component';
 import { NewTableViewTabComponent } from './new-table-view-tab.component';
-import { FolderNameDialogComponent, FolderNameDialogData, MoveDialogComponent, MoveDialogData } from './folder-dialogs.component';
-import { Dataset, DatasetFolder, DatasetFoldersService, DatasetsService } from './datasets.service';
+import { Dataset, DatasetsService } from './datasets.service';
 
 const NEW_PREFIX = 'new:';
 const NEW_VIEW_PREFIX = 'new:view:';
@@ -27,7 +26,7 @@ interface Organization {
 /** Datasets of an organization: a list on the left, and the datasets opened from it as tabs on the right. */
 @Component({
   selector: 'app-datasets',
-  imports: [MatCardModule, MatButtonModule, MatMenuModule, TabStripComponent, DatasetTabComponent, DatasetTreeComponent, NewDatasetTabComponent, NewTableViewTabComponent],
+  imports: [MatCardModule, MatButtonModule, MatMenuModule, TabStripComponent, DatasetTabComponent, FolderTreeComponent, NewDatasetTabComponent, NewTableViewTabComponent],
   template: `
     <h2>{{ organization()?.name }} <small>datasets</small></h2>
 
@@ -38,21 +37,22 @@ interface Organization {
           @if (canEdit()) {
             <button mat-flat-button type="button" class="add" [matMenuTriggerFor]="addMenu">Add dataset</button>
             <mat-menu #addMenu="matMenu">
-              <button mat-menu-item type="button" (click)="addDataset('sql', selectedFolderId())">SQL dataset</button>
-              <button mat-menu-item type="button" (click)="addDataset('view', selectedFolderId())">Table view dataset</button>
+              <button mat-menu-item type="button" (click)="addDataset('sql', tree.selectedFolderId())">SQL dataset</button>
+              <button mat-menu-item type="button" (click)="addDataset('view', tree.selectedFolderId())">Table view dataset</button>
             </mat-menu>
           }
         </mat-card-header>
         <mat-card-content>
-          @for (message of treeErrors(); track message) {
+          @for (message of tree.errors(); track message) {
             <p class="fail" role="alert">{{ message }}</p>
           }
-          <app-dataset-tree [folders]="folders()" [datasets]="datasets()" [activeId]="activeId()" [canEdit]="canEdit()"
-                            [selectedFolderId]="selectedFolderId()" [storageKey]="treeStorageKey"
-                            (open)="open($event)" (selectFolder)="selectedFolderId.set($event)"
-                            (createFolder)="newFolder($event)" (renameFolder)="renameFolder($event)" (deleteFolder)="deleteFolder($event)"
-                            (addDataset)="addDataset($event.kind, $event.folderId)" (move)="moveItem($event.item, $event.targetId)"
-                            (moveTo)="chooseDestination($event)" />
+          <app-folder-tree [folders]="tree.folders()" [entries]="entries()" [activeId]="activeId()" [canEdit]="canEdit()"
+                           [selectedFolderId]="tree.selectedFolderId()" [storageKey]="treeStorageKey"
+                           filterLabel="Filter datasets" treeLabel="Datasets" emptyText="No datasets yet." [addActions]="addActions"
+                           (open)="open($event.id)" (selectFolder)="tree.selectedFolderId.set($event)"
+                           (createFolder)="tree.newFolder($event)" (renameFolder)="tree.renameFolder($event)" (deleteFolder)="tree.deleteFolder($event)"
+                           (addItem)="addDataset($event.action === 'view' ? 'view' : 'sql', $event.folderId)" (move)="tree.moveItem($event.item, $event.targetId)"
+                           (moveTo)="tree.chooseDestination($event)" />
         </mat-card-content>
       </mat-card>
 
@@ -111,16 +111,17 @@ export class DatasetsComponent implements OnInit {
   private readonly route = inject(ActivatedRoute);
   private readonly http = inject(HttpClient);
   private readonly api = inject(DatasetsService);
-  private readonly foldersApi = inject(DatasetFoldersService);
-  private readonly dialog = inject(MatDialog);
 
   protected orgId = '';
   protected treeStorageKey = '';
-  protected readonly folders = signal<DatasetFolder[]>([]);
-  /** The folder a new dataset goes in: the last folder clicked, or the folder of the dataset last opened (null is the top level). */
-  protected readonly selectedFolderId = signal<string | null>(null);
-  /** Problems with moving or deleting something in the tree. */
-  protected readonly treeErrors = signal<string[]>([]);
+  protected readonly addActions = [{ id: 'sql', label: 'New SQL dataset here' }, { id: 'view', label: 'New table view here' }];
+  /** The folder tree beside the tabs: its folders, which one is selected, and what can be done to them. */
+  protected readonly tree = new FolderTreeController({
+    orgId: () => this.orgId,
+    kind: 'Dataset',
+    entries: () => this.entries(),
+    moveEntry: (id, folderId) => this.api.move(this.orgId, id, folderId).pipe(tap((saved) => this.replace(saved))),
+  });
   /** The folder each unsaved new-dataset tab will save into, fixed when the tab was opened. */
   protected readonly newTabFolders = signal<Record<string, string | null>>({});
   protected readonly organization = signal<Organization | null>(null);
@@ -130,6 +131,13 @@ export class DatasetsComponent implements OnInit {
   });
   protected readonly datasets = signal<Dataset[]>([]);
   protected readonly loaded = signal(false);
+  /** What the tree shows of each dataset. */
+  protected readonly entries = computed<TreeEntry[]>(() =>
+    this.datasets().map((d) => ({
+      id: d.id, name: d.name, folderId: d.folderId ?? null,
+      subline: `${d.columns.length} columns · ${d.kind === 'TableView' ? 'table view' : 'SQL'}`,
+    })),
+  );
 
   /** Ids of the open tabs, left to right, and which one is showing. */
   protected readonly openIds = signal<string[]>([]);
@@ -152,80 +160,18 @@ export class DatasetsComponent implements OnInit {
     this.http.get<Organization[]>('/api/organizations').subscribe({
       next: (orgs) => this.organization.set(orgs.find((o) => o.id === this.orgId) ?? null),
     });
-    this.foldersApi.list(this.orgId).subscribe({ next: (items) => this.folders.set(items) });
+    this.tree.load();
     this.reload();
   }
 
   /** Opens a dataset in a tab, or shows its tab if it is already open. */
-  protected open(dataset: Dataset): void {
+  protected open(id: string): void {
+    const dataset = this.datasets().find((d) => d.id === id);
+    if (!dataset) return;
     if (!this.openIds().includes(dataset.id)) this.openIds.update((ids) => [...ids, dataset.id]);
     this.activeId.set(dataset.id);
-    this.selectedFolderId.set(dataset.folderId ?? null);
+    this.tree.selectedFolderId.set(dataset.folderId ?? null);
     this.remember();
-  }
-
-  // ---- folders -----------------------------------------------------------------------------------------------
-
-  protected newFolder(parentId: string | null): void {
-    this.dialog
-      .open<FolderNameDialogComponent, FolderNameDialogData, DatasetFolder>(FolderNameDialogComponent, {
-        data: { orgId: this.orgId, parentId }, width: '24rem', maxWidth: '95vw',
-      })
-      .afterClosed()
-      .subscribe((created) => {
-        if (created) this.folders.update((items) => [...items, created]);
-      });
-  }
-
-  protected renameFolder(folder: DatasetFolder): void {
-    this.dialog
-      .open<FolderNameDialogComponent, FolderNameDialogData, DatasetFolder>(FolderNameDialogComponent, {
-        data: { orgId: this.orgId, parentId: folder.parentId, folder }, width: '24rem', maxWidth: '95vw',
-      })
-      .afterClosed()
-      .subscribe((saved) => {
-        if (saved) this.folders.update((items) => items.map((f) => (f.id === saved.id ? saved : f)));
-      });
-  }
-
-  protected deleteFolder(folder: DatasetFolder): void {
-    if (!confirm(`Delete the folder "${folder.name}"?`)) return;
-    this.treeErrors.set([]);
-    this.foldersApi.remove(this.orgId, folder.id).subscribe({
-      next: () => {
-        this.folders.update((items) => items.filter((f) => f.id !== folder.id));
-        if (this.selectedFolderId() === folder.id) this.selectedFolderId.set(folder.parentId);
-      },
-      error: (e) => this.treeErrors.set(problemMessages(e, 'Could not delete the folder.')),
-    });
-  }
-
-  /** The "Move to…" menu entry: asks where to, then moves. */
-  protected chooseDestination(item: TreeItem): void {
-    this.dialog
-      .open<MoveDialogComponent, MoveDialogData, { targetId: string | null }>(MoveDialogComponent, {
-        data: { folders: this.folders(), datasets: this.datasets(), item }, width: '26rem', maxWidth: '95vw',
-      })
-      .afterClosed()
-      .subscribe((chosen) => {
-        if (chosen) this.moveItem(item, chosen.targetId);
-      });
-  }
-
-  /** Files a dataset or a folder in another folder (null is the top level). Used by dropping and by the Move to… dialog. */
-  protected moveItem(item: TreeItem, targetId: string | null): void {
-    this.treeErrors.set([]);
-    const fail = (e: unknown) => this.treeErrors.set(problemMessages(e, `Could not move it to ${targetId ? folderPath(this.folders(), targetId) : 'the top level'}.`));
-    if (item.kind === 'dataset') {
-      this.api.move(this.orgId, item.id, targetId).subscribe({ next: (saved) => this.replace(saved), error: fail });
-      return;
-    }
-    const folder = this.folders().find((f) => f.id === item.id);
-    if (!folder) return;
-    this.foldersApi.update(this.orgId, folder.id, folder.name, targetId).subscribe({
-      next: (saved) => this.folders.update((items) => items.map((f) => (f.id === saved.id ? saved : f))),
-      error: fail,
-    });
   }
 
   protected close(id: string): void {

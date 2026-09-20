@@ -2,8 +2,10 @@ using DataBoard.Application.Abstractions;
 using DataBoard.Application.Common;
 using DataBoard.Application.Dashboards;
 using DataBoard.Application.Datasets;
+using DataBoard.Application.Folders;
 using DataBoard.Application.Organizations;
 using DataBoard.Domain.Charts;
+using DataBoard.Domain.Folders;
 using DataBoard.Domain.Organizations;
 
 namespace DataBoard.Application.Charts;
@@ -11,7 +13,7 @@ namespace DataBoard.Application.Charts;
 internal static class ChartMapping
 {
     public static ChartDto ToDto(this Chart c) =>
-        new(c.Id, c.Name, c.Description, c.DatasetId, c.Type, ChartDefinition.FromJson(c.DefinitionJson), c.CreatedUtc, c.UpdatedUtc);
+        new(c.Id, c.Name, c.Description, c.DatasetId, c.Type, ChartDefinition.FromJson(c.DefinitionJson), c.CreatedUtc, c.UpdatedUtc, c.FolderId);
 }
 
 /// <summary>
@@ -67,7 +69,7 @@ internal static class ChartDefinitionValidator
 }
 
 public sealed class CreateChartHandler(
-    IChartRepository charts, IDatasetRepository datasets, IUnitOfWork unitOfWork, IClock clock, OrganizationAccess access)
+    IChartRepository charts, IDatasetRepository datasets, IFolderRepository folders, IUnitOfWork unitOfWork, IClock clock, OrganizationAccess access)
 {
     public async Task<ChartDto> HandleAsync(Guid organizationId, SaveChartRequest request, CancellationToken ct = default)
     {
@@ -77,9 +79,11 @@ public sealed class CreateChartHandler(
         if (await charts.NameExistsAsync(organizationId, request.Name?.Trim() ?? string.Empty, null, ct))
             throw new ConflictException("A chart with that name already exists.");
 
+        await FolderRules.RequireFolderAsync(folders, organizationId, FolderKind.Chart, request.FolderId, "FolderId", ct);
         var definition = await ChartDefinitionValidator.NormalizeAsync(request, datasets, organizationId, ct);
         var chart = DatasetQuery.Guard(() => Chart.Create(
-            organizationId, request.DatasetId, request.Name!, request.Description, request.Type, definition.ToJson(), userId, clock.UtcNow));
+            organizationId, request.DatasetId, request.Name!, request.Description, request.Type, definition.ToJson(), userId, clock.UtcNow,
+            request.FolderId));
 
         await charts.AddAsync(chart, ct);
         await unitOfWork.SaveChangesAsync(ct);

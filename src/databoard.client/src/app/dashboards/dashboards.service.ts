@@ -50,6 +50,8 @@ export interface DashboardSummary {
   updatedUtc: string;
   /** The charts on the dashboard, so a chart can show which dashboards use it. */
   chartIds?: string[];
+  /** The folder the dashboard is filed in; null or missing means the top level. */
+  folderId?: string | null;
 }
 
 /** How the server keeps a dashboard's data fresh, and how the last time went. */
@@ -71,6 +73,7 @@ export interface Dashboard {
   createdUtc: string;
   updatedUtc: string;
   refresh?: DashboardRefresh;
+  folderId?: string | null;
 }
 
 export interface WidgetResult {
@@ -126,9 +129,14 @@ export class DashboardsService {
   }
 
   create(
-    orgId: string, name: string, definition: DashboardDefinition = { widgets: [], filters: [] }, description?: string,
+    orgId: string, name: string, definition: DashboardDefinition = { widgets: [], filters: [] }, description?: string, folderId?: string | null,
   ): Observable<Dashboard> {
-    return this.http.post<Dashboard>(this.url(orgId), { name, ...(description ? { description } : {}), definition });
+    return this.http.post<Dashboard>(this.url(orgId), { name, ...(description ? { description } : {}), definition, ...(folderId ? { folderId } : {}) });
+  }
+
+  /** Files the dashboard in a folder (null for the top level). */
+  move(orgId: string, id: string, folderId: string | null): Observable<Dashboard> {
+    return this.http.put<Dashboard>(this.url(orgId, `/${id}/folder`), { folderId });
   }
 
   update(orgId: string, dashboard: Dashboard, definition: DashboardDefinition): Observable<Dashboard> {

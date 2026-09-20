@@ -1,4 +1,5 @@
 using DataBoard.Application.Charts;
+using DataBoard.Application.Folders;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
@@ -34,6 +35,12 @@ public class ChartsController : ControllerBase
 		Ok(await handler.HandleAsync(organizationId, chartId, body, ct));
 
 	/// <summary>Removes the chart and takes it off every dashboard that showed it.</summary>
+	/// <summary>Files the chart in a folder (folderId null is the top level). Editors and Owners.</summary>
+	[HttpPut("{chartId:guid}/folder")]
+	public async Task<ActionResult<ChartDto>> Move(
+		Guid organizationId, Guid chartId, MoveToFolderRequest body, [FromServices] MoveChartHandler handler, CancellationToken ct) =>
+		Ok(await handler.HandleAsync(organizationId, chartId, body, ct));
+
 	[HttpDelete("{chartId:guid}")]
 	public async Task<IActionResult> Delete(
 		Guid organizationId, Guid chartId, [FromServices] DeleteChartHandler handler, CancellationToken ct)

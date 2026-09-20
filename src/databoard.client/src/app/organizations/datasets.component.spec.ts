@@ -37,7 +37,7 @@ describe('DatasetsComponent', () => {
   const load = (role: 'Viewer' | 'Editor' | 'Owner', items: unknown[], selectFirst = true, folders: unknown[] = []) => {
     fixture.detectChanges();
     http.expectOne('/api/organizations').flush([{ id: ORG, name: 'Acme', role }]);
-    http.expectOne(`/api/organizations/${ORG}/dataset-folders`).flush(folders);
+    http.expectOne(`/api/organizations/${ORG}/folders?kind=Dataset`).flush(folders);
     http.expectOne(`/api/organizations/${ORG}/datasets`).flush(items);
     fixture.detectChanges();
     if (selectFirst && items.length > 0) {

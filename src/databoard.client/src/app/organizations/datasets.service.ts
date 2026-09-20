@@ -76,40 +76,6 @@ export interface Dataset {
   updatedUtc: string;
 }
 
-/** A folder that organizes datasets. Folders nest; a null parent is the top level. */
-export interface DatasetFolder {
-  id: string;
-  parentId: string | null;
-  name: string;
-}
-
-@Injectable({ providedIn: 'root' })
-export class DatasetFoldersService {
-  private readonly http = inject(HttpClient);
-
-  private url(orgId: string, suffix = ''): string {
-    return `/api/organizations/${orgId}/dataset-folders${suffix}`;
-  }
-
-  list(orgId: string): Observable<DatasetFolder[]> {
-    return this.http.get<DatasetFolder[]>(this.url(orgId));
-  }
-
-  create(orgId: string, name: string, parentId: string | null): Observable<DatasetFolder> {
-    return this.http.post<DatasetFolder>(this.url(orgId), { name, parentId });
-  }
-
-  /** Renames the folder and/or moves it (the parent is always sent; null is the top level). */
-  update(orgId: string, id: string, name: string, parentId: string | null): Observable<DatasetFolder> {
-    return this.http.put<DatasetFolder>(this.url(orgId, `/${id}`), { name, parentId });
-  }
-
-  /** Only an empty folder can be deleted. */
-  remove(orgId: string, id: string): Observable<void> {
-    return this.http.delete<void>(this.url(orgId, `/${id}`));
-  }
-}
-
 @Injectable({ providedIn: 'root' })
 export class DatasetsService {
   private readonly http = inject(HttpClient);

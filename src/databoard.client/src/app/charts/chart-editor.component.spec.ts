@@ -459,6 +459,23 @@ describe('ChartEditorComponent', () => {
 
   // ---- saving ----
 
+  it('files a new chart in the folder the editor was opened from, and leaves an existing chart where it is', () => {
+    queryParams = { folder: 'f1' };
+    open();
+    click('Add region');
+    click('Add price');
+    typeInto('Chart name', 'Revenue');
+    fixture.detectChanges();
+    vi.advanceTimersByTime(300);
+    http.expectOne({ method: 'POST', url: queryUrl() }).flush(result());
+
+    saveButton().click();
+
+    const req = http.expectOne({ method: 'POST', url: `/api/organizations/${ORG}/charts` });
+    expect(req.request.body.folderId).toBe('f1');
+    req.flush({ ...saved(), id: 'new-id' });
+  });
+
   it('saves a new chart, then names it in the address so the next save updates it', () => {
     const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
     open();

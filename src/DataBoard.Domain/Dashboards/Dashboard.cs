@@ -17,6 +17,8 @@ public sealed class Dashboard : BaseEntity
     public string Name { get; private set; } = string.Empty;
     public string? Description { get; private set; }
     public string DefinitionJson { get; private set; } = "{}";
+    /// <summary>The folder it is filed in, or null for the top level.</summary>
+    public Guid? FolderId { get; private set; }
     public Guid CreatedByUserId { get; private set; }
     public DateTime CreatedUtc { get; private set; }
     public DateTime UpdatedUtc { get; private set; }
@@ -69,17 +71,21 @@ public sealed class Dashboard : BaseEntity
     }
 
     public static Dashboard Create(
-        Guid organizationId, string name, string? description, string definitionJson, Guid createdByUserId, DateTime nowUtc)
+        Guid organizationId, string name, string? description, string definitionJson, Guid createdByUserId, DateTime nowUtc,
+        Guid? folderId = null)
     {
         if (organizationId == Guid.Empty)
             throw new ArgumentException("Organization is required.", nameof(organizationId));
         if (createdByUserId == Guid.Empty)
             throw new ArgumentException("User is required.", nameof(createdByUserId));
 
-        var dashboard = new Dashboard { OrganizationId = organizationId, CreatedByUserId = createdByUserId, CreatedUtc = nowUtc };
+        var dashboard = new Dashboard { OrganizationId = organizationId, CreatedByUserId = createdByUserId, CreatedUtc = nowUtc, FolderId = folderId };
         dashboard.Update(name, description, definitionJson, nowUtc);
         return dashboard;
     }
+
+    /// <summary>Filing a dashboard is organization, not a change to the dashboard, so it does not count as an update.</summary>
+    public void MoveTo(Guid? folderId) => FolderId = folderId;
 
     public void Update(string name, string? description, string definitionJson, DateTime nowUtc)
     {

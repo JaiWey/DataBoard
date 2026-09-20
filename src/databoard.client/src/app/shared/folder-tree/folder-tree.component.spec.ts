@@ -1,28 +1,28 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { DatasetTreeComponent } from './dataset-tree.component';
-import { Dataset, DatasetFolder } from './datasets.service';
+import { TreeEntry } from './folder-tree';
+import { FolderTreeComponent } from './folder-tree.component';
+import { Folder } from './folders.service';
 
-const folder = (id: string, name: string, parentId: string | null = null): DatasetFolder => ({ id, name, parentId });
-const dataset = (id: string, name: string, folderId: string | null = null) =>
-  ({
-    id, name, folderId, dataSourceId: 's', description: null, sql: null, kind: 'Sql', definition: null, createdUtc: '', updatedUtc: '',
-    columns: [{ name: 'a', dataType: 'text', role: 'Dimension' }],
-  }) as Dataset;
+const folder = (id: string, name: string, parentId: string | null = null): Folder => ({ id, name, parentId });
+const dataset = (id: string, name: string, folderId: string | null = null): TreeEntry => ({ id, name, folderId, subline: '1 columns · SQL' });
 
 const folders = [folder('sales', 'Sales'), folder('europe', 'Europe', 'sales'), folder('archive', 'Archive')];
 const datasets = [dataset('orders', 'Orders', 'europe'), dataset('returns', 'Returns', 'sales'), dataset('zebra', 'Zebra')];
 
-describe('DatasetTreeComponent', () => {
-  let fixture: ComponentFixture<DatasetTreeComponent>;
+describe('FolderTreeComponent', () => {
+  let fixture: ComponentFixture<FolderTreeComponent>;
   const el = () => fixture.nativeElement as HTMLElement;
   const names = () => Array.from(el().querySelectorAll('.row .name')).map((n) => n.textContent?.trim());
   const row = (name: string) => Array.from(el().querySelectorAll<HTMLElement>('.row')).find((r) => r.querySelector('.name')?.textContent?.trim() === name)!;
   const main = (name: string) => row(name).querySelector<HTMLButtonElement>('.main')!;
 
-  const create = (canEdit = true, data: { folders?: DatasetFolder[]; datasets?: Dataset[] } = {}) => {
-    fixture = TestBed.createComponent(DatasetTreeComponent);
+  const create = (canEdit = true, data: { folders?: Folder[]; datasets?: TreeEntry[] } = {}) => {
+    fixture = TestBed.createComponent(FolderTreeComponent);
     fixture.componentRef.setInput('folders', data.folders ?? folders);
-    fixture.componentRef.setInput('datasets', data.datasets ?? datasets);
+    fixture.componentRef.setInput('entries', data.datasets ?? datasets);
+    fixture.componentRef.setInput('filterLabel', 'Filter datasets');
+    fixture.componentRef.setInput('emptyText', 'No datasets yet.');
+    fixture.componentRef.setInput('addActions', [{ id: 'sql', label: 'New SQL dataset here' }, { id: 'view', label: 'New table view here' }]);
     fixture.componentRef.setInput('canEdit', canEdit);
     fixture.componentRef.setInput('storageKey', 'test.tree');
     fixture.detectChanges();
@@ -85,7 +85,7 @@ describe('DatasetTreeComponent', () => {
 
   it('opens a dataset on click and shows what kind it is', () => {
     create();
-    const opened: Dataset[] = [];
+    const opened: TreeEntry[] = [];
     fixture.componentInstance.open.subscribe((d) => opened.push(d));
 
     main('Zebra').click();
@@ -116,7 +116,7 @@ describe('DatasetTreeComponent', () => {
     input.value = 'zzz';
     input.dispatchEvent(new Event('input'));
     fixture.detectChanges();
-    expect(el().querySelector('.empty')?.textContent).toContain('No datasets match.');
+    expect(el().querySelector('.empty')?.textContent).toContain('Nothing matches.');
   });
 
   it('tells an empty organization how it stands', () => {
@@ -169,7 +169,7 @@ describe('DatasetTreeComponent', () => {
       create();
       const added: unknown[] = [];
       const moved: unknown[] = [];
-      fixture.componentInstance.addDataset.subscribe((r) => added.push(r));
+      fixture.componentInstance.addItem.subscribe((r) => added.push(r));
       fixture.componentInstance.moveTo.subscribe((r) => moved.push(r));
 
       row('Sales').querySelector<HTMLButtonElement>('.more')!.click();
@@ -180,8 +180,8 @@ describe('DatasetTreeComponent', () => {
       fixture.detectChanges();
       Array.from(document.querySelectorAll<HTMLButtonElement>('.mat-mdc-menu-item')).find((b) => b.textContent?.trim() === 'Move to…')!.click();
 
-      expect(added).toEqual([{ kind: 'view', folderId: 'sales' }]);
-      expect(moved).toEqual([{ kind: 'dataset', id: 'zebra' }]);
+      expect(added).toEqual([{ action: 'view', folderId: 'sales' }]);
+      expect(moved).toEqual([{ kind: 'item', id: 'zebra' }]);
     });
 
     it('moves a dataset by dropping it on a folder, and opens that folder', () => {
@@ -192,7 +192,7 @@ describe('DatasetTreeComponent', () => {
       const drop = drag(row('Zebra'), row('Archive'));
 
       expect(drop.defaultPrevented).toBe(true);
-      expect(moves).toEqual([{ item: { kind: 'dataset', id: 'zebra' }, targetId: 'archive' }]);
+      expect(moves).toEqual([{ item: { kind: 'item', id: 'zebra' }, targetId: 'archive' }]);
     });
 
     it('moves a folder by dropping it on another, and to the top level by dropping on the empty space', () => {
@@ -218,7 +218,7 @@ describe('DatasetTreeComponent', () => {
 
       drag(row('Zebra'), row('Returns'));
 
-      expect(moves).toEqual([{ item: { kind: 'dataset', id: 'zebra' }, targetId: 'sales' }]);
+      expect(moves).toEqual([{ item: { kind: 'item', id: 'zebra' }, targetId: 'sales' }]);
     });
 
     it('does not take a drop that is not allowed: into itself, below itself, or where it already is', () => {

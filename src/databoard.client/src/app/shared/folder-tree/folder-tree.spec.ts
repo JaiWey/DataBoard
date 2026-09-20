@@ -1,9 +1,8 @@
-import { MAX_FOLDER_DEPTH, ancestorIds, buildRows, canMoveTo, depthOf, folderPath, heightOf, subtreeIds } from './dataset-tree';
-import { Dataset, DatasetFolder } from './datasets.service';
+import { MAX_FOLDER_DEPTH, TreeEntry, ancestorIds, buildRows, canMoveTo, depthOf, folderPath, heightOf, subtreeIds } from './folder-tree';
+import { Folder } from './folders.service';
 
-const folder = (id: string, name: string, parentId: string | null = null): DatasetFolder => ({ id, name, parentId });
-const dataset = (id: string, name: string, folderId: string | null = null) =>
-  ({ id, name, folderId, dataSourceId: 's', description: null, sql: null, columns: [], kind: 'Sql', definition: null, createdUtc: '', updatedUtc: '' }) as Dataset;
+const folder = (id: string, name: string, parentId: string | null = null): Folder => ({ id, name, parentId });
+const dataset = (id: string, name: string, folderId: string | null = null): TreeEntry => ({ id, name, folderId });
 
 // Sales > Europe > Q1,  Archive,  datasets: Orders (Europe), Returns (Sales), Zebra (top), alpha (top)
 const folders = [folder('sales', 'Sales'), folder('europe', 'Europe', 'sales'), folder('q1', 'Q1', 'europe'), folder('archive', 'Archive')];
@@ -74,13 +73,13 @@ describe('folder helpers', () => {
 });
 
 describe('canMoveTo', () => {
-  const can = (kind: 'folder' | 'dataset', id: string, target: string | null) => canMoveTo(folders, datasets, { kind, id }, target);
+  const can = (kind: 'folder' | 'item', id: string, target: string | null) => canMoveTo(folders, datasets, { kind, id }, target);
 
   it('lets a dataset go into another folder or the top, but not where it already is', () => {
-    expect(can('dataset', 'orders', 'archive')).toBe(true);
-    expect(can('dataset', 'orders', null)).toBe(true);
-    expect(can('dataset', 'orders', 'europe')).toBe(false);
-    expect(can('dataset', 'zebra', null)).toBe(false);
+    expect(can('item', 'orders', 'archive')).toBe(true);
+    expect(can('item', 'orders', null)).toBe(true);
+    expect(can('item', 'orders', 'europe')).toBe(false);
+    expect(can('item', 'zebra', null)).toBe(false);
   });
 
   it('lets a folder go anywhere that is not itself, below itself or where it already is', () => {
@@ -92,8 +91,8 @@ describe('canMoveTo', () => {
   });
 
   it('refuses unknown targets and unknown items', () => {
-    expect(can('dataset', 'orders', 'nope')).toBe(false);
-    expect(can('dataset', 'nope', null)).toBe(false);
+    expect(can('item', 'orders', 'nope')).toBe(false);
+    expect(can('item', 'nope', null)).toBe(false);
     expect(can('folder', 'nope', null)).toBe(false);
   });
 

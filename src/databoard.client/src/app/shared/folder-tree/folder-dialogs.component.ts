@@ -4,16 +4,17 @@ import { MatButtonModule } from '@angular/material/button';
 import { MAT_DIALOG_DATA, MatDialogModule, MatDialogRef } from '@angular/material/dialog';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
-import { problemMessages } from './data-sources.service';
-import { TreeItem, canMoveTo, childFolders } from './dataset-tree';
-import { Dataset, DatasetFolder, DatasetFoldersService } from './datasets.service';
+import { problemMessages } from '../../organizations/data-sources.service';
+import { TreeEntry, TreeItem, canMoveTo, childFolders } from './folder-tree';
+import { Folder, FolderKind, FoldersService } from './folders.service';
 
 export interface FolderNameDialogData {
   orgId: string;
+  kind: FolderKind;
   /** Where a new folder goes (null is the top level). Ignored when renaming. */
   parentId: string | null;
   /** The folder to rename; missing means a new folder is being made. */
-  folder?: DatasetFolder;
+  folder?: Folder;
 }
 
 /** Asks for a folder's name and creates the folder, or renames it. Closes with the saved folder, or with nothing if cancelled. */
@@ -44,8 +45,8 @@ export interface FolderNameDialogData {
 })
 export class FolderNameDialogComponent {
   protected readonly data = inject<FolderNameDialogData>(MAT_DIALOG_DATA);
-  private readonly ref = inject<MatDialogRef<FolderNameDialogComponent, DatasetFolder>>(MatDialogRef);
-  private readonly api = inject(DatasetFoldersService);
+  private readonly ref = inject<MatDialogRef<FolderNameDialogComponent, Folder>>(MatDialogRef);
+  private readonly api = inject(FoldersService);
   private readonly fb = inject(FormBuilder);
 
   protected readonly busy = signal(false);
@@ -60,8 +61,8 @@ export class FolderNameDialogComponent {
     this.errors.set([]);
 
     const name = this.form.getRawValue().name.trim();
-    const { orgId, parentId, folder } = this.data;
-    const request = folder ? this.api.update(orgId, folder.id, name, folder.parentId) : this.api.create(orgId, name, parentId);
+    const { orgId, kind, parentId, folder } = this.data;
+    const request = folder ? this.api.update(orgId, folder.id, name, folder.parentId) : this.api.create(orgId, kind, name, parentId);
     request.subscribe({
       next: (saved) => this.ref.close(saved),
       error: (e) => {
@@ -73,8 +74,8 @@ export class FolderNameDialogComponent {
 }
 
 export interface MoveDialogData {
-  folders: DatasetFolder[];
-  datasets: Dataset[];
+  folders: Folder[];
+  entries: TreeEntry[];
   item: TreeItem;
 }
 
@@ -115,19 +116,19 @@ export class MoveDialogComponent {
   protected readonly chosen = signal<string | null | undefined>(undefined);
 
   protected readonly itemName = computed(() => {
-    const { item, folders, datasets } = this.data;
-    return (item.kind === 'folder' ? folders : datasets).find((x) => x.id === item.id)?.name ?? '';
+    const { item, folders, entries } = this.data;
+    return (item.kind === 'folder' ? folders : entries).find((x) => x.id === item.id)?.name ?? '';
   });
 
   /** The top level, then every folder in tree order. A folder that cannot be the destination is shown but cannot be picked. */
   protected readonly options = computed(() => {
-    const { folders, datasets, item } = this.data;
+    const { folders, entries, item } = this.data;
     const out: { id: string | null; name: string; depth: number; allowed: boolean }[] = [
-      { id: null, name: 'Top level', depth: 0, allowed: canMoveTo(folders, datasets, item, null) },
+      { id: null, name: 'Top level', depth: 0, allowed: canMoveTo(folders, entries, item, null) },
     ];
     const visit = (parentId: string | null, depth: number): void => {
       for (const f of childFolders(folders, parentId)) {
-        out.push({ id: f.id, name: f.name, depth, allowed: canMoveTo(folders, datasets, item, f.id) });
+        out.push({ id: f.id, name: f.name, depth, allowed: canMoveTo(folders, entries, item, f.id) });
         visit(f.id, depth + 1);
       }
     };

@@ -26,11 +26,13 @@ public enum FilterTarget { Column = 0, Parameter = 1 }
 
 public sealed record DashboardDefinition(IReadOnlyList<DashboardWidget> Widgets, IReadOnlyList<DashboardFilter> Filters);
 
-public sealed record SaveDashboardRequest(string Name, string? Description, DashboardDefinition? Definition);
+/// <param name="FolderId">Where a new dashboard is filed (create only; moving one is a separate call). Null is the top level.</param>
+public sealed record SaveDashboardRequest(string Name, string? Description, DashboardDefinition? Definition, Guid? FolderId = null);
 
 /// <param name="ChartIds">The charts on the dashboard, so a chart can show which dashboards use it.</param>
 public sealed record DashboardSummaryDto(
-    Guid Id, string Name, string? Description, int WidgetCount, DateTime UpdatedUtc, IReadOnlyList<Guid>? ChartIds = null);
+    Guid Id, string Name, string? Description, int WidgetCount, DateTime UpdatedUtc, IReadOnlyList<Guid>? ChartIds = null,
+    Guid? FolderId = null);
 
 /// <summary>
 /// The refresh schedule of a dashboard and how the last refresh went. Every member sees it (it says how old their data
@@ -43,7 +45,7 @@ public sealed record DashboardRefreshDto(
 
 public sealed record DashboardDto(
     Guid Id, string Name, string? Description, DashboardDefinition Definition, DateTime CreatedUtc, DateTime UpdatedUtc,
-    DashboardRefreshDto? Refresh = null);
+    DashboardRefreshDto? Refresh = null, Guid? FolderId = null);
 
 /// <param name="IntervalMinutes">5 to 1440, or null to stop refreshing on a schedule.</param>
 public sealed record SetDashboardRefreshRequest(int? IntervalMinutes);

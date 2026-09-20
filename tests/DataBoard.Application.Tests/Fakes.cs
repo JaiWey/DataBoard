@@ -1,3 +1,5 @@
+using DataBoard.Domain.Folders;
+using DataBoard.Application.Folders;
 using DataBoard.Application.Abstractions;
 using DataBoard.Application.Charts;
 using DataBoard.Application.DataSources;
@@ -120,22 +122,22 @@ internal sealed class FakeDatasetRepo : IDatasetRepository
             && string.Equals(d.Name, name, StringComparison.OrdinalIgnoreCase) && d.Id != excludeDatasetId));
 }
 
-internal sealed class FakeFolderRepo : IDatasetFolderRepository
+internal sealed class FakeFolderRepo : IFolderRepository
 {
-    public List<DatasetFolder> Items { get; } = [];
+    public List<Folder> Items { get; } = [];
     /// <summary>The datasets the "has contents" check looks at; tests that care point it at their dataset repo.</summary>
     public FakeDatasetRepo? Datasets { get; set; }
 
-    public Task AddAsync(DatasetFolder folder, CancellationToken ct = default) { Items.Add(folder); return Task.CompletedTask; }
-    public void Remove(DatasetFolder folder) => Items.Remove(folder);
-    public Task<DatasetFolder?> GetAsync(Guid organizationId, Guid folderId, CancellationToken ct = default) =>
+    public Task AddAsync(Folder folder, CancellationToken ct = default) { Items.Add(folder); return Task.CompletedTask; }
+    public void Remove(Folder folder) => Items.Remove(folder);
+    public Task<Folder?> GetAsync(Guid organizationId, Guid folderId, CancellationToken ct = default) =>
         Task.FromResult(Items.SingleOrDefault(f => f.OrganizationId == organizationId && f.Id == folderId));
-    public Task<IReadOnlyList<DatasetFolder>> ListByOrganizationAsync(Guid organizationId, CancellationToken ct = default) =>
-        Task.FromResult<IReadOnlyList<DatasetFolder>>(Items.Where(f => f.OrganizationId == organizationId).ToList());
-    public Task<bool> NameExistsAsync(Guid organizationId, Guid? parentId, string name, Guid? excludeFolderId, CancellationToken ct = default) =>
-        Task.FromResult(Items.Any(f => f.OrganizationId == organizationId && f.ParentId == parentId
+    public Task<IReadOnlyList<Folder>> ListByOrganizationAsync(Guid organizationId, FolderKind kind, CancellationToken ct = default) =>
+        Task.FromResult<IReadOnlyList<Folder>>(Items.Where(f => f.OrganizationId == organizationId && f.Kind == kind).ToList());
+    public Task<bool> NameExistsAsync(Guid organizationId, FolderKind kind, Guid? parentId, string name, Guid? excludeFolderId, CancellationToken ct = default) =>
+        Task.FromResult(Items.Any(f => f.OrganizationId == organizationId && f.Kind == kind && f.ParentId == parentId
             && string.Equals(f.Name, name, StringComparison.OrdinalIgnoreCase) && f.Id != excludeFolderId));
-    public Task<bool> HasContentsAsync(Guid folderId, CancellationToken ct = default) =>
+    public Task<bool> HasContentsAsync(FolderKind kind, Guid folderId, CancellationToken ct = default) =>
         Task.FromResult(Items.Any(f => f.ParentId == folderId) || (Datasets?.Items.Any(d => d.FolderId == folderId) ?? false));
 }
 

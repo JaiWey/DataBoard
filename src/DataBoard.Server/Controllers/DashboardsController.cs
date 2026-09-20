@@ -1,4 +1,5 @@
 using DataBoard.Application.Dashboards;
+using DataBoard.Application.Folders;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
@@ -31,6 +32,12 @@ public class DashboardsController : ControllerBase
 	[HttpPut("{dashboardId:guid}")]
 	public async Task<ActionResult<DashboardDto>> Update(
 		Guid organizationId, Guid dashboardId, SaveDashboardRequest body, [FromServices] UpdateDashboardHandler handler, CancellationToken ct) =>
+		Ok(await handler.HandleAsync(organizationId, dashboardId, body, ct));
+
+	/// <summary>Files the dashboard in a folder (folderId null is the top level). Editors and Owners.</summary>
+	[HttpPut("{dashboardId:guid}/folder")]
+	public async Task<ActionResult<DashboardDto>> Move(
+		Guid organizationId, Guid dashboardId, MoveToFolderRequest body, [FromServices] MoveDashboardHandler handler, CancellationToken ct) =>
 		Ok(await handler.HandleAsync(organizationId, dashboardId, body, ct));
 
 	[HttpDelete("{dashboardId:guid}")]
