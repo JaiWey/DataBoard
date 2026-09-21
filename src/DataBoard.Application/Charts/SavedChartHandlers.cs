@@ -46,8 +46,60 @@ internal static class ChartDefinitionValidator
         if (style.Percent && request.Type is not (ChartType.Bar or ChartType.BarHorizontal or ChartType.Line or ChartType.Area))
             throw new ValidationException("Style", "100% stacking is for bar, horizontal bar, line and area charts.");
 
+        CheckStyle(style);
+
         // 100% is a way of stacking.
         return new ChartDefinition(query, style.Percent ? style with { Stack = true } : style);
+    }
+
+    public static readonly string[] LegendPositions = ["top", "bottom", "left", "right"];
+    public static readonly string[] PieLabels = ["name", "value", "percent", "name-value", "name-percent"];
+    public const int MaxColors = 12;
+    public const int MaxTitleLength = 100;
+    public const int MaxAxisTitleLength = 60;
+    public const int MaxAffixLength = 12;
+
+    private static readonly System.Text.RegularExpressions.Regex HexColor = new("^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$");
+
+    /// <summary>Ranges and shapes of the look choices. Anything outside them is refused with the field's name, so nothing odd is stored.</summary>
+    private static void CheckStyle(ChartStyle style)
+    {
+        void Fail(string message) => throw new ValidationException("Style", message);
+
+        if (style.Title is { Length: > MaxTitleLength }) Fail($"The title can be at most {MaxTitleLength} characters.");
+        if (style.XAxisTitle is { Length: > MaxAxisTitleLength } || style.YAxisTitle is { Length: > MaxAxisTitleLength })
+            Fail($"An axis title can be at most {MaxAxisTitleLength} characters.");
+        if (style.YMin is { } min && !double.IsFinite(min) || style.YMax is { } max0 && !double.IsFinite(max0))
+            Fail("The axis limits must be numbers.");
+        if (style.YMin is { } lo && style.YMax is { } hi && lo >= hi) Fail("The axis minimum must be below the maximum.");
+        if (style.LabelRotate is < -90 or > 90) Fail("Labels can be turned between -90 and 90 degrees.");
+
+        if (style.Colors is { } colors)
+        {
+            if (colors.Count > MaxColors) Fail($"Use at most {MaxColors} colours.");
+            if (colors.Any(c => c is null || !HexColor.IsMatch(c))) Fail("Colours are written like #1971c2 or #19c.");
+        }
+        if (style.SeriesColors is { } bySeries)
+        {
+            if (bySeries.Count > MaxColors * 4) Fail("Too many series colours.");
+            if (bySeries.Any(kv => string.IsNullOrWhiteSpace(kv.Key) || kv.Key.Length > 200 || kv.Value is null || !HexColor.IsMatch(kv.Value)))
+                Fail("A series colour needs the series' name and a colour like #1971c2.");
+        }
+
+        if (style.NumberFormat is { } format)
+        {
+            if (format.Decimals is < 0 or > 6) Fail("Decimals can be 0 to 6.");
+            if (format.Prefix is { Length: > MaxAffixLength } || format.Suffix is { Length: > MaxAffixLength })
+                Fail($"A prefix or suffix can be at most {MaxAffixLength} characters.");
+        }
+
+        if (!LegendPositions.Contains(style.LegendPosition)) Fail($"The legend goes at: {string.Join(", ", LegendPositions)}.");
+        if (style.LineWidth is < 1 or > 8) Fail("Lines are 1 to 8 thick.");
+        if (style.BarWidth is < 10 or > 100) Fail("A bar is 10 to 100 percent of its slot wide.");
+        if (style.BarRadius is < 0 or > 20) Fail("Bar corners are rounded 0 to 20.");
+        if (style.AreaOpacity is < 0 or > 100) Fail("An area is 0 to 100 percent solid.");
+        if (style.InnerRadius is < 0 or > 90) Fail("The hole of a donut is 0 to 90 percent.");
+        if (!PieLabels.Contains(style.PieLabel)) Fail($"A slice label is one of: {string.Join(", ", PieLabels)}.");
     }
 
     /// <summary>What the types that need a particular shape of result need. The others draw whatever they are given.</summary>

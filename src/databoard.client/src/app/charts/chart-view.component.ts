@@ -2,6 +2,7 @@ import { Component, computed, input } from '@angular/core';
 import { ChartKind, ChartStyleOptions, ResultShape } from './chart-option';
 import { ChartComponent } from './chart.component';
 import { ChartType } from './charts.service';
+import { formatNumber } from './number-format';
 
 /**
  * Shows a query result the way a saved chart wants it: as a table, as one big number, or as an ECharts chart. Used by
@@ -66,7 +67,7 @@ export class ChartViewComponent {
     const value = row[row.length - 1];
     if (value === null || value === undefined) return '∅';
     const n = Number(value);
-    return Number.isFinite(n) ? n.toLocaleString() : String(value);
+    return Number.isFinite(n) ? formatNumber(n, this.chartStyle().numberFormat) : String(value);
   });
 
   protected readonly numberCaption = computed(() => this.result().columns[this.result().columns.length - 1]?.name ?? '');

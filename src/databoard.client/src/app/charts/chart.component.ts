@@ -33,6 +33,7 @@ async function loadEcharts(): Promise<EchartsApi> {
       charts.HeatmapChart,
       charts.ScatterChart,
       components.GridComponent,
+      components.TitleComponent,
       components.VisualMapComponent,
       components.TooltipComponent,
       components.LegendComponent,

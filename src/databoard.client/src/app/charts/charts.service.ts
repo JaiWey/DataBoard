@@ -2,6 +2,7 @@ import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 import { ChartQuery, ChartResult } from '../organizations/datasets.service';
+import { ChartStyleOptions } from './chart-option';
 
 /** How a saved chart is drawn: ECharts kinds, plus a plain table and a single big number. */
 export type ChartType = 'Table' | 'Bar' | 'Line' | 'Pie' | 'Area' | 'BarHorizontal' | 'Donut' | 'Number' | 'Heatmap' | 'Scatter';
@@ -21,7 +22,11 @@ export const CHART_TYPES: { value: ChartType; label: string }[] = [
 
 export const PALETTE_NAMES = ['default', 'warm', 'cool', 'mono'];
 
-export interface ChartStyle {
+/**
+ * How a saved chart is drawn. The first five are always present; the rest (titles, axes, colours, number format, the
+ * look of series, pie options) are optional and the server fills their defaults in.
+ */
+export interface ChartStyle extends ChartStyleOptions {
   legend: boolean;
   labels: boolean;
   palette: string;
@@ -30,7 +35,6 @@ export interface ChartStyle {
   /** Stacked, and each category scaled to 100%. Implies `stack`. */
   percent: boolean;
 }
-
 export const defaultChartStyle = (): ChartStyle => ({ legend: true, labels: false, palette: 'default', stack: false, percent: false });
 
 /** The stored part of a chart: its query (row limit and sorting included) and style. */

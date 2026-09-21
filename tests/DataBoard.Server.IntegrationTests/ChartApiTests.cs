@@ -261,6 +261,77 @@ public class ChartApiTests(ApiFactory factory)
     }
 
     [Fact]
+    public async Task The_look_choices_round_trip_and_have_defaults()
+    {
+        var f = await NewFixtureAsync();
+
+        var plain = await ReadAsync(await f.Owner.PostAsJsonAsync(Url(f.Org), Revenue(f.Orders, name: "Plain")));
+        var defaults = plain.GetProperty("definition").GetProperty("style");
+        Assert.True(defaults.GetProperty("grid").GetBoolean());
+        Assert.Equal("bottom", defaults.GetProperty("legendPosition").GetString());
+        Assert.Equal(2, defaults.GetProperty("lineWidth").GetInt32());
+        Assert.Equal(70, defaults.GetProperty("areaOpacity").GetInt32());
+        Assert.Equal("name", defaults.GetProperty("pieLabel").GetString());
+        Assert.Equal(JsonValueKind.Null, defaults.GetProperty("title").ValueKind);
+
+        var styled = await ReadAsync(await f.Owner.PostAsJsonAsync(Url(f.Org), Revenue(f.Orders, name: "Styled", style: new
+        {
+            title = "Revenue", xAxisTitle = "Region", yAxisTitle = "NZD", grid = false, yMin = 0, yMax = 500, labelRotate = -45,
+            colors = new[] { "#1971c2", "#e8590c" }, seriesColors = new Dictionary<string, string> { ["Auckland"] = "#2b8a3e" },
+            numberFormat = new { decimals = 1, thousands = true, compact = true, prefix = "$", suffix = "" },
+            legendPosition = "right", smooth = true, lineWidth = 4, symbols = false, barWidth = 60, barRadius = 6, areaOpacity = 30,
+            innerRadius = 50, rose = true, pieLabel = "name-percent",
+        })));
+
+        var style = styled.GetProperty("definition").GetProperty("style");
+        Assert.Equal("Revenue", style.GetProperty("title").GetString());
+        Assert.False(style.GetProperty("grid").GetBoolean());
+        Assert.Equal(500, style.GetProperty("yMax").GetDouble());
+        Assert.Equal(-45, style.GetProperty("labelRotate").GetInt32());
+        Assert.Equal(["#1971c2", "#e8590c"], style.GetProperty("colors").EnumerateArray().Select(c => c.GetString()));
+        Assert.Equal("#2b8a3e", style.GetProperty("seriesColors").GetProperty("Auckland").GetString());
+        Assert.Equal(1, style.GetProperty("numberFormat").GetProperty("decimals").GetInt32());
+        Assert.True(style.GetProperty("numberFormat").GetProperty("compact").GetBoolean());
+        Assert.Equal("$", style.GetProperty("numberFormat").GetProperty("prefix").GetString());
+        Assert.Equal("right", style.GetProperty("legendPosition").GetString());
+        Assert.Equal(4, style.GetProperty("lineWidth").GetInt32());
+        Assert.Equal(60, style.GetProperty("barWidth").GetInt32());
+        Assert.Equal(50, style.GetProperty("innerRadius").GetInt32());
+        Assert.Equal("name-percent", style.GetProperty("pieLabel").GetString());
+
+        var id = styled.GetProperty("id").GetGuid();
+        var fetched = (await ReadAsync(await f.Owner.GetAsync(Url(f.Org, $"/{id}")))).GetProperty("definition").GetProperty("style");
+        Assert.Equal("Region", fetched.GetProperty("xAxisTitle").GetString());
+    }
+
+    [Theory]
+    [InlineData("""{ "title": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" }""")]
+    [InlineData("""{ "yMin": 10, "yMax": 5 }""")]
+    [InlineData("""{ "labelRotate": 120 }""")]
+    [InlineData("""{ "colors": ["red"] }""")]
+    [InlineData("""{ "colors": ["#111111","#222222","#333333","#444444","#555555","#666666","#777777","#888888","#999999","#aaaaaa","#bbbbbb","#cccccc","#dddddd"] }""")]
+    [InlineData("""{ "seriesColors": { "A": "blue" } }""")]
+    [InlineData("""{ "numberFormat": { "decimals": 9 } }""")]
+    [InlineData("""{ "numberFormat": { "prefix": "far too long a prefix" } }""")]
+    [InlineData("""{ "legendPosition": "middle" }""")]
+    [InlineData("""{ "lineWidth": 0 }""")]
+    [InlineData("""{ "barWidth": 5 }""")]
+    [InlineData("""{ "barRadius": 50 }""")]
+    [InlineData("""{ "areaOpacity": 101 }""")]
+    [InlineData("""{ "innerRadius": 95 }""")]
+    [InlineData("""{ "pieLabel": "everything" }""")]
+    public async Task A_look_choice_out_of_range_is_rejected(string styleJson)
+    {
+        var f = await NewFixtureAsync();
+        var style = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(styleJson);
+
+        var response = await f.Owner.PostAsJsonAsync(Url(f.Org), Revenue(f.Orders, name: "Odd", style: style));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Empty((await ReadAsync(await f.Owner.GetAsync(Url(f.Org)))).EnumerateArray());
+    }
+
+    [Fact]
     public async Task Update_changes_the_chart_and_may_move_it_to_another_dataset()
     {
         var f = await NewFixtureAsync();

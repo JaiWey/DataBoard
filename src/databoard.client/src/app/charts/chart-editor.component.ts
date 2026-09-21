@@ -32,6 +32,8 @@ import {
   toQuery,
   toSaveChart,
 } from './chart-editor-model';
+import { ChartKind, seriesNamesOf } from './chart-option';
+import { ChartStylePanelComponent } from './chart-style-panel.component';
 import { ChartViewComponent } from './chart-view.component';
 import { CHART_TYPES, ChartType, ChartsService, PALETTE_NAMES } from './charts.service';
 
@@ -49,7 +51,7 @@ interface Organization {
  */
 @Component({
   selector: 'app-chart-editor',
-  imports: [CdkDropList, CdkDrag, MatButtonModule, MatButtonToggleModule, MatCheckboxModule, MatMenuModule, MatTabsModule, ChartViewComponent],
+  imports: [CdkDropList, CdkDrag, MatButtonModule, MatButtonToggleModule, MatCheckboxModule, MatMenuModule, MatTabsModule, ChartStylePanelComponent, ChartViewComponent],
   template: `
     <header class="top">
       <button type="button" class="back" aria-label="Back to dashboards" (click)="back()">←</button>
@@ -207,6 +209,7 @@ interface Organization {
                   @for (p of palettes; track p) { <option [value]="p" [selected]="p === state().style.palette">{{ p }}</option> }
                 </select>
               </label>
+              <app-chart-style-panel [style]="state().style" [type]="state().type" [seriesNames]="seriesNames()" (changed)="patchStyle($event)" />
             </div>
           </mat-tab>
 
@@ -382,6 +385,13 @@ export class ChartEditorComponent implements OnInit {
 
   /** Charts with an X axis (not a table, number or round chart): the ones where a second dimension makes series. */
   protected readonly axisChart = computed(() => isAxisType(this.state().type));
+  /** What the preview colours (its series or slices), so each can be given a colour of its own. */
+  protected readonly seriesNames = computed(() => {
+    const r = this.result();
+    const type = this.state().type;
+    if (!r || type === 'Table' || type === 'Number') return [];
+    return seriesNamesOf(type as ChartKind, r, this.state().dimensions.length);
+  });
   protected readonly problems = computed(() => problemsOf(this.state()));
   protected readonly dirty = computed(() => JSON.stringify(toSaveChart(this.state())) !== this.savedJson());
   protected readonly canSave = computed(() => this.canEdit() && !this.saving() && problemsOf(this.state(), { forSave: true }).length === 0);

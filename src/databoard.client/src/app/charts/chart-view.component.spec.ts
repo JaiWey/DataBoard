@@ -42,6 +42,16 @@ describe('ChartViewComponent', () => {
     expect(el.querySelector('app-chart')).toBeNull();
   });
 
+  it('writes the number in the number format of the style', () => {
+    const { fixture, el } = setup('Number', result(['revenue'], [[1234567.891]]));
+
+    fixture.componentRef.setInput('chartStyle', { numberFormat: { decimals: 1, prefix: '$', compact: true } });
+    fixture.detectChanges();
+
+    expect(el.querySelector('.value')?.textContent).toBe('$1.2M');
+    expect(el.querySelector('[role=img]')?.getAttribute('aria-label')).toContain('$1.2M');
+  });
+
   it('takes the last column of the first row as the number, shows text as it is and a missing value as a dash', () => {
     expect(setup('Number', result(['a', 'b'], [['x', 7]])).el.querySelector('.value')?.textContent).toBe('7');
     TestBed.resetTestingModule();
