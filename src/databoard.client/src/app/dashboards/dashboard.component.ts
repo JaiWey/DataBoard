@@ -8,9 +8,14 @@ import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { ChartViewComponent } from '../charts/chart-view.component';
 import { ExportMenuComponent } from '../charts/export-menu.component';
+import { Observable } from 'rxjs';
 import { Chart, ChartsService } from '../charts/charts.service';
 import { problemMessages } from '../organizations/data-sources.service';
 import { AddChartsDialogComponent, AddChartsDialogData } from './add-charts-dialog.component';
+import { BackgroundDialogComponent, BackgroundDialogData } from './background-dialog.component';
+import { BackgroundLayerComponent } from './background-layer.component';
+import { ImageWidgetComponent } from './image-widget.component';
+import { ImageWidgetDialogComponent, ImageWidgetDialogData } from './image-widget-dialog.component';
 import { DashboardGridComponent } from './dashboard-grid.component';
 import { ShareDialogComponent, ShareDialogData } from './share-dialog.component';
 import { REFRESH_CHOICES, ago, intervalLabel } from '../shared/relative-time';
@@ -42,7 +47,7 @@ export function parseFilterInput(operator: SharedFilterOperator, text: string): 
 
 @Component({
   selector: 'app-dashboard',
-  imports: [ReactiveFormsModule, RouterLink, MatCardModule, MatFormFieldModule, MatInputModule, MatButtonModule, ChartViewComponent, DashboardGridComponent, ExportMenuComponent],
+  imports: [ReactiveFormsModule, RouterLink, MatCardModule, MatFormFieldModule, MatInputModule, MatButtonModule, ChartViewComponent, DashboardGridComponent, ExportMenuComponent, BackgroundLayerComponent, ImageWidgetComponent],
   template: `
     <mat-card appearance="raised" class="detail">
     @if (dashboard(); as d) {
@@ -63,12 +68,17 @@ export function parseFilterInput(operator: SharedFilterOperator, text: string): 
               <button mat-button type="button" class="refresh" [disabled]="busy()" (click)="refresh()">Refresh data</button>
               <button mat-stroked-button type="button" class="share" (click)="share(d)">Share</button>
               <button mat-stroked-button type="button" (click)="addCharts(d)">Add chart</button>
+              <button mat-stroked-button type="button" class="add-picture" (click)="addPicture(d)">Add picture</button>
+              <button mat-stroked-button type="button" class="background" (click)="editBackground(d)">Background</button>
               <button mat-button type="button" (click)="removeDashboard(d)">Delete dashboard</button>
             }
           }
         </span>
       </mat-card-header>
       <mat-card-content>
+      @if (d.background; as background) {
+        <app-background-layer [load]="loadBackground(d, background.version)" [version]="background.version" [fit]="background.fit" [opacity]="background.opacity" />
+      }
 
       @if (d.refresh; as schedule) {
         @if (schedule.intervalMinutes || canEdit()) {
@@ -126,6 +136,18 @@ export function parseFilterInput(operator: SharedFilterOperator, text: string): 
       <app-dashboard-grid [items]="items()" [editing]="editingLayout()" [labels]="labels()" (layoutChange)="draft.set($event)">
         <ng-template let-id>
           @if (widgetById(id); as widget) {
+          @if (widget.kind === 'Image') {
+            <mat-card appearance="outlined" class="widget picture">
+              <app-image-widget [load]="loadWidgetImage(d, widget)" [version]="widget.imageKey ?? ''" [fit]="widget.imageFit ?? 'contain'"
+                                [alt]="widget.alt" [linkUrl]="widget.linkUrl" />
+              @if (canEdit() && !editingLayout()) {
+                <span class="picture-actions no-print">
+                  <button mat-stroked-button type="button" class="edit-picture" (click)="editPicture(d, widget)">Edit picture</button>
+                  <button mat-stroked-button type="button" class="remove-widget" (click)="removeWidget(d, widget.id)">Remove</button>
+                </span>
+              }
+            </mat-card>
+          } @else {
           <mat-card appearance="outlined" class="widget" data-export-scope>
             @if (chartFor(widget.chartId); as chart) {
               <mat-card-header>
@@ -175,6 +197,7 @@ export function parseFilterInput(operator: SharedFilterOperator, text: string): 
               <mat-card-content><p class="fail" role="alert">This chart was deleted.</p></mat-card-content>
             }
           </mat-card>
+          }
           }
         </ng-template>
       </app-dashboard-grid>
@@ -236,7 +259,8 @@ export function parseFilterInput(operator: SharedFilterOperator, text: string): 
     mat-card-header { align-items: center; flex-wrap: wrap; gap: 0.5rem; }
     .actions { margin-left: auto; display: flex; gap: 0.4rem; }
     .widget-actions { margin-left: auto; display: flex; }
-    .detail > mat-card-content { flex: 1; min-height: 0; overflow: auto; padding-top: 0.75rem; }
+    /* The background picture is a layer under everything in the content, so the content makes its own stacking context. */
+    .detail > mat-card-content { flex: 1; min-height: 0; overflow: auto; padding-top: 0.75rem; position: relative; isolation: isolate; }
     .filters { margin: 0.5rem 0 1rem; }
     .schedule { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.75rem; margin: 0 0 0.75rem; }
     .schedule label { display: flex; align-items: center; gap: 0.5rem; }
@@ -245,6 +269,11 @@ export function parseFilterInput(operator: SharedFilterOperator, text: string): 
     /* A widget fills its cell on the grid; its chart takes what the header leaves, and a table scrolls inside. */
     .widget { height: 100%; }
     .widget mat-card-header { align-items: center; }
+    /* A picture fills its widget; its buttons float over a corner, out of the way until the widget is hovered or focused. */
+    .widget.picture { position: relative; overflow: hidden; padding: 0; }
+    .picture-actions { position: absolute; top: 0.4rem; right: 0.4rem; display: flex; gap: 0.3rem; opacity: 0; transition: opacity 0.12s; background: rgb(255 255 255 / 0.85); border-radius: 0.5rem; padding: 0.2rem; }
+    .widget.picture:hover .picture-actions, .widget.picture:focus-within .picture-actions { opacity: 1; }
+    @media (hover: none) { .picture-actions { opacity: 1; } }
     .widget mat-card-content { flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; padding-bottom: 0.5rem; }
     .widget app-chart-view { flex: 1; min-height: 0; }
     .note { margin: 0.25rem 0 0; }
@@ -285,7 +314,9 @@ export class DashboardComponent implements OnInit {
   protected readonly layoutChanged = computed(() => !sameLayout(this.items(), this.savedLayout()));
   protected readonly labels = computed(() => {
     const names: Record<string, string> = {};
-    for (const w of this.dashboard()?.definition.widgets ?? []) names[w.id] = this.chartFor(w.chartId)?.name ?? 'missing chart';
+    for (const w of this.dashboard()?.definition.widgets ?? []) {
+      names[w.id] = w.kind === 'Image' ? w.alt || 'picture' : (this.chartFor(w.chartId)?.name ?? 'missing chart');
+    }
     return names;
   });
 
@@ -345,6 +376,25 @@ export class DashboardComponent implements OnInit {
     return this.dashboard()?.definition.widgets.find((w) => w.id === id);
   }
 
+  /** Gets the picture behind the dashboard; the layer calls it again whenever the version changes. */
+  protected loadBackground(d: Dashboard, version: string): () => Observable<Blob> {
+    return () => this.api.backgroundImage(this.orgId(), d.id, version);
+  }
+
+  protected editBackground(d: Dashboard): void {
+    this.dialog
+      .open<BackgroundDialogComponent, BackgroundDialogData, Dashboard>(BackgroundDialogComponent, {
+        data: { orgId: this.orgId(), dashboardId: d.id, dashboardName: d.name, background: d.background ?? null },
+        width: '30rem',
+        maxWidth: '95vw',
+      })
+      .afterClosed()
+      .subscribe((saved) => {
+        // Only the look changed: the rest of the dashboard on screen is still right.
+        if (saved) this.dashboard.update((current) => (current ? { ...current, background: saved.background ?? null } : current));
+      });
+  }
+
   /** Public links: make one (and copy it) or revoke the ones that exist. */
   protected share(d: Dashboard): void {
     this.dialog.open<ShareDialogComponent, ShareDialogData>(ShareDialogComponent, {
@@ -390,7 +440,7 @@ export class DashboardComponent implements OnInit {
 
   /** Lets the editor pick saved charts to put on this dashboard (or go and make a new one). */
   protected addCharts(d: Dashboard): void {
-    const placed = new Set(d.definition.widgets.map((w) => w.chartId));
+    const placed = new Set(d.definition.widgets.filter((w) => w.kind !== 'Image').map((w) => w.chartId));
     const names: Record<string, string> = {};
     for (const dataset of this.datasets()) names[dataset.id] = dataset.name;
 
@@ -415,6 +465,32 @@ export class DashboardComponent implements OnInit {
       },
       error: (e) => this.errors.set(problemMessages(e, 'Could not load the charts.')),
     });
+  }
+
+  /** Gets the picture of a picture widget; the widget calls it again whenever the picture's version changes. */
+  protected loadWidgetImage(d: Dashboard, widget: DashboardWidget): () => Observable<Blob> {
+    return () => this.api.widgetImage(this.orgId(), d.id, widget.id, widget.imageKey ?? '');
+  }
+
+  /** Lets the editor choose a picture to put on the dashboard. */
+  protected addPicture(d: Dashboard): void {
+    this.openPictureDialog({ orgId: this.orgId(), dashboard: d });
+  }
+
+  protected editPicture(d: Dashboard, widget: DashboardWidget): void {
+    this.openPictureDialog({ orgId: this.orgId(), dashboard: d, widget });
+  }
+
+  private openPictureDialog(data: ImageWidgetDialogData): void {
+    this.dialog
+      .open<ImageWidgetDialogComponent, ImageWidgetDialogData, Dashboard>(ImageWidgetDialogComponent, { data, width: '30rem', maxWidth: '95vw' })
+      .afterClosed()
+      .subscribe((saved) => {
+        if (!saved) return;
+        // Pictures are not charts, so nothing needs running again.
+        this.show(saved);
+        this.changed.emit(saved);
+      });
   }
 
   protected datasetName(id: string): string {

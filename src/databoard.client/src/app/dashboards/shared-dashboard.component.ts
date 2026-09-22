@@ -5,15 +5,17 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatCardModule } from '@angular/material/card';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
-import { Subscription } from 'rxjs';
+import { Observable, Subscription } from 'rxjs';
 import { ChartViewComponent } from '../charts/chart-view.component';
 import { ExportMenuComponent } from '../charts/export-menu.component';
 import { problemMessages } from '../organizations/data-sources.service';
+import { BackgroundLayerComponent } from './background-layer.component';
+import { ImageWidgetComponent } from './image-widget.component';
 import { DashboardGridComponent } from './dashboard-grid.component';
 import { ago } from '../shared/relative-time';
 import { arrange } from './dashboard-layout';
 import { parseFilterInput } from './dashboard.component';
-import { DashboardRun, FilterValues, SHARED_FILTER_OPERATORS, WidgetResult } from './dashboards.service';
+import { DashboardRun, DashboardWidget, FilterValues, SHARED_FILTER_OPERATORS, WidgetResult } from './dashboards.service';
 import { SharedChart, SharedDashboard, SharedDashboardsService } from './shared-dashboards.service';
 
 /**
@@ -22,7 +24,7 @@ import { SharedChart, SharedDashboard, SharedDashboardsService } from './shared-
  */
 @Component({
   selector: 'app-shared-dashboard',
-  imports: [ReactiveFormsModule, MatCardModule, MatButtonModule, MatFormFieldModule, MatInputModule, ChartViewComponent, DashboardGridComponent, ExportMenuComponent],
+  imports: [ReactiveFormsModule, MatCardModule, MatButtonModule, MatFormFieldModule, MatInputModule, ChartViewComponent, DashboardGridComponent, ExportMenuComponent, BackgroundLayerComponent, ImageWidgetComponent],
   template: `
     <header class="bar">
       <svg viewBox="0 0 32 32" width="24" height="24" aria-hidden="true">
@@ -37,6 +39,9 @@ import { SharedChart, SharedDashboard, SharedDashboardsService } from './shared-
 
     <main class="page">
       @if (dashboard(); as d) {
+        @if (d.background; as background) {
+          <app-background-layer [load]="loadBackground(background.version)" [version]="background.version" [fit]="background.fit" [opacity]="background.opacity" />
+        }
         <div class="title">
           <div>
             <h1>{{ d.name }}</h1>
@@ -69,7 +74,12 @@ import { SharedChart, SharedDashboard, SharedDashboardsService } from './shared-
 
         <app-dashboard-grid [items]="items()" [labels]="labels()">
           <ng-template let-id>
-            @if (chartOf(id); as chart) {
+            @if (imageOf(id); as picture) {
+              <mat-card appearance="outlined" class="widget picture">
+                <app-image-widget [load]="loadWidgetImage(picture)" [version]="picture.imageKey ?? ''" [fit]="picture.imageFit ?? 'contain'"
+                                  [alt]="picture.alt" [linkUrl]="picture.linkUrl" />
+              </mat-card>
+            } @else if (chartOf(id); as chart) {
               <mat-card appearance="outlined" class="widget" data-export-scope>
                 <mat-card-header>
                   <mat-card-title>{{ chart.name }}</mat-card-title>
@@ -117,7 +127,8 @@ import { SharedChart, SharedDashboard, SharedDashboardsService } from './shared-
     </main>
   `,
   styles: `
-    :host { display: block; min-height: 100vh; background: var(--mat-sys-surface-container-lowest, #fff); }
+    /* The background picture is a layer behind the whole page, so the page makes its own stacking context. */
+    :host { display: block; min-height: 100vh; position: relative; isolation: isolate; background: var(--mat-sys-surface-container-lowest, #fff); }
     .bar { display: flex; align-items: center; gap: 0.5rem; padding: 0.6rem 1.5rem; background: #05111f; color: #fff; }
     .brand { font: var(--mat-sys-title-medium); }
     .bar .note { margin-left: auto; opacity: 0.7; font-size: 0.85rem; }
@@ -130,6 +141,7 @@ import { SharedChart, SharedDashboard, SharedDashboardsService } from './shared-
     .widget { height: 100%; }
     .widget mat-card-title { font: var(--mat-sys-title-medium); }
     .widget mat-card-header { align-items: center; }
+    .widget.picture { overflow: hidden; padding: 0; }
     .widget-actions { margin-left: auto; display: flex; }
     .widget mat-card-content { flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; padding-bottom: 0.5rem; }
     .widget app-chart-view { flex: 1; min-height: 0; }
@@ -154,11 +166,16 @@ export class SharedDashboardComponent implements OnInit {
   private readonly charts = computed(() => new Map((this.dashboard()?.charts ?? []).map((c) => [c.id, c])));
   protected readonly labels = computed(() => {
     const names: Record<string, string> = {};
-    for (const w of this.dashboard()?.widgets ?? []) names[w.id] = this.charts().get(w.chartId)?.name ?? 'chart';
+    for (const w of this.dashboard()?.widgets ?? []) names[w.id] = w.kind === 'Image' ? w.alt || 'picture' : (this.charts().get(w.chartId)?.name ?? 'chart');
     return names;
   });
 
   private token = '';
+
+  /** Gets the picture behind the dashboard; the layer calls it again whenever the version changes. */
+  protected loadBackground(version: string): () => Observable<Blob> {
+    return () => this.api.backgroundImage(this.token, version);
+  }
   private request: Subscription | undefined;
 
   constructor() {
@@ -179,6 +196,17 @@ export class SharedDashboardComponent implements OnInit {
 
   protected operatorLabel(operator: string): string {
     return SHARED_FILTER_OPERATORS.find((o) => o.value === operator)?.label ?? operator;
+  }
+
+  /** The widget, if it is a picture. */
+  protected imageOf(widgetId: string): DashboardWidget | undefined {
+    const widget = this.dashboard()?.widgets.find((w) => w.id === widgetId);
+    return widget?.kind === 'Image' ? widget : undefined;
+  }
+
+  /** Gets the picture of a picture widget; the widget calls it again whenever the picture's version changes. */
+  protected loadWidgetImage(widget: DashboardWidget): () => Observable<Blob> {
+    return () => this.api.widgetImage(this.token, widget.id, widget.imageKey ?? '');
   }
 
   protected chartOf(widgetId: string): SharedChart | undefined {

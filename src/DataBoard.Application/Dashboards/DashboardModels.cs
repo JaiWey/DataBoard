@@ -9,11 +9,23 @@ namespace DataBoard.Application.Dashboards;
 /// </summary>
 public sealed record WidgetLayout(int X, int Y, int W, int H);
 
+/// <summary>What a widget shows: a saved chart, or a picture kept with the dashboard.</summary>
+public enum WidgetKind { Chart = 0, Image = 1 }
+
 /// <summary>
-/// One chart placed on a dashboard. The chart itself (dataset, type, query, style) is a saved chart, shared by every
-/// dashboard that shows it. A widget without a <paramref name="Layout"/> (older dashboards) is placed by the client.
+/// One thing placed on a dashboard. A chart widget shows a saved chart (dataset, type, query, style), shared by every
+/// dashboard that shows it. An image widget shows a picture that belongs to this dashboard: the picture is uploaded
+/// through its own call (the server makes the widget and names the picture), after which only its fit, description and
+/// link can be changed here. A widget without a <paramref name="Layout"/> (older dashboards) is placed by the client.
 /// </summary>
-public sealed record DashboardWidget(Guid Id, Guid ChartId, WidgetLayout? Layout = null);
+/// <param name="ChartId">The chart of a chart widget; empty for an image.</param>
+/// <param name="ImageKey">Where the picture of an image widget is kept. Set by the server only; whatever a client sends is ignored.</param>
+/// <param name="ImageFit">contain (the whole picture), cover (fills the widget, may crop) or fill (stretched).</param>
+/// <param name="Alt">What the picture shows, for people who cannot see it.</param>
+/// <param name="LinkUrl">Where a click on the picture goes: an http or https address.</param>
+public sealed record DashboardWidget(
+    Guid Id, Guid ChartId, WidgetLayout? Layout = null,
+    WidgetKind Kind = WidgetKind.Chart, string? ImageKey = null, string? ImageFit = null, string? Alt = null, string? LinkUrl = null);
 
 /// <summary>
 /// A filter shared by the whole dashboard. Viewers pick values; the filter then applies to every widget whose dataset
@@ -45,7 +57,7 @@ public sealed record DashboardRefreshDto(
 
 public sealed record DashboardDto(
     Guid Id, string Name, string? Description, DashboardDefinition Definition, DateTime CreatedUtc, DateTime UpdatedUtc,
-    DashboardRefreshDto? Refresh = null, Guid? FolderId = null);
+    DashboardRefreshDto? Refresh = null, Guid? FolderId = null, DashboardBackgroundDto? Background = null);
 
 /// <param name="IntervalMinutes">5 to 1440, or null to stop refreshing on a schedule.</param>
 public sealed record SetDashboardRefreshRequest(int? IntervalMinutes);

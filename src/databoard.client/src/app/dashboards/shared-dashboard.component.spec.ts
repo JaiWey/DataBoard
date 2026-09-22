@@ -177,4 +177,76 @@ describe('SharedDashboardComponent', () => {
     expect(el().textContent).toContain('This link works until');
     expect(buttons()).toEqual([]); // nothing to print, no filters
   });
-});
+
+  describe('background picture', () => {
+    beforeEach(() => {
+      vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:picture');
+      vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
+    });
+
+    it('fetches the picture with the link and shows it the way it was saved', () => {
+      open({ ...page(), background: { version: 'v9', fit: 'contain', opacity: 55 } });
+      http.expectOne(runUrl).flush(run());
+      http.expectOne({ method: 'GET', url: `/api/shared/dashboards/${TOKEN}/background?v=v9` }).flush(new Blob(['x']));
+      fixture.detectChanges();
+
+      const layer = el().querySelector('app-background-layer .layer') as HTMLElement;
+      expect(layer.style.backgroundImage).toContain('blob:picture');
+      expect(layer.style.backgroundSize).toBe('contain');
+      expect(layer.style.opacity).toBe('0.55');
+    });
+
+    it('has no layer, and fetches nothing, when the dashboard has no picture', () => {
+      open();
+      http.expectOne(runUrl).flush(run());
+      fixture.detectChanges();
+
+      expect(el().querySelector('app-background-layer')).toBeNull();
+    });
+
+    it('still shows the dashboard when the picture cannot be fetched', () => {
+      open({ ...page(), background: { version: 'v9', fit: 'cover', opacity: 100 } });
+      http.expectOne(runUrl).flush(run());
+      http.expectOne(`/api/shared/dashboards/${TOKEN}/background?v=v9`).flush(new Blob(['gone']), { status: 404, statusText: 'Not Found' });
+      fixture.detectChanges();
+
+      expect(el().querySelector('h1')?.textContent).toBe('Sales overview');
+      expect((el().querySelector('app-background-layer .layer') as HTMLElement).style.backgroundImage).toBe('');
+    });
+  });
+
+  describe('picture widgets', () => {
+    const WID = 'e0000000-0000-0000-0000-000000000001';
+    const withPicture = () => {
+      const base = page() as { widgets: object[] };
+      return { ...base, widgets: [...base.widgets, { id: WID, chartId: '00000000-0000-0000-0000-000000000000', kind: 'Image', imageKey: 'v7', imageFit: 'fill', alt: 'Logo', linkUrl: 'https://example.com', layout: { x: 0, y: 20, w: 4, h: 4 } }] };
+    };
+
+    beforeEach(() => {
+      vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:picture');
+      vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
+    });
+
+    it('shows the picture, fetched with the link and its version, and treats it as no chart', () => {
+      open(withPicture());
+      http.expectOne(runUrl).flush(run());
+      http.expectOne({ method: 'GET', url: `/api/shared/dashboards/${TOKEN}/images/${WID}?v=v7` }).flush(new Blob(['x']));
+      fixture.detectChanges();
+
+      const img = el().querySelector('app-image-widget img') as HTMLImageElement;
+      expect(img.getAttribute('src')).toBe('blob:picture');
+      expect(img.getAttribute('alt')).toBe('Logo');
+      expect(img.style.objectFit).toBe('fill');
+      expect((el().querySelector('app-image-widget a') as HTMLAnchorElement).getAttribute('rel')).toBe('noopener noreferrer');
+    });
+
+    it('still shows the rest of the page when the picture cannot be fetched', () => {
+      open(withPicture());
+      http.expectOne(runUrl).flush(run());
+      http.expectOne(`/api/shared/dashboards/${TOKEN}/images/${WID}?v=v7`).flush(new Blob(['gone']), { status: 404, statusText: 'Not Found' });
+      fixture.detectChanges();
+
+      expect(el().querySelector('h1')?.textContent).toBe('Sales overview');
+      expect(el().textContent).toContain('could not be shown');
+    });
+  });});

@@ -19,6 +19,45 @@ public sealed class Dashboard : BaseEntity
     public string DefinitionJson { get; private set; } = "{}";
     /// <summary>The folder it is filed in, or null for the top level.</summary>
     public Guid? FolderId { get; private set; }
+
+    // ---- background picture ----
+
+    public const int MaxBackgroundKeyLength = 60;
+    public static readonly string[] BackgroundFits = ["cover", "contain", "tile", "center"];
+
+    /// <summary>The key of the picture behind the dashboard, as its store knows it; null when there is none.</summary>
+    public string? BackgroundImageKey { get; private set; }
+
+    /// <summary>How the picture fills the dashboard: one of <see cref="BackgroundFits"/>.</summary>
+    public string BackgroundFit { get; private set; } = "cover";
+
+    /// <summary>How strong the picture is, 10 to 100 percent (a fainter picture keeps charts readable).</summary>
+    public int BackgroundOpacity { get; private set; } = 100;
+
+    /// <summary>
+    /// Puts a picture behind the dashboard, or changes how it is shown. A look of the dashboard, not an edit of its content,
+    /// so it does not count as an update.
+    /// </summary>
+    public void SetBackground(string key, string fit, int opacity)
+    {
+        if (string.IsNullOrWhiteSpace(key) || key.Length > MaxBackgroundKeyLength)
+            throw new ArgumentException("A background needs a picture.", nameof(key));
+        if (!BackgroundFits.Contains(fit))
+            throw new ArgumentException($"The picture is shown as: {string.Join(", ", BackgroundFits)}.", nameof(fit));
+        if (opacity is < 10 or > 100)
+            throw new ArgumentException("The picture can be 10 to 100 percent strong.", nameof(opacity));
+
+        BackgroundImageKey = key;
+        BackgroundFit = fit;
+        BackgroundOpacity = opacity;
+    }
+
+    public void ClearBackground()
+    {
+        BackgroundImageKey = null;
+        BackgroundFit = "cover";
+        BackgroundOpacity = 100;
+    }
     public Guid CreatedByUserId { get; private set; }
     public DateTime CreatedUtc { get; private set; }
     public DateTime UpdatedUtc { get; private set; }

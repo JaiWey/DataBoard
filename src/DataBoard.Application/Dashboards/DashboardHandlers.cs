@@ -31,7 +31,7 @@ internal static class DashboardMapping
     public static DashboardDto ToDto(this Dashboard d) =>
         new(d.Id, d.Name, d.Description, DashboardJson.Deserialize(d.DefinitionJson), d.CreatedUtc, d.UpdatedUtc,
             new DashboardRefreshDto(d.RefreshIntervalMinutes, d.NextRefreshUtc, d.LastRefreshUtc, d.LastRefreshFailures, d.LastRefreshMessage),
-            d.FolderId);
+            d.FolderId, d.ToBackgroundDto());
 }
 
 /// <summary>
@@ -51,12 +51,18 @@ internal static class DashboardValidator
         [FilterOperator.Eq, FilterOperator.NotEq, FilterOperator.In, FilterOperator.Contains, FilterOperator.StartsWith,
          FilterOperator.Gte, FilterOperator.Lte, FilterOperator.Between];
 
-    /// <param name="existingWidgetIds">
-    /// Widgets the dashboard already has. If one of their charts has since been deleted it is simply dropped; a new
-    /// widget that names a missing chart is an error.
+    public static readonly string[] ImageFits = ["contain", "cover", "fill"];
+    public const int MaxAltLength = 200;
+    public const int MaxLinkLength = 500;
+
+    /// <param name="existing">
+    /// Widgets the dashboard already has, by id. If one of their charts has since been deleted it is simply dropped; a new
+    /// widget that names a missing chart is an error. An image widget can only be one of these: pictures are added
+    /// through their own call, and its picture is always the one it already has.
     /// </param>
     public static async Task<DashboardDefinition> NormalizeAsync(
-        DashboardDefinition? definition, IChartRepository charts, Guid organizationId, IReadOnlySet<Guid> existingWidgetIds, CancellationToken ct)
+        DashboardDefinition? definition, IChartRepository charts, Guid organizationId,
+        IReadOnlyDictionary<Guid, DashboardWidget> existing, CancellationToken ct)
     {
         definition ??= new DashboardDefinition([], []);
         var errors = new Dictionary<string, string[]>();
@@ -94,14 +100,55 @@ internal static class DashboardValidator
         {
             var w = widgets[i];
             var field = $"Widgets[{i}]";
-            if (w is null || w.ChartId == Guid.Empty)
+            if (w is null)
+            {
+                Fail(field, "A widget needs a chart.");
+                continue;
+            }
+
+            if (w.Kind == WidgetKind.Image)
+            {
+                // A picture is made by its own call; here only how it is shown can change.
+                if (w.Id == Guid.Empty || !existing.TryGetValue(w.Id, out var current) || current.Kind != WidgetKind.Image || current.ImageKey is null)
+                {
+                    Fail(field, "A picture is added with its own call, not with the dashboard.");
+                    continue;
+                }
+                if (w.ImageFit is not null && !ImageFits.Contains(w.ImageFit))
+                {
+                    Fail(field, $"A picture is shown as: {string.Join(", ", ImageFits)}.");
+                    continue;
+                }
+                if (w.Alt is { Length: > MaxAltLength })
+                {
+                    Fail(field, $"The description of a picture can be at most {MaxAltLength} characters.");
+                    continue;
+                }
+                if (!string.IsNullOrWhiteSpace(w.LinkUrl) && !IsWebAddress(w.LinkUrl))
+                {
+                    Fail(field, "A link must be an address starting with http:// or https://.");
+                    continue;
+                }
+                if (w.Layout is { } imageLayout && LayoutProblem(imageLayout) is { } imageProblem)
+                {
+                    Fail(field, imageProblem);
+                    continue;
+                }
+
+                normalizedWidgets.Add(new DashboardWidget(
+                    w.Id, Guid.Empty, w.Layout, WidgetKind.Image, current.ImageKey, w.ImageFit ?? current.ImageFit ?? "contain",
+                    string.IsNullOrWhiteSpace(w.Alt) ? null : w.Alt.Trim(), string.IsNullOrWhiteSpace(w.LinkUrl) ? null : w.LinkUrl.Trim()));
+                continue;
+            }
+
+            if (w.ChartId == Guid.Empty)
             {
                 Fail(field, "A widget needs a chart.");
                 continue;
             }
             if (await charts.GetAsync(organizationId, w.ChartId, ct) is null)
             {
-                if (w.Id != Guid.Empty && existingWidgetIds.Contains(w.Id)) continue; // its chart was deleted
+                if (w.Id != Guid.Empty && existing.ContainsKey(w.Id)) continue; // its chart was deleted
                 Fail(field, "The chart was not found.");
                 continue;
             }
@@ -112,16 +159,21 @@ internal static class DashboardValidator
                 continue;
             }
 
-            normalizedWidgets.Add(w with { Id = w.Id == Guid.Empty ? Guid.NewGuid() : w.Id });
+            // A chart widget carries nothing of a picture, whatever was sent.
+            normalizedWidgets.Add(new DashboardWidget(w.Id == Guid.Empty ? Guid.NewGuid() : w.Id, w.ChartId, w.Layout));
         }
         if (normalizedWidgets.Select(w => w.Id).Distinct().Count() != normalizedWidgets.Count)
             Fail("Widgets", "Widget ids must be unique.");
-        if (normalizedWidgets.Select(w => w.ChartId).Distinct().Count() != normalizedWidgets.Count)
+        var chartWidgets = normalizedWidgets.Where(w => w.Kind == WidgetKind.Chart).ToList();
+        if (chartWidgets.Select(w => w.ChartId).Distinct().Count() != chartWidgets.Count)
             Fail("Widgets", "A chart can only be on a dashboard once.");
 
         if (errors.Count > 0) throw new ValidationException(errors);
         return new DashboardDefinition(normalizedWidgets, normalizedFilters);
     }
+
+    internal static bool IsWebAddress(string value) =>
+        value.Length <= MaxLinkLength && Uri.TryCreate(value.Trim(), UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https";
 
     /// <summary>Widgets sit on a 12-column grid. Overlaps are not rejected: the client lays out and pushes widgets apart.</summary>
     private static string? LayoutProblem(WidgetLayout l)
@@ -146,7 +198,7 @@ public sealed class CreateDashboardHandler(
             throw new ConflictException("A dashboard with that name already exists.");
 
         await FolderRules.RequireFolderAsync(folders, organizationId, FolderKind.Dashboard, request.FolderId, "FolderId", ct);
-        var definition = await DashboardValidator.NormalizeAsync(request.Definition, charts, organizationId, new HashSet<Guid>(), ct);
+        var definition = await DashboardValidator.NormalizeAsync(request.Definition, charts, organizationId, new Dictionary<Guid, DashboardWidget>(), ct);
         var dashboard = DatasetQuery.Guard(() => Dashboard.Create(
             organizationId, request.Name!, request.Description, DashboardJson.Serialize(definition), userId, clock.UtcNow, request.FolderId));
 
@@ -164,8 +216,8 @@ public sealed class ListDashboardsHandler(IDashboardRepository dashboards, Organ
         var items = await dashboards.ListByOrganizationAsync(organizationId, ct);
         return items
             .Select(d => new DashboardSummaryDto(
-                d.Id, d.Name, d.Description, DashboardJson.Deserialize(d.DefinitionJson).Widgets.Count, d.UpdatedUtc,
-                DashboardJson.Deserialize(d.DefinitionJson).Widgets.Select(w => w.ChartId).ToList(), d.FolderId))
+                d.Id, d.Name, d.Description, DashboardJson.Deserialize(d.DefinitionJson).Widgets.Count(w => w.Kind == WidgetKind.Chart), d.UpdatedUtc,
+                DashboardJson.Deserialize(d.DefinitionJson).Widgets.Where(w => w.Kind == WidgetKind.Chart).Select(w => w.ChartId).ToList(), d.FolderId))
             .ToList();
     }
 }
@@ -182,7 +234,7 @@ public sealed class GetDashboardHandler(IDashboardRepository dashboards, Organiz
 }
 
 public sealed class UpdateDashboardHandler(
-    IDashboardRepository dashboards, IChartRepository charts, IUnitOfWork unitOfWork, IClock clock, OrganizationAccess access)
+    IDashboardRepository dashboards, IChartRepository charts, IImageStore images, IUnitOfWork unitOfWork, IClock clock, OrganizationAccess access)
 {
     public async Task<DashboardDto> HandleAsync(Guid organizationId, Guid dashboardId, SaveDashboardRequest request, CancellationToken ct = default)
     {
@@ -193,7 +245,8 @@ public sealed class UpdateDashboardHandler(
         if (await dashboards.NameExistsAsync(organizationId, request.Name?.Trim() ?? string.Empty, dashboard.Id, ct))
             throw new ConflictException("A dashboard with that name already exists.");
 
-        var existing = DashboardJson.Deserialize(dashboard.DefinitionJson).Widgets.Select(w => w.Id).ToHashSet();
+        var before = DashboardJson.Deserialize(dashboard.DefinitionJson);
+        var existing = before.Widgets.ToDictionary(w => w.Id);
         var definition = await DashboardValidator.NormalizeAsync(request.Definition, charts, organizationId, existing, ct);
         DatasetQuery.Guard(() =>
         {
@@ -202,11 +255,16 @@ public sealed class UpdateDashboardHandler(
         });
 
         await unitOfWork.SaveChangesAsync(ct);
+
+        // A picture whose widget is gone is not wanted any more.
+        var kept = definition.Widgets.Select(w => w.ImageKey).Where(k => k is not null).ToHashSet();
+        foreach (var key in before.Widgets.Select(w => w.ImageKey).Where(k => k is not null && !kept.Contains(k)))
+            images.Delete(key!);
         return dashboard.ToDto();
     }
 }
 
-public sealed class DeleteDashboardHandler(IDashboardRepository dashboards, IUnitOfWork unitOfWork, OrganizationAccess access)
+public sealed class DeleteDashboardHandler(IDashboardRepository dashboards, IImageStore images, IUnitOfWork unitOfWork, OrganizationAccess access)
 {
     public async Task HandleAsync(Guid organizationId, Guid dashboardId, CancellationToken ct = default)
     {
@@ -214,8 +272,12 @@ public sealed class DeleteDashboardHandler(IDashboardRepository dashboards, IUni
 
         var dashboard = await dashboards.GetAsync(organizationId, dashboardId, ct)
             ?? throw new NotFoundException("Dashboard not found.");
+        var background = dashboard.BackgroundImageKey;
+        var pictures = DashboardJson.Deserialize(dashboard.DefinitionJson).Widgets.Select(w => w.ImageKey).Where(k => k is not null).ToList();
         dashboards.Remove(dashboard);
         await unitOfWork.SaveChangesAsync(ct);
+        if (background is not null) images.Delete(background);
+        foreach (var key in pictures) images.Delete(key!);
     }
 }
 
@@ -290,6 +352,8 @@ public sealed class RunDashboardHandler(
         var results = new List<WidgetResult>();
         foreach (var widget in definition.Widgets)
         {
+            if (widget.Kind != WidgetKind.Chart) continue; // a picture has nothing to run
+
             var chart = await charts.GetAsync(organizationId, widget.ChartId, ct);
             if (chart is null)
             {

@@ -33,7 +33,8 @@ public sealed record SharedDashboardDto(
     IReadOnlyList<DashboardWidget> Widgets,
     IReadOnlyList<SharedFilterDto> Filters,
     IReadOnlyList<SharedChartDto> Charts,
-    DateTime? ExpiresUtc);
+    DateTime? ExpiresUtc,
+    DashboardBackgroundDto? Background = null);
 
 internal static class ShareTokens
 {
@@ -138,6 +139,14 @@ public sealed class GetSharedDashboardHandler(
         var widgets = new List<DashboardWidget>();
         foreach (var widget in definition.Widgets)
         {
+            if (widget.Kind == WidgetKind.Image)
+            {
+                // The public page needs to know a picture is there and whether it changed, not where it is kept.
+                if (widget.ImageKey is { } pictureKey)
+                    widgets.Add(widget with { ImageKey = Path.GetFileNameWithoutExtension(pictureKey) });
+                continue;
+            }
+
             var chart = await charts.GetAsync(share.OrganizationId, widget.ChartId, ct);
             if (chart is null) continue; // a deleted chart simply is not there for the public
 
@@ -152,7 +161,8 @@ public sealed class GetSharedDashboardHandler(
             widgets,
             definition.Filters.Select(f => new SharedFilterDto(f.Id, f.Label, f.Operator)).ToList(),
             shown,
-            share.ExpiresUtc);
+            share.ExpiresUtc,
+            dashboard.ToBackgroundDto());
     }
 }
 

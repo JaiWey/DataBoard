@@ -178,7 +178,9 @@ public class CsvUploadApiTests(ApiFactory factory)
         var upload = await ReadAsync<UploadResult>(await client.PostAsync(Base(org.Id) + "/csv", Form(Sales, fileName)));
 
         Assert.Matches("^[a-z_]+$", upload.TableName);
-        Assert.All(Directory.GetFiles(factory.UploadFolder, "*", SearchOption.AllDirectories),
+        // Everything the CSV upload kept is directly in the uploads folder (pictures have their own "images" folder inside it).
+        var pictures = Path.Combine(factory.UploadFolder, "images");
+        Assert.All(Directory.GetFiles(factory.UploadFolder, "*", SearchOption.AllDirectories).Where(f => !f.StartsWith(pictures + Path.DirectorySeparatorChar)),
             f => Assert.Equal(factory.UploadFolder, Path.GetDirectoryName(f)));
     }
 

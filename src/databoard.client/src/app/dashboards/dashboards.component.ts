@@ -257,7 +257,12 @@ export class DashboardsComponent implements OnInit {
     this.dashboards.update((items) =>
       items.map((d) =>
         d.id === saved.id
-          ? { ...d, name: saved.name, widgetCount: saved.definition.widgets.length, chartIds: saved.definition.widgets.map((w) => w.chartId) }
+          ? {
+              ...d, name: saved.name,
+              // Pictures are on the dashboard but are not charts.
+              widgetCount: saved.definition.widgets.filter((w) => w.kind !== 'Image').length,
+              chartIds: saved.definition.widgets.filter((w) => w.kind !== 'Image').map((w) => w.chartId),
+            }
           : d,
       ),
     );

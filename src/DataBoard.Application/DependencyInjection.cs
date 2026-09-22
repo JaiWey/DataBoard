@@ -64,6 +64,14 @@ public static class DependencyInjection
         services.AddScoped<RunDashboardHandler>();
         services.AddScoped<SetDashboardRefreshHandler>();
         services.AddScoped<RefreshDueDashboardsHandler>();
+        services.AddScoped<SetDashboardBackgroundHandler>();
+        services.AddScoped<RemoveDashboardBackgroundHandler>();
+        services.AddScoped<GetDashboardBackgroundHandler>();
+        services.AddScoped<GetSharedDashboardBackgroundHandler>();
+        services.AddScoped<AddImageWidgetHandler>();
+        services.AddScoped<ReplaceImageWidgetHandler>();
+        services.AddScoped<GetImageWidgetHandler>();
+        services.AddScoped<GetSharedImageWidgetHandler>();
 
         services.AddScoped<CreateApiTokenHandler>();
         services.AddScoped<ListApiTokensHandler>();

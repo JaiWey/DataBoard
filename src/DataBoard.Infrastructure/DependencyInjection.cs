@@ -86,6 +86,7 @@ public static class DependencyInjection
         // Uploaded CSV files: imported into a small SQLite file each, then read like any other data source.
         services.Configure<UploadOptions>(configuration.GetSection(UploadOptions.SectionName));
         services.AddSingleton<IUploadStore, LocalUploadStore>();
+        services.AddSingleton<IImageStore, LocalImageStore>();
         services.AddSingleton<ICsvImporter, CsvImporter>();
         services.AddSingleton<IDataSourceConnector, SqliteConnector>();
         services.AddSingleton<IChartSqlRenderer, SqliteChartSqlRenderer>();

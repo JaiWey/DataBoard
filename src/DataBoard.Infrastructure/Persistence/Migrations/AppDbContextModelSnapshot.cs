@@ -85,6 +85,25 @@ namespace DataBoard.Infrastructure.Persistence.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<string>("BackgroundFit")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasDefaultValue("cover")
+                        .HasColumnName("background_fit");
+
+                    b.Property<string>("BackgroundImageKey")
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)")
+                        .HasColumnName("background_image");
+
+                    b.Property<int>("BackgroundOpacity")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(100)
+                        .HasColumnName("background_opacity");
+
                     b.Property<Guid>("CreatedByUserId")
                         .HasColumnType("uuid");
 

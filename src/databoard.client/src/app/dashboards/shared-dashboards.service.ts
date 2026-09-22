@@ -2,7 +2,7 @@ import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 import { ChartStyle, ChartType } from '../charts/charts.service';
-import { DashboardRun, DashboardWidget, FilterValues, SharedFilterOperator } from './dashboards.service';
+import { DashboardBackground, DashboardRun, DashboardWidget, FilterValues, SharedFilterOperator } from './dashboards.service';
 
 /** What a visitor with a link needs to draw one chart: how it looks, not where its data comes from. */
 export interface SharedChart {
@@ -26,6 +26,7 @@ export interface SharedDashboard {
   filters: SharedFilter[];
   charts: SharedChart[];
   expiresUtc: string | null;
+  background?: DashboardBackground | null;
 }
 
 /** The public side of a dashboard link: no account, the token in the address is the credential. */
@@ -39,6 +40,16 @@ export class SharedDashboardsService {
 
   get(token: string): Observable<SharedDashboard> {
     return this.http.get<SharedDashboard>(this.url(token));
+  }
+
+  /** The picture behind the dashboard, as a file. */
+  backgroundImage(token: string, version: string): Observable<Blob> {
+    return this.http.get(this.url(token, '/background'), { params: { v: version }, responseType: 'blob' });
+  }
+
+  /** The picture of a picture widget, as a file. */
+  widgetImage(token: string, widgetId: string, version: string): Observable<Blob> {
+    return this.http.get(this.url(token, `/images/${widgetId}`), { params: { v: version }, responseType: 'blob' });
   }
 
   run(token: string, filters: FilterValues): Observable<DashboardRun> {

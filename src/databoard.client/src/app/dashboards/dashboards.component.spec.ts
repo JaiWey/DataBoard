@@ -181,6 +181,23 @@ describe('DashboardsComponent', () => {
     expect(el().querySelector('button.item .sub')?.textContent).toContain('1 chart');
   });
 
+  it('does not count a picture as a chart in the list', () => {
+    const c1 = chart('c1', 'One');
+    start('Editor', [summary('d1', 'Sales', 1, ['c1'])], [c1]);
+    item(0).click();
+    fixture.detectChanges();
+    answerDashboard('d1', 'Sales', [widget('w1', 'c1')], [c1]);
+    const picture = { id: 'w9', chartId: '00000000-0000-0000-0000-000000000000', kind: 'Image', imageKey: 'k', imageFit: 'contain' };
+    vi.spyOn(TestBed.inject(MatDialog), 'open').mockReturnValue({ afterClosed: () => of(full('d1', 'Sales', [widget('w1', 'c1'), picture])) } as never);
+
+    (Array.from(el().querySelectorAll('button')).find((b) => b.textContent?.trim() === 'Add picture') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    http.expectOne({ method: 'GET', url: `/api/organizations/${ORG}/dashboards/d1/image-widgets/w9/image?v=k` }).flush(new Blob(['x']));
+    fixture.detectChanges();
+
+    expect(el().querySelector('button.item .sub')?.textContent).toContain('1 chart');
+    expect(el().querySelector('button.item .sub')?.textContent).not.toContain('2');
+  });
   it('clears the right side and reloads the list when the shown dashboard is deleted', () => {
     start('Owner', [summary('d1', 'Sales')]);
     item(0).click();

@@ -23,6 +23,10 @@ internal sealed class DashboardConfiguration : IEntityTypeConfiguration<Dashboar
         builder.Property(d => d.LastRefreshFailures).HasColumnName("last_refresh_failures").HasDefaultValue(0).HasSentinel(0);
         builder.Property(d => d.LastRefreshMessage).HasColumnName("last_refresh_message").HasMaxLength(Dashboard.MaxRefreshMessageLength);
 
+        builder.Property(d => d.BackgroundImageKey).HasColumnName("background_image").HasMaxLength(Dashboard.MaxBackgroundKeyLength);
+        builder.Property(d => d.BackgroundFit).HasColumnName("background_fit").HasMaxLength(10).HasDefaultValue("cover");
+        builder.Property(d => d.BackgroundOpacity).HasColumnName("background_opacity").HasDefaultValue(100);
+
         builder.HasIndex(d => new { d.OrganizationId, d.Name }).IsUnique();
         // The scheduler asks "what is due?" every few seconds; only dashboards with a schedule are in this index.
         builder.HasIndex(d => d.NextRefreshUtc).HasFilter("refresh_interval_minutes IS NOT NULL");

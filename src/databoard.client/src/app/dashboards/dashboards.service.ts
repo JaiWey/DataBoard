@@ -16,10 +16,35 @@ export const SHARED_FILTER_OPERATORS: { value: SharedFilterOperator; label: stri
   { value: 'Between', label: 'between' },
 ];
 
-/** A saved chart placed on a dashboard. The chart itself (dataset, type, query, style) is shared by every dashboard that shows it. */
+/** What a widget shows: a saved chart (the default), or a picture that belongs to the dashboard. */
+export type WidgetKind = 'Chart' | 'Image';
+
+export type ImageFit = 'contain' | 'cover' | 'fill';
+
+export const IMAGE_FITS: { value: ImageFit; label: string }[] = [
+  { value: 'contain', label: 'Show all of it' },
+  { value: 'cover', label: 'Fill the widget (may crop)' },
+  { value: 'fill', label: 'Stretch to the widget' },
+];
+
+/**
+ * A widget placed on a dashboard. A chart widget shows a saved chart (dataset, type, query, style), shared by every
+ * dashboard that shows it. An image widget shows a picture kept with this dashboard; it is made by uploading, and only
+ * its fit, description and link can be changed afterwards.
+ */
 export interface DashboardWidget {
   id: string;
+  /** The chart of a chart widget; empty for a picture. */
   chartId: string;
+  /** Missing means a chart. */
+  kind?: WidgetKind;
+  /** For a picture: names the file, and changes whenever the picture does. Set by the server. */
+  imageKey?: string | null;
+  imageFit?: ImageFit | null;
+  /** What the picture shows, for people who cannot see it. */
+  alt?: string | null;
+  /** Where a click on the picture goes (http or https). */
+  linkUrl?: string | null;
   /** Where the widget sits on the 12-column grid. Dashboards saved before layouts existed have none; the page places those. */
   layout?: { x: number; y: number; w: number; h: number } | null;
 }
@@ -65,6 +90,27 @@ export interface DashboardRefresh {
   lastMessage: string | null;
 }
 
+/** The picture behind a dashboard and how it is shown. `version` changes with the picture, so a cached copy is never reused for a new one. */
+export interface DashboardBackground {
+  version: string;
+  fit: BackgroundFit;
+  /** 10 to 100: how strong the picture is. */
+  opacity: number;
+}
+
+export type BackgroundFit = 'cover' | 'contain' | 'tile' | 'center';
+
+export const BACKGROUND_FITS: { value: BackgroundFit; label: string }[] = [
+  { value: 'cover', label: 'Fill the page' },
+  { value: 'contain', label: 'Fit inside' },
+  { value: 'tile', label: 'Repeat' },
+  { value: 'center', label: 'Centered, as it is' },
+];
+
+/** What a picture may be, checked before it is sent (the server checks again, by looking at the file). */
+export const BACKGROUND_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
+export const BACKGROUND_MAX_BYTES = 5 * 1024 * 1024;
+
 export interface Dashboard {
   id: string;
   name: string;
@@ -74,6 +120,8 @@ export interface Dashboard {
   updatedUtc: string;
   refresh?: DashboardRefresh;
   folderId?: string | null;
+  /** Null or missing when there is no picture. */
+  background?: DashboardBackground | null;
 }
 
 export interface WidgetResult {
@@ -154,6 +202,46 @@ export class DashboardsService {
   /** `refresh` asks the databases again instead of reusing stored results (editors and owners only). */
   run(orgId: string, id: string, filters: FilterValues, refresh = false): Observable<DashboardRun> {
     return this.http.post<DashboardRun>(this.url(orgId, `/${id}/run`), refresh ? { filters, refresh } : { filters });
+  }
+
+  /** Puts a picture behind the dashboard, or (with no file) changes how the current one is shown. Editors and owners. */
+  setBackground(orgId: string, id: string, change: { file?: File | null; fit?: BackgroundFit; opacity?: number }): Observable<Dashboard> {
+    const form = new FormData();
+    if (change.file) form.append('File', change.file);
+    if (change.fit) form.append('Fit', change.fit);
+    if (change.opacity !== undefined) form.append('Opacity', String(change.opacity));
+    return this.http.put<Dashboard>(this.url(orgId, `/${id}/background`), form);
+  }
+
+  removeBackground(orgId: string, id: string): Observable<Dashboard> {
+    return this.http.delete<Dashboard>(this.url(orgId, `/${id}/background`));
+  }
+
+  /** The picture itself, as a file. (An image tag cannot send the sign-in, so it is fetched like any request and shown from memory.) */
+  backgroundImage(orgId: string, id: string, version: string): Observable<Blob> {
+    return this.http.get(this.url(orgId, `/${id}/background`), { params: { v: version }, responseType: 'blob' });
+  }
+
+  /** Puts a picture on the dashboard as a widget below the others. Editors and owners. */
+  addImageWidget(orgId: string, id: string, add: { file: File; fit?: ImageFit; alt?: string | null; linkUrl?: string | null }): Observable<Dashboard> {
+    const form = new FormData();
+    form.append('File', add.file);
+    if (add.fit) form.append('Fit', add.fit);
+    if (add.alt) form.append('Alt', add.alt);
+    if (add.linkUrl) form.append('LinkUrl', add.linkUrl);
+    return this.http.post<Dashboard>(this.url(orgId, `/${id}/image-widgets`), form);
+  }
+
+  /** Puts another picture in a picture widget; everything else about the widget stays. */
+  replaceImageWidget(orgId: string, id: string, widgetId: string, file: File): Observable<Dashboard> {
+    const form = new FormData();
+    form.append('File', file);
+    return this.http.put<Dashboard>(this.url(orgId, `/${id}/image-widgets/${widgetId}/image`), form);
+  }
+
+  /** The picture of a picture widget, as a file (see `backgroundImage` for why it is fetched like this). */
+  widgetImage(orgId: string, id: string, widgetId: string, version: string): Observable<Blob> {
+    return this.http.get(this.url(orgId, `/${id}/image-widgets/${widgetId}/image`), { params: { v: version }, responseType: 'blob' });
   }
 
   /** Puts the dashboard on a refresh schedule (5 to 1440 minutes), or takes it off with null. Editors and owners. */

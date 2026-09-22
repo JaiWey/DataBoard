@@ -734,4 +734,218 @@ describe('DashboardComponent', () => {
 
     expect(deleted).toEqual([DASH]);
   });
-});
+  // ---- background picture ----
+
+  describe('background picture', () => {
+    const withBackground = () => ({ ...dashboard(), background: { version: 'v1', fit: 'tile', opacity: 40 } });
+    const layer = () => el().querySelector('app-background-layer');
+
+    beforeEach(() => {
+      vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:picture');
+      vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
+    });
+
+    it('has no layer when there is no picture', () => {
+      load('Editor');
+      http.expectOne(runUrl).flush({ widgets: [] });
+      fixture.detectChanges();
+
+      expect(layer()).toBeNull();
+    });
+
+    it('fetches the picture with its version and puts it behind the content, shown the way it was saved', () => {
+      load('Viewer', withBackground());
+      http.expectOne(runUrl).flush({ widgets: [] });
+      http.expectOne({ method: 'GET', url: `${dashboardUrl}/background?v=v1` }).flush(new Blob(['x']));
+      fixture.detectChanges();
+
+      const picture = el().querySelector('app-background-layer .layer') as HTMLElement;
+      expect(picture.style.backgroundImage).toContain('blob:picture');
+      expect(picture.style.backgroundRepeat).toBe('repeat');
+      expect(picture.style.opacity).toBe('0.4');
+      expect(el().querySelector('mat-card-content app-background-layer')).not.toBeNull();
+    });
+
+    it('offers the Background button to editors only', () => {
+      load('Editor');
+      http.expectOne(runUrl).flush({ widgets: [] });
+      expect(buttonByText('Background')).toBeDefined();
+    });
+
+    it('does not offer the Background button to viewers', () => {
+      load('Viewer');
+      http.expectOne(runUrl).flush({ widgets: [] });
+      fixture.detectChanges();
+
+      expect(buttonByText('Background')).toBeUndefined();
+    });
+
+    it('opens the background dialog with what the dashboard has, and shows what it returns', () => {
+      load('Owner', withBackground());
+      http.expectOne(runUrl).flush({ widgets: [] });
+      http.expectOne({ method: 'GET', url: `${dashboardUrl}/background?v=v1` }).flush(new Blob(['x']));
+      const open = vi.spyOn(TestBed.inject(MatDialog), 'open').mockReturnValue({
+        afterClosed: () => of({ ...dashboard(), background: { version: 'v2', fit: 'cover', opacity: 100 } }),
+      } as never);
+
+      buttonByText('Background').click();
+      fixture.detectChanges();
+
+      expect((open.mock.calls[0][1] as { data: unknown }).data).toEqual({
+        orgId: ORG, dashboardId: DASH, dashboardName: 'Sales overview', background: { version: 'v1', fit: 'tile', opacity: 40 },
+      });
+      // A new version is a new picture: it is fetched again.
+      http.expectOne({ method: 'GET', url: `${dashboardUrl}/background?v=v2` }).flush(new Blob(['y']));
+    });
+
+    it('takes the layer away when the dialog removed the picture', () => {
+      load('Owner', withBackground());
+      http.expectOne(runUrl).flush({ widgets: [] });
+      http.expectOne({ method: 'GET', url: `${dashboardUrl}/background?v=v1` }).flush(new Blob(['x']));
+      vi.spyOn(TestBed.inject(MatDialog), 'open').mockReturnValue({ afterClosed: () => of({ ...dashboard(), background: null }) } as never);
+
+      buttonByText('Background').click();
+      fixture.detectChanges();
+
+      expect(layer()).toBeNull();
+    });
+
+    it('keeps everything as it is when the dialog is cancelled', () => {
+      load('Owner', withBackground());
+      http.expectOne(runUrl).flush({ widgets: [] });
+      http.expectOne({ method: 'GET', url: `${dashboardUrl}/background?v=v1` }).flush(new Blob(['x']));
+      vi.spyOn(TestBed.inject(MatDialog), 'open').mockReturnValue({ afterClosed: () => of(undefined) } as never);
+
+      buttonByText('Background').click();
+      fixture.detectChanges();
+
+      expect(layer()).not.toBeNull();
+    });
+  });
+
+  // ---- picture widgets ----
+
+  describe('picture widgets', () => {
+    const W_PIC = 'd0000000-0000-0000-0000-000000000001';
+    const withPicture = (over: object = {}) => ({
+      ...dashboard(),
+      definition: {
+        widgets: [
+          { id: W_BAR, chartId: C_BAR, layout: { x: 0, y: 0, w: 6, h: 5 } },
+          { id: W_PIC, chartId: '00000000-0000-0000-0000-000000000000', kind: 'Image', imageKey: 'k1', imageFit: 'cover', alt: 'Logo', linkUrl: 'https://example.com', layout: { x: 6, y: 0, w: 4, h: 4 }, ...over },
+        ],
+        filters: [],
+      },
+    });
+    const imageUrl = `${dashboardUrl}/image-widgets/${W_PIC}/image?v=k1`;
+
+    beforeEach(() => {
+      vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:picture');
+      vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
+    });
+
+    const open = (role: 'Viewer' | 'Editor' | 'Owner' = 'Editor') => {
+      load(role, withPicture());
+      http.expectOne(runUrl).flush({ widgets: [{ widgetId: W_BAR, result: ok([['Auckland', 3]]), error: null, appliedFilters: [] }] });
+      http.expectOne({ method: 'GET', url: imageUrl }).flush(new Blob(['x']));
+      fixture.detectChanges();
+    };
+
+    it('shows the picture where the widget is, as a link, and does not treat it as a missing chart', () => {
+      open('Viewer');
+
+      const picture = el().querySelector('app-image-widget img') as HTMLImageElement;
+      expect(picture.getAttribute('src')).toBe('blob:picture');
+      expect(picture.getAttribute('alt')).toBe('Logo');
+      expect(picture.style.objectFit).toBe('cover');
+      expect((el().querySelector('app-image-widget a') as HTMLAnchorElement).getAttribute('href')).toBe('https://example.com/');
+      expect(el().textContent).not.toContain('Chart not found');
+      expect(el().querySelectorAll('app-dashboard-grid mat-card').length).toBe(2); // the chart and the picture
+    });
+
+    it('offers editors Add picture, Edit picture and Remove on the picture, and viewers none of them', () => {
+      open('Editor');
+      expect(buttonByText('Add picture')).toBeDefined();
+      expect(el().querySelector('.picture-actions .edit-picture')).not.toBeNull();
+      expect(el().querySelector('.picture-actions .remove-widget')).not.toBeNull();
+    });
+
+    it('offers viewers nothing to change', () => {
+      open('Viewer');
+
+      expect(buttonByText('Add picture')).toBeUndefined();
+      expect(el().querySelector('.picture-actions')).toBeNull();
+    });
+
+    it('hides the picture buttons while the layout is being arranged', () => {
+      open('Owner');
+
+      buttonByText('Edit layout').click();
+      fixture.detectChanges();
+
+      expect(el().querySelector('.picture-actions')).toBeNull();
+    });
+
+    it('opens the dialog for a new picture and shows the dashboard it returns, without running the charts again', () => {
+      open('Owner');
+      const added = withPicture();
+      const dialog = vi.spyOn(TestBed.inject(MatDialog), 'open').mockReturnValue({ afterClosed: () => of({ ...added, name: 'Sales overview' }) } as never);
+      const changed = vi.fn();
+      fixture.componentInstance.changed.subscribe(changed);
+
+      buttonByText('Add picture').click();
+      fixture.detectChanges();
+
+      expect((dialog.mock.calls[0][1] as { data: { dashboard: { id: string }; widget?: unknown } }).data.widget).toBeUndefined();
+      expect(changed).toHaveBeenCalled();
+      http.expectNone(runUrl);
+    });
+
+    it('opens the dialog for an existing picture with that widget', () => {
+      open('Owner');
+      const dialog = vi.spyOn(TestBed.inject(MatDialog), 'open').mockReturnValue({ afterClosed: () => of(undefined) } as never);
+
+      (el().querySelector('.picture-actions .edit-picture') as HTMLButtonElement).click();
+
+      expect((dialog.mock.calls[0][1] as { data: { widget: { id: string } } }).data.widget.id).toBe(W_PIC);
+    });
+
+    it('fetches the picture again when the dialog gave it a new version', () => {
+      open('Owner');
+      vi.spyOn(TestBed.inject(MatDialog), 'open').mockReturnValue({ afterClosed: () => of(withPicture({ imageKey: 'k2' })) } as never);
+
+      (el().querySelector('.picture-actions .edit-picture') as HTMLButtonElement).click();
+      fixture.detectChanges();
+
+      http.expectOne({ method: 'GET', url: `${dashboardUrl}/image-widgets/${W_PIC}/image?v=k2` }).flush(new Blob(['y']));
+    });
+
+    it('takes the picture off by saving the dashboard without that widget', () => {
+      open('Owner');
+
+      (el().querySelector('.picture-actions .remove-widget') as HTMLButtonElement).click();
+
+      const request = http.expectOne({ method: 'PUT', url: dashboardUrl });
+      expect(request.request.body.definition.widgets.map((w: { id: string }) => w.id)).toEqual([W_BAR]);
+      request.flush({ ...withPicture(), definition: { widgets: [{ id: W_BAR, chartId: C_BAR }], filters: [] } });
+      http.expectOne(runUrl).flush({ widgets: [] });
+    });
+
+    it('keeps everything about a picture when the layout is saved, and moves it', () => {
+      open('Owner');
+      buttonByText('Edit layout').click();
+      fixture.detectChanges();
+      const component = fixture.componentInstance as unknown as { draft: { set(v: unknown): void }; items(): { id: string; x: number; y: number }[] };
+      component.draft.set(component.items().map((i) => (i.id === W_PIC ? { ...i, x: 0, y: 6 } : i)));
+      fixture.detectChanges();
+
+      buttonByText('Save layout').click();
+
+      const request = http.expectOne({ method: 'PUT', url: dashboardUrl });
+      const saved = request.request.body.definition.widgets.find((w: { id: string }) => w.id === W_PIC);
+      expect(saved).toMatchObject({
+        kind: 'Image', imageKey: 'k1', imageFit: 'cover', alt: 'Logo', linkUrl: 'https://example.com', layout: { x: 0, y: 6, w: 4, h: 4 },
+      });
+      request.flush(withPicture());
+    });
+  });});

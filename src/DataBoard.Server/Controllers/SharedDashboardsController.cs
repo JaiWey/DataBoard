@@ -30,6 +30,26 @@ public class SharedDashboardsController : ControllerBase
 		return Ok(await handler.HandleAsync(token, body, ct));
 	}
 
+	/// <summary>The picture behind the dashboard, if it has one.</summary>
+	[HttpGet("background")]
+	public async Task<IActionResult> Background(string token, [FromServices] GetSharedDashboardBackgroundHandler handler, CancellationToken ct)
+	{
+		var image = await handler.HandleAsync(token, ct);
+		Response.Headers.CacheControl = "private, max-age=300";
+		Response.Headers["X-Content-Type-Options"] = "nosniff";
+		return File(image.Content, image.ContentType);
+	}
+
+	/// <summary>The picture of a picture widget on the dashboard.</summary>
+	[HttpGet("images/{widgetId:guid}")]
+	public async Task<IActionResult> Image(string token, Guid widgetId, [FromServices] GetSharedImageWidgetHandler handler, CancellationToken ct)
+	{
+		var image = await handler.HandleAsync(token, widgetId, ct);
+		Response.Headers.CacheControl = "private, max-age=300";
+		Response.Headers["X-Content-Type-Options"] = "nosniff";
+		return File(image.Content, image.ContentType);
+	}
+
 	/// <summary>The data is private to whoever holds the link, so no shared cache may keep it.</summary>
 	private void NoStore() => Response.Headers.CacheControl = "no-store";
 }
