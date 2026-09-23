@@ -52,6 +52,9 @@ internal static class DashboardValidator
          FilterOperator.Gte, FilterOperator.Lte, FilterOperator.Between];
 
     public static readonly string[] ImageFits = ["contain", "cover", "fill"];
+    public static readonly string[] TextAligns = ["left", "center", "right"];
+    public static readonly string[] TextSizes = ["small", "normal", "large"];
+    public const int MaxTextLength = 4000;
     public const int MaxAltLength = 200;
     public const int MaxLinkLength = 500;
 
@@ -138,6 +141,41 @@ internal static class DashboardValidator
                 normalizedWidgets.Add(new DashboardWidget(
                     w.Id, Guid.Empty, w.Layout, WidgetKind.Image, current.ImageKey, w.ImageFit ?? current.ImageFit ?? "contain",
                     string.IsNullOrWhiteSpace(w.Alt) ? null : w.Alt.Trim(), string.IsNullOrWhiteSpace(w.LinkUrl) ? null : w.LinkUrl.Trim()));
+                continue;
+            }
+
+            if (w.Kind == WidgetKind.Text)
+            {
+                // Words need no upload: a text widget can be made by saving the dashboard.
+                if (string.IsNullOrWhiteSpace(w.Text))
+                {
+                    Fail(field, "A text widget needs some text.");
+                    continue;
+                }
+                if (w.Text.Length > MaxTextLength)
+                {
+                    Fail(field, $"A text widget can hold at most {MaxTextLength} characters.");
+                    continue;
+                }
+                if (w.TextAlign is not null && !TextAligns.Contains(w.TextAlign))
+                {
+                    Fail(field, $"Text is aligned: {string.Join(", ", TextAligns)}.");
+                    continue;
+                }
+                if (w.TextSize is not null && !TextSizes.Contains(w.TextSize))
+                {
+                    Fail(field, $"Text is sized: {string.Join(", ", TextSizes)}.");
+                    continue;
+                }
+                if (w.Layout is { } textLayout && LayoutProblem(textLayout) is { } textProblem)
+                {
+                    Fail(field, textProblem);
+                    continue;
+                }
+
+                normalizedWidgets.Add(new DashboardWidget(
+                    w.Id == Guid.Empty ? Guid.NewGuid() : w.Id, Guid.Empty, w.Layout, WidgetKind.Text,
+                    Text: w.Text.Trim(), TextAlign: w.TextAlign ?? "left", TextSize: w.TextSize ?? "normal"));
                 continue;
             }
 

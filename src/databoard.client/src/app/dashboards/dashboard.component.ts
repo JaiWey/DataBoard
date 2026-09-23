@@ -14,8 +14,10 @@ import { problemMessages } from '../organizations/data-sources.service';
 import { AddChartsDialogComponent, AddChartsDialogData } from './add-charts-dialog.component';
 import { BackgroundDialogComponent, BackgroundDialogData } from './background-dialog.component';
 import { BackgroundLayerComponent } from './background-layer.component';
+import { MarkdownComponent } from '../shared/markdown.component';
 import { ImageWidgetComponent } from './image-widget.component';
 import { ImageWidgetDialogComponent, ImageWidgetDialogData } from './image-widget-dialog.component';
+import { TextWidgetDialogComponent, TextWidgetDialogData } from './text-widget-dialog.component';
 import { DashboardGridComponent } from './dashboard-grid.component';
 import { ShareDialogComponent, ShareDialogData } from './share-dialog.component';
 import { REFRESH_CHOICES, ago, intervalLabel } from '../shared/relative-time';
@@ -47,7 +49,7 @@ export function parseFilterInput(operator: SharedFilterOperator, text: string): 
 
 @Component({
   selector: 'app-dashboard',
-  imports: [ReactiveFormsModule, RouterLink, MatCardModule, MatFormFieldModule, MatInputModule, MatButtonModule, ChartViewComponent, DashboardGridComponent, ExportMenuComponent, BackgroundLayerComponent, ImageWidgetComponent],
+  imports: [ReactiveFormsModule, RouterLink, MatCardModule, MatFormFieldModule, MatInputModule, MatButtonModule, ChartViewComponent, DashboardGridComponent, ExportMenuComponent, BackgroundLayerComponent, ImageWidgetComponent, MarkdownComponent],
   template: `
     <mat-card appearance="raised" class="detail">
     @if (dashboard(); as d) {
@@ -69,6 +71,7 @@ export function parseFilterInput(operator: SharedFilterOperator, text: string): 
               <button mat-stroked-button type="button" class="share" (click)="share(d)">Share</button>
               <button mat-stroked-button type="button" (click)="addCharts(d)">Add chart</button>
               <button mat-stroked-button type="button" class="add-picture" (click)="addPicture(d)">Add picture</button>
+              <button mat-stroked-button type="button" class="add-text" (click)="addText(d)">Add text</button>
               <button mat-stroked-button type="button" class="background" (click)="editBackground(d)">Background</button>
               <button mat-button type="button" (click)="removeDashboard(d)">Delete dashboard</button>
             }
@@ -143,6 +146,16 @@ export function parseFilterInput(operator: SharedFilterOperator, text: string): 
               @if (canEdit() && !editingLayout()) {
                 <span class="picture-actions no-print">
                   <button mat-stroked-button type="button" class="edit-picture" (click)="editPicture(d, widget)">Edit picture</button>
+                  <button mat-stroked-button type="button" class="remove-widget" (click)="removeWidget(d, widget.id)">Remove</button>
+                </span>
+              }
+            </mat-card>
+          } @else if (widget.kind === 'Text') {
+            <mat-card appearance="outlined" class="widget words">
+              <app-markdown class="words-text" [text]="widget.text ?? ''" [align]="widget.textAlign ?? 'left'" [size]="widget.textSize ?? 'normal'" />
+              @if (canEdit() && !editingLayout()) {
+                <span class="picture-actions no-print">
+                  <button mat-stroked-button type="button" class="edit-text" (click)="editText(d, widget)">Edit text</button>
                   <button mat-stroked-button type="button" class="remove-widget" (click)="removeWidget(d, widget.id)">Remove</button>
                 </span>
               }
@@ -270,9 +283,11 @@ export function parseFilterInput(operator: SharedFilterOperator, text: string): 
     .widget { height: 100%; }
     .widget mat-card-header { align-items: center; }
     /* A picture fills its widget; its buttons float over a corner, out of the way until the widget is hovered or focused. */
-    .widget.picture { position: relative; overflow: hidden; padding: 0; }
+    .widget.picture, .widget.words { position: relative; overflow: hidden; padding: 0; }
+    .words-text { display: block; height: 100%; overflow: auto; padding: 0.75rem 1rem; box-sizing: border-box; }
     .picture-actions { position: absolute; top: 0.4rem; right: 0.4rem; display: flex; gap: 0.3rem; opacity: 0; transition: opacity 0.12s; background: rgb(255 255 255 / 0.85); border-radius: 0.5rem; padding: 0.2rem; }
-    .widget.picture:hover .picture-actions, .widget.picture:focus-within .picture-actions { opacity: 1; }
+    .widget.picture:hover .picture-actions, .widget.picture:focus-within .picture-actions,
+    .widget.words:hover .picture-actions, .widget.words:focus-within .picture-actions { opacity: 1; }
     @media (hover: none) { .picture-actions { opacity: 1; } }
     .widget mat-card-content { flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; padding-bottom: 0.5rem; }
     .widget app-chart-view { flex: 1; min-height: 0; }
@@ -315,7 +330,7 @@ export class DashboardComponent implements OnInit {
   protected readonly labels = computed(() => {
     const names: Record<string, string> = {};
     for (const w of this.dashboard()?.definition.widgets ?? []) {
-      names[w.id] = w.kind === 'Image' ? w.alt || 'picture' : (this.chartFor(w.chartId)?.name ?? 'missing chart');
+      names[w.id] = w.kind === 'Image' ? w.alt || 'picture' : w.kind === 'Text' ? 'text' : (this.chartFor(w.chartId)?.name ?? 'missing chart');
     }
     return names;
   });
@@ -440,7 +455,7 @@ export class DashboardComponent implements OnInit {
 
   /** Lets the editor pick saved charts to put on this dashboard (or go and make a new one). */
   protected addCharts(d: Dashboard): void {
-    const placed = new Set(d.definition.widgets.filter((w) => w.kind !== 'Image').map((w) => w.chartId));
+    const placed = new Set(d.definition.widgets.filter((w) => !w.kind || w.kind === 'Chart').map((w) => w.chartId));
     const names: Record<string, string> = {};
     for (const dataset of this.datasets()) names[dataset.id] = dataset.name;
 
@@ -479,6 +494,27 @@ export class DashboardComponent implements OnInit {
 
   protected editPicture(d: Dashboard, widget: DashboardWidget): void {
     this.openPictureDialog({ orgId: this.orgId(), dashboard: d, widget });
+  }
+
+  /** Lets the editor write some text (titles, notes) to put on the dashboard. */
+  protected addText(d: Dashboard): void {
+    this.openTextDialog({ orgId: this.orgId(), dashboard: d });
+  }
+
+  protected editText(d: Dashboard, widget: DashboardWidget): void {
+    this.openTextDialog({ orgId: this.orgId(), dashboard: d, widget });
+  }
+
+  private openTextDialog(data: TextWidgetDialogData): void {
+    this.dialog
+      .open<TextWidgetDialogComponent, TextWidgetDialogData, Dashboard>(TextWidgetDialogComponent, { data, width: '36rem', maxWidth: '95vw' })
+      .afterClosed()
+      .subscribe((saved) => {
+        if (!saved) return;
+        // Words are not charts, so nothing needs running again.
+        this.show(saved);
+        this.changed.emit(saved);
+      });
   }
 
   private openPictureDialog(data: ImageWidgetDialogData): void {

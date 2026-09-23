@@ -259,9 +259,9 @@ export class DashboardsComponent implements OnInit {
         d.id === saved.id
           ? {
               ...d, name: saved.name,
-              // Pictures are on the dashboard but are not charts.
-              widgetCount: saved.definition.widgets.filter((w) => w.kind !== 'Image').length,
-              chartIds: saved.definition.widgets.filter((w) => w.kind !== 'Image').map((w) => w.chartId),
+              // Pictures and text are on the dashboard but are not charts.
+              widgetCount: saved.definition.widgets.filter((w) => !w.kind || w.kind === 'Chart').length,
+              chartIds: saved.definition.widgets.filter((w) => !w.kind || w.kind === 'Chart').map((w) => w.chartId),
             }
           : d,
       ),

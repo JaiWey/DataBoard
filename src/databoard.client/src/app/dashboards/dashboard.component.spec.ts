@@ -948,4 +948,88 @@ describe('DashboardComponent', () => {
       });
       request.flush(withPicture());
     });
+  });
+
+  // ---- text widgets ----
+
+  describe('text widgets', () => {
+    const W_TEXT = 'f0000000-0000-0000-0000-000000000001';
+    const withText = () => ({
+      ...dashboard(),
+      definition: {
+        widgets: [
+          { id: W_BAR, chartId: C_BAR, layout: { x: 0, y: 0, w: 6, h: 5 } },
+          { id: W_TEXT, chartId: '00000000-0000-0000-0000-000000000000', kind: 'Text', text: '# Notes\nSee **below**', textAlign: 'center', textSize: 'large', layout: { x: 0, y: 5, w: 12, h: 2 } },
+        ],
+        filters: [],
+      },
+    });
+    const open = (role: 'Viewer' | 'Editor' | 'Owner' = 'Editor') => {
+      load(role, withText());
+      http.expectOne(runUrl).flush({ widgets: [{ widgetId: W_BAR, result: ok([['Auckland', 3]]), error: null, appliedFilters: [] }] });
+      fixture.detectChanges();
+    };
+
+    it('draws the text as Markdown, aligned and sized as saved, and not as a missing chart', () => {
+      open('Viewer');
+
+      const words = el().querySelector('app-markdown') as HTMLElement;
+      expect(words.querySelector('h3')?.textContent).toBe('Notes');
+      expect(words.querySelector('strong')?.textContent).toBe('below');
+      expect(words.classList).toContain('center');
+      expect(words.classList).toContain('large');
+      expect(el().textContent).not.toContain('Chart not found');
+    });
+
+    it('offers editors Add text, Edit text and Remove, and viewers none of them', () => {
+      open('Editor');
+      expect(buttonByText('Add text')).toBeDefined();
+      expect(el().querySelector('.picture-actions .edit-text')).not.toBeNull();
+      expect(el().querySelector('.picture-actions .remove-widget')).not.toBeNull();
+    });
+
+    it('offers viewers nothing to change', () => {
+      open('Viewer');
+
+      expect(buttonByText('Add text')).toBeUndefined();
+      expect(el().querySelector('.picture-actions')).toBeNull();
+    });
+
+    it('opens the dialog for new text, and for existing text with that widget, without running the charts again', () => {
+      open('Owner');
+      const dialog = vi.spyOn(TestBed.inject(MatDialog), 'open').mockReturnValue({ afterClosed: () => of(withText()) } as never);
+
+      buttonByText('Add text').click();
+      fixture.detectChanges();
+      (el().querySelector('.picture-actions .edit-text') as HTMLButtonElement).click();
+      fixture.detectChanges();
+
+      expect((dialog.mock.calls[0][1] as { data: { widget?: unknown } }).data.widget).toBeUndefined();
+      expect((dialog.mock.calls[1][1] as { data: { widget: { id: string } } }).data.widget.id).toBe(W_TEXT);
+      http.expectNone(runUrl);
+    });
+
+    it('takes the text off by saving the dashboard without that widget', () => {
+      open('Owner');
+
+      (el().querySelector('.picture-actions .remove-widget') as HTMLButtonElement).click();
+
+      const request = http.expectOne({ method: 'PUT', url: dashboardUrl });
+      expect(request.request.body.definition.widgets.map((w: { id: string }) => w.id)).toEqual([W_BAR]);
+      request.flush({ ...withText(), definition: { widgets: [{ id: W_BAR, chartId: C_BAR }], filters: [] } });
+      http.expectOne(runUrl).flush({ widgets: [] });
+    });
+
+    it('keeps the chart in the Add chart list apart from the text', () => {
+      open('Owner');
+
+      // The text widget has an empty chart id: it must not hide any chart, only the chart that is on the dashboard.
+      const component = fixture.componentInstance as unknown as { addCharts(d: unknown): void; dashboard(): unknown };
+      const dialog = vi.spyOn(TestBed.inject(MatDialog), 'open').mockReturnValue({ afterClosed: () => of(undefined) } as never);
+      component.addCharts(component.dashboard());
+      http.expectOne(`/api/organizations/${ORG}/charts`).flush(charts);
+
+      const offered = (dialog.mock.calls[0][1] as { data: { charts: { id: string }[] } }).data.charts.map((c) => c.id);
+      expect(offered).toEqual([C_TABLE, C_SPARE]);
+    });
   });});

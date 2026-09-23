@@ -9,8 +9,8 @@ namespace DataBoard.Application.Dashboards;
 /// </summary>
 public sealed record WidgetLayout(int X, int Y, int W, int H);
 
-/// <summary>What a widget shows: a saved chart, or a picture kept with the dashboard.</summary>
-public enum WidgetKind { Chart = 0, Image = 1 }
+/// <summary>What a widget shows: a saved chart, a picture kept with the dashboard, or a piece of text.</summary>
+public enum WidgetKind { Chart = 0, Image = 1, Text = 2 }
 
 /// <summary>
 /// One thing placed on a dashboard. A chart widget shows a saved chart (dataset, type, query, style), shared by every
@@ -23,9 +23,13 @@ public enum WidgetKind { Chart = 0, Image = 1 }
 /// <param name="ImageFit">contain (the whole picture), cover (fills the widget, may crop) or fill (stretched).</param>
 /// <param name="Alt">What the picture shows, for people who cannot see it.</param>
 /// <param name="LinkUrl">Where a click on the picture goes: an http or https address.</param>
+/// <param name="Text">The words of a text widget, in simple Markdown (headings, bold, italic, lists, links). Shown by the page, never as HTML.</param>
+/// <param name="TextAlign">left, center or right.</param>
+/// <param name="TextSize">small, normal or large.</param>
 public sealed record DashboardWidget(
     Guid Id, Guid ChartId, WidgetLayout? Layout = null,
-    WidgetKind Kind = WidgetKind.Chart, string? ImageKey = null, string? ImageFit = null, string? Alt = null, string? LinkUrl = null);
+    WidgetKind Kind = WidgetKind.Chart, string? ImageKey = null, string? ImageFit = null, string? Alt = null, string? LinkUrl = null,
+    string? Text = null, string? TextAlign = null, string? TextSize = null);
 
 /// <summary>
 /// A filter shared by the whole dashboard. Viewers pick values; the filter then applies to every widget whose dataset

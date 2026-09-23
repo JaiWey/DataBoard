@@ -16,8 +16,19 @@ export const SHARED_FILTER_OPERATORS: { value: SharedFilterOperator; label: stri
   { value: 'Between', label: 'between' },
 ];
 
-/** What a widget shows: a saved chart (the default), or a picture that belongs to the dashboard. */
-export type WidgetKind = 'Chart' | 'Image';
+/** What a widget shows: a saved chart (the default), a picture that belongs to the dashboard, or some text. */
+export type WidgetKind = 'Chart' | 'Image' | 'Text';
+
+export type TextAlign = 'left' | 'center' | 'right';
+export type TextSize = 'small' | 'normal' | 'large';
+
+export const TEXT_ALIGNS: { value: TextAlign; label: string }[] = [
+  { value: 'left', label: 'Left' }, { value: 'center', label: 'Centered' }, { value: 'right', label: 'Right' },
+];
+export const TEXT_SIZES: { value: TextSize; label: string }[] = [
+  { value: 'small', label: 'Small' }, { value: 'normal', label: 'Normal' }, { value: 'large', label: 'Large' },
+];
+export const MAX_TEXT_LENGTH = 4000;
 
 export type ImageFit = 'contain' | 'cover' | 'fill';
 
@@ -45,6 +56,10 @@ export interface DashboardWidget {
   alt?: string | null;
   /** Where a click on the picture goes (http or https). */
   linkUrl?: string | null;
+  /** For a text widget: simple Markdown (headings, bold, italic, lists, links). */
+  text?: string | null;
+  textAlign?: TextAlign | null;
+  textSize?: TextSize | null;
   /** Where the widget sits on the 12-column grid. Dashboards saved before layouts existed have none; the page places those. */
   layout?: { x: number; y: number; w: number; h: number } | null;
 }

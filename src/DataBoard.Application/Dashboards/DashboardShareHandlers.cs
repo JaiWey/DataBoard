@@ -147,6 +147,12 @@ public sealed class GetSharedDashboardHandler(
                 continue;
             }
 
+            if (widget.Kind == WidgetKind.Text)
+            {
+                widgets.Add(widget); // words on a dashboard are for everyone who can see it
+                continue;
+            }
+
             var chart = await charts.GetAsync(share.OrganizationId, widget.ChartId, ct);
             if (chart is null) continue; // a deleted chart simply is not there for the public
 

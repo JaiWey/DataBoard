@@ -249,4 +249,19 @@ describe('SharedDashboardComponent', () => {
       expect(el().querySelector('h1')?.textContent).toBe('Sales overview');
       expect(el().textContent).toContain('could not be shown');
     });
+  });
+
+  describe('text widgets', () => {
+    it('draws the text as Markdown, aligned and sized as saved', () => {
+      const base = page() as { widgets: object[] };
+      open({ ...base, widgets: [...base.widgets, { id: 'words', chartId: '00000000-0000-0000-0000-000000000000', kind: 'Text', text: '## Welcome\n[more](https://example.com)', textAlign: 'right', textSize: 'small', layout: { x: 0, y: 20, w: 12, h: 2 } }] });
+      http.expectOne(runUrl).flush(run());
+      fixture.detectChanges();
+
+      const words = el().querySelector('app-markdown') as HTMLElement;
+      expect(words.querySelector('h4')?.textContent).toBe('Welcome');
+      expect(words.querySelector('a')?.getAttribute('rel')).toBe('noopener noreferrer');
+      expect(words.classList).toContain('right');
+      expect(words.classList).toContain('small');
+    });
   });});
