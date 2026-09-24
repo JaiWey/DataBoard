@@ -3,7 +3,7 @@ import { MatButtonModule } from '@angular/material/button';
 import { MAT_DIALOG_DATA, MatDialogModule, MatDialogRef } from '@angular/material/dialog';
 import { problemMessages } from '../organizations/data-sources.service';
 import { MarkdownComponent } from '../shared/markdown.component';
-import { arrange } from './dashboard-layout';
+import { arrangeTab, bottomOf, tabOf } from './dashboard-tabs';
 import {
   Dashboard, DashboardWidget, DashboardsService, MAX_TEXT_LENGTH, NEW_ID, TEXT_ALIGNS, TEXT_SIZES, TextAlign, TextSize,
 } from './dashboards.service';
@@ -14,6 +14,8 @@ export interface TextWidgetDialogData {
   dashboard: Dashboard;
   /** The text widget being changed; missing means a new one is being added. */
   widget?: DashboardWidget;
+  /** The tab a new text goes on (the first, if missing or unknown). */
+  tabId?: string | null;
 }
 
 /** How tall and wide a new text widget is: the whole width, two rows. */
@@ -115,11 +117,13 @@ export class TextWidgetDialogComponent {
     });
   }
 
-  /** A new text widget goes below everything else, across the whole width. */
+  /** A new text widget goes below everything else on its tab, across the whole width. */
   private newWidget(dashboard: Dashboard, words: { text: string; textAlign: TextAlign; textSize: TextSize }): DashboardWidget {
-    const bottom = arrange(dashboard.definition.widgets).reduce((max, i) => Math.max(max, i.y + i.h), 0);
+    const tabs = dashboard.definition.tabs ?? [];
+    const tab = tabOf({ tabId: this.data.tabId }, tabs);
+    const bottom = bottomOf(arrangeTab(dashboard.definition.widgets, tabs, tab));
     return {
-      id: NEW_ID, chartId: NEW_ID, kind: 'Text', ...words,
+      id: NEW_ID, chartId: NEW_ID, kind: 'Text', ...words, ...(tab ? { tabId: tab } : {}),
       layout: { x: 0, y: bottom, w: NEW_WIDTH, h: NEW_HEIGHT },
     };
   }

@@ -153,4 +153,33 @@ describe('TextWidgetDialogComponent', () => {
       expect(button('Save').disabled).toBe(true);
     });
   });
-});
+
+  describe('adding text to a tab', () => {
+    const tabs = [{ id: 't1', name: 'One' }, { id: 't2', name: 'Two' }];
+
+    it('puts the text on that tab, below what is on that tab only', () => {
+      const d = dashboard({ ...chart('a', 0, 5), tabId: 't1' }, { ...chart('b', 0, 9), tabId: 't2' });
+      create({ orgId: ORG, dashboard: { ...d, definition: { ...d.definition, tabs } }, tabId: 't1' });
+
+      write('Notes');
+      button('Add text').click();
+
+      const request = http.expectOne({ method: 'PUT', url: URL_ });
+      const added = request.request.body.definition.widgets[2];
+      expect(added).toMatchObject({ kind: 'Text', tabId: 't1', layout: { x: 0, y: 5, w: 12, h: 2 } }); // not under the 9 rows of tab Two
+      request.flush(dashboard());
+    });
+
+    it('goes to the first tab when the tab is not given or does not exist', () => {
+      const d = dashboard({ ...chart('a', 0, 5), tabId: 't1' });
+      create({ orgId: ORG, dashboard: { ...d, definition: { ...d.definition, tabs } }, tabId: 'gone' });
+
+      write('Notes');
+      button('Add text').click();
+
+      const request = http.expectOne({ method: 'PUT', url: URL_ });
+      expect(request.request.body.definition.widgets[1].tabId).toBe('t1');
+      expect(request.request.body.definition.tabs).toEqual(tabs);
+      request.flush(dashboard());
+    });
+  });});

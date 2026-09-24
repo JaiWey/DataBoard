@@ -264,4 +264,51 @@ describe('SharedDashboardComponent', () => {
       expect(words.classList).toContain('right');
       expect(words.classList).toContain('small');
     });
+  });
+
+  describe('tabs', () => {
+    const T1 = 'a1000000-0000-0000-0000-000000000001';
+    const T2 = 'a1000000-0000-0000-0000-000000000002';
+    const tabbed = () => {
+      const base = page() as { widgets: { id: string }[] };
+      return {
+        ...base,
+        widgets: base.widgets.map((w, i) => ({ ...w, tabId: i === 0 ? T1 : T2 })),
+        tabs: [{ id: T1, name: 'Overview' }, { id: T2, name: 'Costs' }],
+      };
+    };
+    const titles = () => Array.from(el().querySelectorAll('app-dashboard-grid mat-card-title')).map((x) => x.textContent?.trim());
+
+    it('shows the tabs and the widgets of the first, and switches without asking for the data again', () => {
+      open(tabbed());
+      http.expectOne(runUrl).flush(run());
+      fixture.detectChanges();
+      expect(Array.from(el().querySelectorAll('[role=tab]')).map((t) => t.textContent?.trim())).toEqual(['Overview', 'Costs']);
+      const first = titles();
+      expect(first.length).toBe(1);
+
+      (el().querySelectorAll('[role=tab]')[1] as HTMLButtonElement).click();
+      fixture.detectChanges();
+
+      expect(titles().length).toBe(1);
+      expect(titles()).not.toEqual(first);
+      http.expectNone(runUrl);
+    });
+
+    it('offers a visitor no way to change the tabs', () => {
+      open(tabbed());
+      http.expectOne(runUrl).flush(run());
+      fixture.detectChanges();
+
+      expect(el().querySelector('.more')).toBeNull();
+      expect(el().querySelector('.add')).toBeNull();
+    });
+
+    it('shows no tab bar for a dashboard that is one page', () => {
+      open();
+      http.expectOne(runUrl).flush(run());
+      fixture.detectChanges();
+
+      expect(el().querySelector('app-dashboard-tab-bar .bar')).toBeNull();
+    });
   });});

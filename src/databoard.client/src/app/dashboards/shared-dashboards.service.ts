@@ -2,7 +2,7 @@ import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 import { ChartStyle, ChartType } from '../charts/charts.service';
-import { DashboardBackground, DashboardRun, DashboardWidget, FilterValues, SharedFilterOperator } from './dashboards.service';
+import { DashboardBackground, DashboardRun, DashboardTab, DashboardWidget, FilterValues, SharedFilterOperator } from './dashboards.service';
 
 /** What a visitor with a link needs to draw one chart: how it looks, not where its data comes from. */
 export interface SharedChart {
@@ -27,6 +27,8 @@ export interface SharedDashboard {
   charts: SharedChart[];
   expiresUtc: string | null;
   background?: DashboardBackground | null;
+  /** Missing or empty: one page. */
+  tabs?: DashboardTab[] | null;
 }
 
 /** The public side of a dashboard link: no account, the token in the address is the credential. */

@@ -60,6 +60,8 @@ export interface DashboardWidget {
   text?: string | null;
   textAlign?: TextAlign | null;
   textSize?: TextSize | null;
+  /** The tab the widget is on. Missing or null: the first tab, or the one page of a dashboard without tabs. */
+  tabId?: string | null;
   /** Where the widget sits on the 12-column grid. Dashboards saved before layouts existed have none; the page places those. */
   layout?: { x: number; y: number; w: number; h: number } | null;
 }
@@ -77,9 +79,17 @@ export interface DashboardFilter {
   target?: FilterTarget;
 }
 
+/** A page of a dashboard. Each tab has its own grid; the shared filters apply to every tab. */
+export interface DashboardTab {
+  id: string;
+  name: string;
+}
+
 export interface DashboardDefinition {
   widgets: DashboardWidget[];
   filters: DashboardFilter[];
+  /** Missing or empty: the dashboard is one page. */
+  tabs?: DashboardTab[] | null;
 }
 
 export interface DashboardSummary {
@@ -238,9 +248,12 @@ export class DashboardsService {
   }
 
   /** Puts a picture on the dashboard as a widget below the others. Editors and owners. */
-  addImageWidget(orgId: string, id: string, add: { file: File; fit?: ImageFit; alt?: string | null; linkUrl?: string | null }): Observable<Dashboard> {
+  addImageWidget(
+    orgId: string, id: string, add: { file: File; fit?: ImageFit; alt?: string | null; linkUrl?: string | null; tabId?: string | null },
+  ): Observable<Dashboard> {
     const form = new FormData();
     form.append('File', add.file);
+    if (add.tabId) form.append('TabId', add.tabId);
     if (add.fit) form.append('Fit', add.fit);
     if (add.alt) form.append('Alt', add.alt);
     if (add.linkUrl) form.append('LinkUrl', add.linkUrl);

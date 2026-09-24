@@ -34,7 +34,8 @@ public sealed record SharedDashboardDto(
     IReadOnlyList<SharedFilterDto> Filters,
     IReadOnlyList<SharedChartDto> Charts,
     DateTime? ExpiresUtc,
-    DashboardBackgroundDto? Background = null);
+    DashboardBackgroundDto? Background = null,
+    IReadOnlyList<DashboardTab>? Tabs = null);
 
 internal static class ShareTokens
 {
@@ -168,7 +169,8 @@ public sealed class GetSharedDashboardHandler(
             definition.Filters.Select(f => new SharedFilterDto(f.Id, f.Label, f.Operator)).ToList(),
             shown,
             share.ExpiresUtc,
-            dashboard.ToBackgroundDto());
+            dashboard.ToBackgroundDto(),
+            definition.Tabs);
     }
 }
 

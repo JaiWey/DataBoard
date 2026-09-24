@@ -12,6 +12,8 @@ export interface ImageWidgetDialogData {
   dashboard: Dashboard;
   /** The picture widget being changed; missing means a new picture is being added. */
   widget?: DashboardWidget;
+  /** The tab a new picture goes on (the first, if missing or unknown). */
+  tabId?: string | null;
 }
 
 /**
@@ -134,7 +136,7 @@ export class ImageWidgetDialogComponent {
     const settings = { fit: this.fit(), alt: this.alt().trim() || null, linkUrl: this.linkUrl().trim() || null };
 
     if (!widget) {
-      this.api.addImageWidget(orgId, dashboard.id, { file: file!, ...settings }).subscribe({
+      this.api.addImageWidget(orgId, dashboard.id, { file: file!, ...settings, tabId: this.data.tabId }).subscribe({
         next: (saved) => this.ref.close(saved),
         error: (e) => this.failed(e, 'Could not add the picture.'),
       });

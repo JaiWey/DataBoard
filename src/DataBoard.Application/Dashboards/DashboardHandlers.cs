@@ -52,6 +52,8 @@ internal static class DashboardValidator
          FilterOperator.Gte, FilterOperator.Lte, FilterOperator.Between];
 
     public static readonly string[] ImageFits = ["contain", "cover", "fill"];
+    public const int MaxTabs = 10;
+    public const int MaxTabNameLength = 60;
     public static readonly string[] TextAligns = ["left", "center", "right"];
     public static readonly string[] TextSizes = ["small", "normal", "large"];
     public const int MaxTextLength = 4000;
@@ -98,6 +100,23 @@ internal static class DashboardValidator
         if (normalizedFilters.Select(f => f.Id).Distinct().Count() != normalizedFilters.Count)
             Fail("Filters", "Filter ids must be unique.");
 
+        // Tabs first: a widget's place is checked against them. Without tabs the dashboard is a single page.
+        var tabs = definition.Tabs ?? [];
+        if (tabs.Count > MaxTabs) Fail("Tabs", $"A dashboard can have at most {MaxTabs} tabs.");
+        var normalizedTabs = new List<DashboardTab>();
+        for (var i = 0; i < tabs.Count; i++)
+        {
+            var tab = tabs[i];
+            if (tab is null || string.IsNullOrWhiteSpace(tab.Name) || tab.Name.Trim().Length > MaxTabNameLength)
+                Fail($"Tabs[{i}]", $"A tab needs a name of at most {MaxTabNameLength} characters.");
+            else
+                normalizedTabs.Add(tab with { Id = tab.Id == Guid.Empty ? Guid.NewGuid() : tab.Id, Name = tab.Name.Trim() });
+        }
+        if (normalizedTabs.Select(t => t.Id).Distinct().Count() != normalizedTabs.Count)
+            Fail("Tabs", "Tab ids must be unique.");
+        if (normalizedTabs.Select(t => t.Name.ToLowerInvariant()).Distinct().Count() != normalizedTabs.Count)
+            Fail("Tabs", "Two tabs cannot have the same name.");
+
         var normalizedWidgets = new List<DashboardWidget>();
         for (var i = 0; i < widgets.Count; i++)
         {
@@ -140,7 +159,8 @@ internal static class DashboardValidator
 
                 normalizedWidgets.Add(new DashboardWidget(
                     w.Id, Guid.Empty, w.Layout, WidgetKind.Image, current.ImageKey, w.ImageFit ?? current.ImageFit ?? "contain",
-                    string.IsNullOrWhiteSpace(w.Alt) ? null : w.Alt.Trim(), string.IsNullOrWhiteSpace(w.LinkUrl) ? null : w.LinkUrl.Trim()));
+                    string.IsNullOrWhiteSpace(w.Alt) ? null : w.Alt.Trim(), string.IsNullOrWhiteSpace(w.LinkUrl) ? null : w.LinkUrl.Trim(),
+                    TabId: w.TabId));
                 continue;
             }
 
@@ -175,7 +195,7 @@ internal static class DashboardValidator
 
                 normalizedWidgets.Add(new DashboardWidget(
                     w.Id == Guid.Empty ? Guid.NewGuid() : w.Id, Guid.Empty, w.Layout, WidgetKind.Text,
-                    Text: w.Text.Trim(), TextAlign: w.TextAlign ?? "left", TextSize: w.TextSize ?? "normal"));
+                    Text: w.Text.Trim(), TextAlign: w.TextAlign ?? "left", TextSize: w.TextSize ?? "normal", TabId: w.TabId));
                 continue;
             }
 
@@ -198,7 +218,7 @@ internal static class DashboardValidator
             }
 
             // A chart widget carries nothing of a picture, whatever was sent.
-            normalizedWidgets.Add(new DashboardWidget(w.Id == Guid.Empty ? Guid.NewGuid() : w.Id, w.ChartId, w.Layout));
+            normalizedWidgets.Add(new DashboardWidget(w.Id == Guid.Empty ? Guid.NewGuid() : w.Id, w.ChartId, w.Layout, TabId: w.TabId));
         }
         if (normalizedWidgets.Select(w => w.Id).Distinct().Count() != normalizedWidgets.Count)
             Fail("Widgets", "Widget ids must be unique.");
@@ -207,7 +227,13 @@ internal static class DashboardValidator
             Fail("Widgets", "A chart can only be on a dashboard once.");
 
         if (errors.Count > 0) throw new ValidationException(errors);
-        return new DashboardDefinition(normalizedWidgets, normalizedFilters);
+
+        // Every widget is on a tab that exists: one that names a tab that is not there (a tab that was removed) goes to
+        // the first. With no tabs, no widget names one.
+        var firstTab = normalizedTabs.Count > 0 ? normalizedTabs[0].Id : (Guid?)null;
+        var known = normalizedTabs.Select(t => t.Id).ToHashSet();
+        var placed = normalizedWidgets.Select(w => w with { TabId = w.TabId is { } id && known.Contains(id) ? id : firstTab }).ToList();
+        return new DashboardDefinition(placed, normalizedFilters, normalizedTabs.Count > 0 ? normalizedTabs : null);
     }
 
     internal static bool IsWebAddress(string value) =>

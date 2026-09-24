@@ -83,6 +83,9 @@ public class DashboardsController : ControllerBase
 		public string? Fit { get; set; }
 		public string? Alt { get; set; }
 		public string? LinkUrl { get; set; }
+
+		/// <summary>The tab to put the picture on. Left out, the first tab.</summary>
+		public Guid? TabId { get; set; }
 	}
 
 	public sealed class ImageFileForm
@@ -104,7 +107,7 @@ public class DashboardsController : ControllerBase
 		if (form.File is null || form.File.Length == 0)
 			throw new Application.Common.ValidationException("File", "Choose a picture to put on the dashboard.");
 		await using var stream = form.File.OpenReadStream();
-		return Ok(await handler.HandleAsync(organizationId, dashboardId, stream, new ImageWidgetOptions(form.Fit, form.Alt, form.LinkUrl), ct));
+		return Ok(await handler.HandleAsync(organizationId, dashboardId, stream, new ImageWidgetOptions(form.Fit, form.Alt, form.LinkUrl), form.TabId, ct));
 	}
 
 	/// <summary>Puts another picture in a picture widget; its place, fit, description and link stay. Editors and Owners.</summary>

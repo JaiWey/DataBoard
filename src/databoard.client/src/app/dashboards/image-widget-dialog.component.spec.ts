@@ -184,4 +184,27 @@ describe('ImageWidgetDialogComponent', () => {
       expect(el().querySelector('[role=alert]')?.textContent).toContain('A link must be');
     });
   });
-});
+
+  describe('adding a picture to a tab', () => {
+    it('sends the tab with the picture', () => {
+      create({ orgId: ORG, dashboard: dashboard(), tabId: 'tab-2' });
+
+      pick(png());
+      button('Add picture').click();
+
+      const request = http.expectOne({ method: 'POST', url: `${BASE}/image-widgets` });
+      expect((request.request.body as FormData).get('TabId')).toBe('tab-2');
+      request.flush(dashboard());
+    });
+
+    it('sends no tab when there is none', () => {
+      create({ orgId: ORG, dashboard: dashboard(), tabId: null });
+
+      pick(png());
+      button('Add picture').click();
+
+      const request = http.expectOne({ method: 'POST', url: `${BASE}/image-widgets` });
+      expect((request.request.body as FormData).has('TabId')).toBe(false);
+      request.flush(dashboard());
+    });
+  });});

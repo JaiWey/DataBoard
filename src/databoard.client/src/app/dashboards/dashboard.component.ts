@@ -15,16 +15,21 @@ import { AddChartsDialogComponent, AddChartsDialogData } from './add-charts-dial
 import { BackgroundDialogComponent, BackgroundDialogData } from './background-dialog.component';
 import { BackgroundLayerComponent } from './background-layer.component';
 import { MarkdownComponent } from '../shared/markdown.component';
+import { DashboardTabBarComponent } from './dashboard-tab-bar.component';
+import { MoveToTabComponent } from './move-to-tab.component';
+import { TabNameDialogComponent, TabNameDialogData } from './tab-name-dialog.component';
+import { arrangeTab, placeAll, tabOf } from './dashboard-tabs';
 import { ImageWidgetComponent } from './image-widget.component';
 import { ImageWidgetDialogComponent, ImageWidgetDialogData } from './image-widget-dialog.component';
 import { TextWidgetDialogComponent, TextWidgetDialogData } from './text-widget-dialog.component';
 import { DashboardGridComponent } from './dashboard-grid.component';
 import { ShareDialogComponent, ShareDialogData } from './share-dialog.component';
 import { REFRESH_CHOICES, ago, intervalLabel } from '../shared/relative-time';
-import { LayoutItem, arrange, sameLayout } from './dashboard-layout';
+import { LayoutItem, sameLayout } from './dashboard-layout';
 import { Dataset, DatasetsService } from '../organizations/datasets.service';
 import {
   Dashboard,
+  DashboardTab,
   DashboardDefinition,
   DashboardFilter,
   DashboardRun,
@@ -49,7 +54,7 @@ export function parseFilterInput(operator: SharedFilterOperator, text: string): 
 
 @Component({
   selector: 'app-dashboard',
-  imports: [ReactiveFormsModule, RouterLink, MatCardModule, MatFormFieldModule, MatInputModule, MatButtonModule, ChartViewComponent, DashboardGridComponent, ExportMenuComponent, BackgroundLayerComponent, ImageWidgetComponent, MarkdownComponent],
+  imports: [ReactiveFormsModule, RouterLink, MatCardModule, MatFormFieldModule, MatInputModule, MatButtonModule, ChartViewComponent, DashboardGridComponent, ExportMenuComponent, BackgroundLayerComponent, ImageWidgetComponent, MarkdownComponent, DashboardTabBarComponent, MoveToTabComponent],
   template: `
     <mat-card appearance="raised" class="detail">
     @if (dashboard(); as d) {
@@ -136,6 +141,10 @@ export function parseFilterInput(operator: SharedFilterOperator, text: string): 
         </p>
       }
 
+      <app-dashboard-tab-bar [tabs]="tabs()" [activeId]="activeTabId()" [canEdit]="canEdit()" [editing]="editingLayout()"
+                             (select)="selectTab($event)" (add)="addTab(d)" (rename)="renameTab(d, $event)" (remove)="removeTab(d, $event)"
+                             (moveEarlier)="moveTab(d, $event, -1)" (moveLater)="moveTab(d, $event, 1)" />
+
       <app-dashboard-grid [items]="items()" [editing]="editingLayout()" [labels]="labels()" (layoutChange)="draft.set($event)">
         <ng-template let-id>
           @if (widgetById(id); as widget) {
@@ -145,6 +154,7 @@ export function parseFilterInput(operator: SharedFilterOperator, text: string): 
                                 [alt]="widget.alt" [linkUrl]="widget.linkUrl" />
               @if (canEdit() && !editingLayout()) {
                 <span class="picture-actions no-print">
+                  <app-move-to-tab [tabs]="tabs()" [current]="activeTabId()" (pick)="moveWidget(d, widget, $event)" />
                   <button mat-stroked-button type="button" class="edit-picture" (click)="editPicture(d, widget)">Edit picture</button>
                   <button mat-stroked-button type="button" class="remove-widget" (click)="removeWidget(d, widget.id)">Remove</button>
                 </span>
@@ -155,6 +165,7 @@ export function parseFilterInput(operator: SharedFilterOperator, text: string): 
               <app-markdown class="words-text" [text]="widget.text ?? ''" [align]="widget.textAlign ?? 'left'" [size]="widget.textSize ?? 'normal'" />
               @if (canEdit() && !editingLayout()) {
                 <span class="picture-actions no-print">
+                  <app-move-to-tab [tabs]="tabs()" [current]="activeTabId()" (pick)="moveWidget(d, widget, $event)" />
                   <button mat-stroked-button type="button" class="edit-text" (click)="editText(d, widget)">Edit text</button>
                   <button mat-stroked-button type="button" class="remove-widget" (click)="removeWidget(d, widget.id)">Remove</button>
                 </span>
@@ -172,6 +183,7 @@ export function parseFilterInput(operator: SharedFilterOperator, text: string): 
                       <app-export-menu [name]="chart.name" [result]="exported" [type]="chart.type" />
                     }
                     @if (canEdit()) {
+                      <app-move-to-tab [tabs]="tabs()" [current]="activeTabId()" (pick)="moveWidget(d, widget, $event)" />
                       <a mat-button [routerLink]="['/organizations', orgId(), 'charts', chart.id]">Edit chart</a>
                       <button mat-button type="button" class="remove-widget" (click)="removeWidget(d, widget.id)">Remove</button>
                     }
@@ -320,11 +332,19 @@ export class DashboardComponent implements OnInit {
   protected readonly errors = signal<string[]>([]);
   protected readonly busy = signal(false);
 
+  protected readonly tabs = computed(() => this.dashboard()?.definition.tabs ?? []);
+  private readonly chosenTab = signal<string | null>(null);
+  /** The tab on show: the one picked if it still exists, else the first. Null when the dashboard has no tabs. */
+  protected readonly activeTabId = computed(() => {
+    const tabs = this.tabs();
+    return tabs.length === 0 ? null : tabs.some((t) => t.id === this.chosenTab()) ? this.chosenTab() : tabs[0].id;
+  });
+
   /** True while the editor is arranging widgets; the changes live in `draft` until they are saved. */
   protected readonly editingLayout = signal(false);
   protected readonly draft = signal<LayoutItem[] | null>(null);
   /** Where each widget sits as saved, with places made up for widgets that have none yet. */
-  private readonly savedLayout = computed(() => arrange(this.dashboard()?.definition.widgets ?? []));
+  private readonly savedLayout = computed(() => arrangeTab(this.dashboard()?.definition.widgets ?? [], this.tabs(), this.activeTabId()));
   protected readonly items = computed(() => this.draft() ?? this.savedLayout());
   protected readonly layoutChanged = computed(() => !sameLayout(this.items(), this.savedLayout()));
   protected readonly labels = computed(() => {
@@ -444,13 +464,73 @@ export class DashboardComponent implements OnInit {
     this.save(d, { ...d.definition, widgets }, () => this.cancelLayout(), false);
   }
 
-  /** Writes the places the page worked out into the widgets, so they stay where they are when others come and go. */
-  private placed(widgets: DashboardWidget[]): DashboardWidget[] {
-    const layout = arrange(widgets);
-    return widgets.map((w) => {
-      const place = layout.find((i) => i.id === w.id)!;
-      return { ...w, layout: { x: place.x, y: place.y, w: place.w, h: place.h } };
+  /** Writes the places the page worked out into the widgets, tab by tab, so they stay where they are when others come and go. */
+  private placed(widgets: DashboardWidget[], tabs: DashboardTab[] = this.tabs()): DashboardWidget[] {
+    return placeAll(widgets, tabs);
+  }
+
+  // ---- tabs ----
+
+  protected selectTab(id: string): void {
+    if (!this.editingLayout()) this.chosenTab.set(id); // the layout being arranged belongs to the tab it was started on
+  }
+
+  protected addTab(d: Dashboard): void {
+    const tabs = this.tabs();
+    this.askTabName({ taken: tabs.map((t) => t.name) }, (name) => {
+      // The first tab turns the one page into two: what is there now becomes the first tab.
+      const first = name.toLowerCase() === 'main' ? 'Overview' : 'Main';
+      const next = [...(tabs.length === 0 ? [{ id: NEW_ID, name: first }] : tabs), { id: NEW_ID, name }];
+      this.save(d, { ...d.definition, tabs: next }, () => this.chosenTab.set(this.tabs().at(-1)?.id ?? null), false);
     });
+  }
+
+  protected renameTab(d: Dashboard, tab: DashboardTab): void {
+    this.askTabName({ name: tab.name, taken: this.tabs().filter((t) => t.id !== tab.id).map((t) => t.name) }, (name) => {
+      this.save(d, { ...d.definition, tabs: this.tabs().map((t) => (t.id === tab.id ? { ...t, name } : t)) }, undefined, false);
+    });
+  }
+
+  /** Takes a tab away; what was on it goes to the first tab, and the last two tabs together become one page again. */
+  protected removeTab(d: Dashboard, tab: DashboardTab): void {
+    const tabs = this.tabs();
+    const onIt = d.definition.widgets.filter((w) => tabOf(w, tabs) === tab.id).length;
+    const moved = onIt === 0 ? '' : ` The ${onIt} ${onIt === 1 ? 'widget on it moves' : 'widgets on it move'} to the first tab.`;
+    if (!confirm(`Remove the tab "${tab.name}"?${moved}`)) return;
+    const remaining = tabs.filter((t) => t.id !== tab.id);
+    const home = remaining[0]?.id ?? null;
+    // What was on the removed tab goes to the first one, to be placed there; with one tab left it is one page again.
+    const widgets = d.definition.widgets.map((w) => {
+      const was = tabOf(w, tabs);
+      return was === tab.id ? { ...w, tabId: home, layout: null } : w;
+    });
+    const single = remaining.length < 2;
+    const kept = single ? widgets.map((w) => ({ ...w, tabId: null })) : widgets;
+    this.save(d, { ...d.definition, tabs: single ? [] : remaining, widgets: this.placed(kept, single ? [] : remaining) }, undefined, false);
+  }
+
+  protected moveTab(d: Dashboard, tab: DashboardTab, by: -1 | 1): void {
+    const tabs = [...this.tabs()];
+    const at = tabs.findIndex((t) => t.id === tab.id);
+    const to = at + by;
+    if (at < 0 || to < 0 || to >= tabs.length) return;
+    [tabs[at], tabs[to]] = [tabs[to], tabs[at]];
+    this.save(d, { ...d.definition, tabs }, undefined, false);
+  }
+
+  /** Puts a widget on another tab, at the first free place there. */
+  protected moveWidget(d: Dashboard, widget: DashboardWidget, tabId: string): void {
+    const widgets = d.definition.widgets.map((w) => (w.id === widget.id ? { ...w, tabId, layout: null } : w));
+    this.save(d, { ...d.definition, widgets: this.placed(widgets) }, undefined, false);
+  }
+
+  private askTabName(data: TabNameDialogData, then: (name: string) => void): void {
+    this.dialog
+      .open<TabNameDialogComponent, TabNameDialogData, string>(TabNameDialogComponent, { data, width: '24rem', maxWidth: '95vw' })
+      .afterClosed()
+      .subscribe((name) => {
+        if (name) then(name);
+      });
   }
 
   /** Lets the editor pick saved charts to put on this dashboard (or go and make a new one). */
@@ -473,7 +553,7 @@ export class DashboardComponent implements OnInit {
           .subscribe((ids) => {
             if (!ids || ids.length === 0) return;
             // New widgets have no id yet, so they are placed under their position in the list and the server gives ids.
-            const widgets = this.placed([...d.definition.widgets, ...ids.map((chartId, n) => ({ id: `${NEW_ID}-${n}`, chartId }))])
+            const widgets = this.placed([...d.definition.widgets, ...ids.map((chartId, n) => ({ id: `${NEW_ID}-${n}`, chartId, ...(this.activeTabId() ? { tabId: this.activeTabId() } : {}) }))])
               .map((w) => (w.id.startsWith(NEW_ID) ? { ...w, id: NEW_ID } : w));
             this.save(d, { ...d.definition, widgets });
           });
@@ -489,7 +569,7 @@ export class DashboardComponent implements OnInit {
 
   /** Lets the editor choose a picture to put on the dashboard. */
   protected addPicture(d: Dashboard): void {
-    this.openPictureDialog({ orgId: this.orgId(), dashboard: d });
+    this.openPictureDialog({ orgId: this.orgId(), dashboard: d, tabId: this.activeTabId() });
   }
 
   protected editPicture(d: Dashboard, widget: DashboardWidget): void {
@@ -498,7 +578,7 @@ export class DashboardComponent implements OnInit {
 
   /** Lets the editor write some text (titles, notes) to put on the dashboard. */
   protected addText(d: Dashboard): void {
-    this.openTextDialog({ orgId: this.orgId(), dashboard: d });
+    this.openTextDialog({ orgId: this.orgId(), dashboard: d, tabId: this.activeTabId() });
   }
 
   protected editText(d: Dashboard, widget: DashboardWidget): void {

@@ -11,10 +11,11 @@ import { ExportMenuComponent } from '../charts/export-menu.component';
 import { problemMessages } from '../organizations/data-sources.service';
 import { BackgroundLayerComponent } from './background-layer.component';
 import { MarkdownComponent } from '../shared/markdown.component';
+import { DashboardTabBarComponent } from './dashboard-tab-bar.component';
+import { arrangeTab } from './dashboard-tabs';
 import { ImageWidgetComponent } from './image-widget.component';
 import { DashboardGridComponent } from './dashboard-grid.component';
 import { ago } from '../shared/relative-time';
-import { arrange } from './dashboard-layout';
 import { parseFilterInput } from './dashboard.component';
 import { DashboardRun, DashboardWidget, FilterValues, SHARED_FILTER_OPERATORS, WidgetResult } from './dashboards.service';
 import { SharedChart, SharedDashboard, SharedDashboardsService } from './shared-dashboards.service';
@@ -25,7 +26,7 @@ import { SharedChart, SharedDashboard, SharedDashboardsService } from './shared-
  */
 @Component({
   selector: 'app-shared-dashboard',
-  imports: [ReactiveFormsModule, MatCardModule, MatButtonModule, MatFormFieldModule, MatInputModule, ChartViewComponent, DashboardGridComponent, ExportMenuComponent, BackgroundLayerComponent, ImageWidgetComponent, MarkdownComponent],
+  imports: [ReactiveFormsModule, MatCardModule, MatButtonModule, MatFormFieldModule, MatInputModule, ChartViewComponent, DashboardGridComponent, ExportMenuComponent, BackgroundLayerComponent, ImageWidgetComponent, MarkdownComponent, DashboardTabBarComponent],
   template: `
     <header class="bar">
       <svg viewBox="0 0 32 32" width="24" height="24" aria-hidden="true">
@@ -72,6 +73,8 @@ import { SharedChart, SharedDashboard, SharedDashboardsService } from './shared-
         @if (d.widgets.length === 0) {
           <p><em>This dashboard has no charts.</em></p>
         }
+
+        <app-dashboard-tab-bar [tabs]="tabs()" [activeId]="activeTabId()" (select)="chosenTab.set($event)" />
 
         <app-dashboard-grid [items]="items()" [labels]="labels()">
           <ng-template let-id>
@@ -168,7 +171,14 @@ export class SharedDashboardComponent implements OnInit {
 
   protected filterForm: FormGroup<Record<string, FormControl<string>>> = this.fb.nonNullable.group({});
 
-  protected readonly items = computed(() => arrange(this.dashboard()?.widgets ?? []));
+  protected readonly tabs = computed(() => this.dashboard()?.tabs ?? []);
+  protected readonly chosenTab = signal<string | null>(null);
+  /** The tab on show: the one picked if it exists, else the first. Null when the dashboard is one page. */
+  protected readonly activeTabId = computed(() => {
+    const tabs = this.tabs();
+    return tabs.length === 0 ? null : tabs.some((t) => t.id === this.chosenTab()) ? this.chosenTab() : tabs[0].id;
+  });
+  protected readonly items = computed(() => arrangeTab(this.dashboard()?.widgets ?? [], this.tabs(), this.activeTabId()));
   private readonly charts = computed(() => new Map((this.dashboard()?.charts ?? []).map((c) => [c.id, c])));
   protected readonly labels = computed(() => {
     const names: Record<string, string> = {};

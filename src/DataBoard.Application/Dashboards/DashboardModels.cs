@@ -26,10 +26,14 @@ public enum WidgetKind { Chart = 0, Image = 1, Text = 2 }
 /// <param name="Text">The words of a text widget, in simple Markdown (headings, bold, italic, lists, links). Shown by the page, never as HTML.</param>
 /// <param name="TextAlign">left, center or right.</param>
 /// <param name="TextSize">small, normal or large.</param>
+/// <param name="TabId">The tab the widget is on. Null when the dashboard has no tabs; with tabs, a widget with no (or an unknown) tab is on the first.</param>
 public sealed record DashboardWidget(
     Guid Id, Guid ChartId, WidgetLayout? Layout = null,
     WidgetKind Kind = WidgetKind.Chart, string? ImageKey = null, string? ImageFit = null, string? Alt = null, string? LinkUrl = null,
-    string? Text = null, string? TextAlign = null, string? TextSize = null);
+    string? Text = null, string? TextAlign = null, string? TextSize = null, Guid? TabId = null);
+
+/// <summary>A page of a dashboard. Each tab has its own grid; the shared filters apply to every tab.</summary>
+public sealed record DashboardTab(Guid Id, string Name);
 
 /// <summary>
 /// A filter shared by the whole dashboard. Viewers pick values; the filter then applies to every widget whose dataset
@@ -40,7 +44,8 @@ public sealed record DashboardFilter(Guid Id, string Label, string Column, Filte
 /// <summary>What a shared filter acts on: a dataset column (it filters rows), or a dataset parameter (it sets a value the SQL takes).</summary>
 public enum FilterTarget { Column = 0, Parameter = 1 }
 
-public sealed record DashboardDefinition(IReadOnlyList<DashboardWidget> Widgets, IReadOnlyList<DashboardFilter> Filters);
+/// <param name="Tabs">The tabs, in order. Null or empty: the dashboard is one page, as dashboards were before tabs.</param>
+public sealed record DashboardDefinition(IReadOnlyList<DashboardWidget> Widgets, IReadOnlyList<DashboardFilter> Filters, IReadOnlyList<DashboardTab>? Tabs = null);
 
 /// <param name="FolderId">Where a new dashboard is filed (create only; moving one is a separate call). Null is the top level.</param>
 public sealed record SaveDashboardRequest(string Name, string? Description, DashboardDefinition? Definition, Guid? FolderId = null);

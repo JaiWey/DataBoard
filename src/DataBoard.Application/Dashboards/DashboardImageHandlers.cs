@@ -48,7 +48,7 @@ public sealed class AddImageWidgetHandler(
     public const int DefaultHeight = 4;
 
     public async Task<DashboardDto> HandleAsync(
-        Guid organizationId, Guid dashboardId, Stream image, ImageWidgetOptions? options, CancellationToken ct = default)
+        Guid organizationId, Guid dashboardId, Stream image, ImageWidgetOptions? options, Guid? tabId = null, CancellationToken ct = default)
     {
         await access.RequireRoleAsync(organizationId, OrganizationRole.Editor, ct);
         var dashboard = await dashboards.GetAsync(organizationId, dashboardId, ct) ?? throw new NotFoundException("Dashboard not found.");
@@ -62,12 +62,16 @@ public sealed class AddImageWidgetHandler(
         var kind = ImageUpload.Kind(bytes);
         var key = await images.SaveAsync(bytes, kind.Extension, ct);
 
-        // Below everything, the left edge. If an older widget has no place yet, the client places this one with the rest.
-        WidgetLayout? layout = definition.Widgets.All(w => w.Layout is not null)
-            ? new WidgetLayout(0, definition.Widgets.Select(w => w.Layout!.Y + w.Layout.H).DefaultIfEmpty(0).Max(), DefaultWidth, DefaultHeight)
+        // On the tab asked for (the first, if none or an unknown one), below everything there, at the left edge. If an older
+        // widget there has no place yet, the client places this one with the rest.
+        var tabs = definition.Tabs ?? [];
+        Guid? tab = tabs.Count == 0 ? null : tabs.Any(t => t.Id == tabId) ? tabId : tabs[0].Id;
+        var onTab = definition.Widgets.Where(w => (w.TabId ?? tabs.FirstOrDefault()?.Id) == tab).ToList();
+        WidgetLayout? layout = onTab.All(w => w.Layout is not null)
+            ? new WidgetLayout(0, onTab.Select(w => w.Layout!.Y + w.Layout.H).DefaultIfEmpty(0).Max(), DefaultWidth, DefaultHeight)
             : null;
         var widget = new DashboardWidget(
-            Guid.NewGuid(), Guid.Empty, layout, WidgetKind.Image, key, checkedOptions.Fit, checkedOptions.Alt, checkedOptions.LinkUrl);
+            Guid.NewGuid(), Guid.Empty, layout, WidgetKind.Image, key, checkedOptions.Fit, checkedOptions.Alt, checkedOptions.LinkUrl, TabId: tab);
 
         try
         {

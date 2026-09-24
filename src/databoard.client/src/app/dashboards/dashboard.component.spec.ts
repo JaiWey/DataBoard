@@ -1032,4 +1032,263 @@ describe('DashboardComponent', () => {
       const offered = (dialog.mock.calls[0][1] as { data: { charts: { id: string }[] } }).data.charts.map((c) => c.id);
       expect(offered).toEqual([C_TABLE, C_SPARE]);
     });
+  });
+
+  // ---- tabs ----
+
+  describe('tabs', () => {
+    const T1 = 'a1000000-0000-0000-0000-000000000001';
+    const T2 = 'a1000000-0000-0000-0000-000000000002';
+    const tabbed = (over: Record<string, unknown> = {}) => ({
+      ...dashboard(),
+      definition: {
+        widgets: [
+          { id: W_BAR, chartId: C_BAR, tabId: T1, layout: { x: 0, y: 0, w: 6, h: 5 } },
+          { id: W_TABLE, chartId: C_TABLE, tabId: T2, layout: { x: 0, y: 0, w: 6, h: 5 } },
+        ],
+        filters: [],
+        tabs: [{ id: T1, name: 'Overview' }, { id: T2, name: 'Costs' }],
+        ...over,
+      },
+    });
+    const open = (role: 'Viewer' | 'Editor' | 'Owner' = 'Editor', def: object = tabbed()) => {
+      load(role, def);
+      http.expectOne(runUrl).flush({ widgets: [] });
+      fixture.detectChanges();
+    };
+    const tabNames = () => Array.from(el().querySelectorAll('[role=tab]')).map((x) => x.textContent?.trim());
+    const gridTitles = () => Array.from(el().querySelectorAll('app-dashboard-grid mat-card-title')).map((x) => x.textContent?.trim());
+    const clickTab = (name: string) => {
+      (Array.from(el().querySelectorAll('[role=tab]')).find((x) => x.textContent?.trim() === name) as HTMLButtonElement).click();
+      fixture.detectChanges();
+    };
+    const dialog = (result: unknown) => vi.spyOn(TestBed.inject(MatDialog), 'open').mockReturnValue({ afterClosed: () => of(result) } as never);
+    const lastSave = () => http.expectOne({ method: 'PUT', url: dashboardUrl });
+
+    it('shows no tab bar to a viewer of a dashboard without tabs, and the widgets as before', () => {
+      open('Viewer', dashboard());
+
+      expect(el().querySelector('app-dashboard-tab-bar .bar')).toBeNull();
+      expect(gridTitles().length).toBe(2);
+    });
+
+    it('shows the tabs and only the widgets of the first one to begin with', () => {
+      open('Viewer');
+
+      expect(tabNames()).toEqual(['Overview', 'Costs']);
+      expect(gridTitles()).toEqual(['Revenue by region']);
+    });
+
+    it('switches to another tab and its widgets', () => {
+      open('Viewer');
+
+      clickTab('Costs');
+
+      expect(gridTitles()).toEqual(['Orders']);
+      expect(el().querySelector('.tab.active .name')?.textContent).toBe('Costs');
+    });
+
+    it('puts a widget with no tab on the first one', () => {
+      open('Viewer', tabbed({ widgets: [{ id: W_BAR, chartId: C_BAR, layout: { x: 0, y: 0, w: 6, h: 5 } }] }));
+
+      expect(gridTitles()).toEqual(['Revenue by region']);
+    });
+
+    it('does not run the charts again when switching tabs', () => {
+      open('Viewer');
+
+      clickTab('Costs');
+      clickTab('Overview');
+
+      http.expectNone(runUrl);
+    });
+
+    it('turns one page into two tabs: what is there becomes the first, the new one is second and shows', () => {
+      open('Owner', dashboard(false));
+      dialog('Costs');
+
+      (el().querySelector('app-dashboard-tab-bar .add') as HTMLButtonElement).click();
+      fixture.detectChanges();
+
+      const request = lastSave();
+      expect(request.request.body.definition.tabs).toEqual([{ id: '00000000-0000-0000-0000-000000000000', name: 'Main' }, { id: '00000000-0000-0000-0000-000000000000', name: 'Costs' }]);
+      request.flush({ ...tabbed(), definition: { ...tabbed().definition, widgets: [{ id: W_BAR, chartId: C_BAR, tabId: T1, layout: { x: 0, y: 0, w: 6, h: 5 } }] } });
+      fixture.detectChanges();
+
+      expect(tabNames()).toEqual(['Overview', 'Costs']);
+      expect(el().querySelector('.tab.active .name')?.textContent).toBe('Costs');
+      http.expectNone(runUrl);
+    });
+
+    it('does not call the first tab Main when the new one is called that', () => {
+      open('Owner', dashboard(false));
+      dialog('main');
+
+      (el().querySelector('app-dashboard-tab-bar .add') as HTMLButtonElement).click();
+
+      const request = lastSave();
+      expect(request.request.body.definition.tabs.map((x: { name: string }) => x.name)).toEqual(['Overview', 'main']);
+      request.flush(tabbed());
+    });
+
+    it('adds a tab to the ones there are, and offers the names taken so far', () => {
+      open('Owner');
+      const picker = dialog('People');
+
+      (el().querySelector('app-dashboard-tab-bar .add') as HTMLButtonElement).click();
+
+      expect((picker.mock.calls[0][1] as { data: { taken: string[] } }).data.taken).toEqual(['Overview', 'Costs']);
+      const request = lastSave();
+      expect(request.request.body.definition.tabs.map((x: { name: string }) => x.name)).toEqual(['Overview', 'Costs', 'People']);
+      request.flush(tabbed());
+    });
+
+    it('renames the tab on show', () => {
+      open('Owner');
+      dialog('Summary');
+
+      (el().querySelector('.tab.active .more') as HTMLButtonElement).click();
+      fixture.detectChanges();
+      (Array.from(document.querySelectorAll<HTMLButtonElement>('.mat-mdc-menu-item')).find((b) => b.textContent?.trim() === 'Rename') as HTMLButtonElement).click();
+
+      const request = lastSave();
+      expect(request.request.body.definition.tabs).toEqual([{ id: T1, name: 'Summary' }, { id: T2, name: 'Costs' }]);
+      request.flush(tabbed());
+    });
+
+    it('removes a tab after asking, sending its widgets to the first tab; two tabs left over one become a single page', () => {
+      open('Owner');
+      clickTab('Costs');
+      vi.spyOn(window, 'confirm').mockReturnValue(true);
+
+      (el().querySelector('.tab.active .more') as HTMLButtonElement).click();
+      fixture.detectChanges();
+      (Array.from(document.querySelectorAll<HTMLButtonElement>('.mat-mdc-menu-item')).find((b) => b.textContent?.trim() === 'Remove') as HTMLButtonElement).click();
+
+      expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('1 widget on it moves to the first tab'));
+      const request = lastSave();
+      expect(request.request.body.definition.tabs).toEqual([]);
+      expect(request.request.body.definition.widgets.every((w: { tabId: unknown }) => w.tabId === null)).toBe(true);
+      const places = request.request.body.definition.widgets.map((w: { layout: { x: number; y: number } }) => `${w.layout.x},${w.layout.y}`);
+      expect(new Set(places).size).toBe(2); // they no longer share cells: the moved one takes the first free place
+      request.flush(dashboard());
+    });
+
+    it('keeps the tabs when more than one is left', () => {
+      const three = tabbed({ tabs: [{ id: T1, name: 'Overview' }, { id: T2, name: 'Costs' }, { id: 'a1000000-0000-0000-0000-000000000003', name: 'People' }] });
+      open('Owner', three);
+      clickTab('Costs');
+      vi.spyOn(window, 'confirm').mockReturnValue(true);
+
+      (el().querySelector('.tab.active .more') as HTMLButtonElement).click();
+      fixture.detectChanges();
+      (Array.from(document.querySelectorAll<HTMLButtonElement>('.mat-mdc-menu-item')).find((b) => b.textContent?.trim() === 'Remove') as HTMLButtonElement).click();
+
+      const request = lastSave();
+      expect(request.request.body.definition.tabs.map((x: { name: string }) => x.name)).toEqual(['Overview', 'People']);
+      expect(request.request.body.definition.widgets.map((w: { tabId: string }) => w.tabId)).toEqual([T1, T1]);
+      request.flush(tabbed());
+    });
+
+    it('does nothing when the removal is not confirmed', () => {
+      open('Owner');
+      vi.spyOn(window, 'confirm').mockReturnValue(false);
+
+      (el().querySelector('.tab.active .more') as HTMLButtonElement).click();
+      fixture.detectChanges();
+      (Array.from(document.querySelectorAll<HTMLButtonElement>('.mat-mdc-menu-item')).find((b) => b.textContent?.trim() === 'Remove') as HTMLButtonElement).click();
+
+      http.expectNone({ method: 'PUT', url: dashboardUrl });
+    });
+
+    it('moves a tab to the right', () => {
+      open('Owner');
+
+      (el().querySelector('.tab.active .more') as HTMLButtonElement).click();
+      fixture.detectChanges();
+      (Array.from(document.querySelectorAll<HTMLButtonElement>('.mat-mdc-menu-item')).find((b) => b.textContent?.trim() === 'Move right') as HTMLButtonElement).click();
+
+      const request = lastSave();
+      expect(request.request.body.definition.tabs.map((x: { id: string }) => x.id)).toEqual([T2, T1]);
+      request.flush(tabbed());
+    });
+
+    it('moves a widget to another tab, to its first free place there, and puts the rest of its old tab together', () => {
+      open('Owner');
+
+      (el().querySelector('app-move-to-tab .move') as HTMLButtonElement).click();
+      fixture.detectChanges();
+      (Array.from(document.querySelectorAll<HTMLButtonElement>('.mat-mdc-menu-item')).find((b) => b.textContent?.trim() === 'Costs') as HTMLButtonElement).click();
+
+      const request = lastSave();
+      const moved = request.request.body.definition.widgets.find((w: { id: string }) => w.id === W_BAR);
+      expect(moved.tabId).toBe(T2);
+      expect(moved.layout).toEqual({ x: 6, y: 0, w: 6, h: 5 }); // beside the chart already on that tab
+      request.flush(tabbed());
+      http.expectNone(runUrl);
+    });
+
+    it('offers no moving between tabs on a dashboard without tabs, or to a viewer', () => {
+      open('Owner', dashboard(false));
+      expect(el().querySelector('app-move-to-tab .move')).toBeNull();
+    });
+
+    it('puts new charts, text and pictures on the tab on show', () => {
+      open('Owner');
+      clickTab('Costs');
+      const picker = dialog(undefined);
+
+      buttonByText('Add text').click();
+      buttonByText('Add picture').click();
+
+      expect((picker.mock.calls[0][1] as { data: { tabId: string } }).data.tabId).toBe(T2);
+      expect((picker.mock.calls[1][1] as { data: { tabId: string } }).data.tabId).toBe(T2);
+    });
+
+    it('cannot change or leave the tab while the layout is being arranged, and arranges the tab it started on', () => {
+      open('Owner');
+      clickTab('Costs');
+
+      buttonByText('Edit layout').click();
+      fixture.detectChanges();
+      expect(el().querySelector('app-dashboard-tab-bar .more')).toBeNull();
+      clickTab('Overview');
+
+      expect(gridTitles()).toEqual(['Orders']); // still the tab it started on
+    });
+
+    it('saves a layout for the tab on show and leaves the places on the other tabs alone', () => {
+      open('Owner');
+      clickTab('Costs');
+      buttonByText('Edit layout').click();
+      fixture.detectChanges();
+      const component = fixture.componentInstance as unknown as { draft: { set(v: unknown): void }; items(): { id: string; x: number; y: number }[] };
+      component.draft.set(component.items().map((i) => ({ ...i, x: 6, y: 3 })));
+      fixture.detectChanges();
+
+      buttonByText('Save layout').click();
+
+      const request = lastSave();
+      const widgets = request.request.body.definition.widgets;
+      expect(widgets.find((w: { id: string }) => w.id === W_TABLE).layout).toMatchObject({ x: 6 });
+      expect(widgets.find((w: { id: string }) => w.id === W_BAR).layout).toEqual({ x: 0, y: 0, w: 6, h: 5 });
+      expect(request.request.body.definition.tabs.length).toBe(2);
+      request.flush(tabbed());
+    });
+
+    it('adds the charts chosen to the tab on show', () => {
+      open('Owner');
+      clickTab('Costs');
+      const picker = dialog([C_SPARE]);
+
+      buttonByText('Add chart').click();
+      http.expectOne(`/api/organizations/${ORG}/charts`).flush(charts);
+
+      const request = lastSave();
+      expect(picker).toHaveBeenCalled();
+      const added = request.request.body.definition.widgets.find((w: { chartId: string }) => w.chartId === C_SPARE);
+      expect(added.tabId).toBe(T2);
+      request.flush(tabbed());
+      http.expectOne(runUrl).flush({ widgets: [] }); // the new chart has to be run
+    });
   });});
