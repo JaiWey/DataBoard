@@ -1,4 +1,4 @@
-import { downloadCsv, downloadImage, fileName, toCsv } from './export';
+import { downloadCsv, downloadImage, downloadJson, fileName, toCsv } from './export';
 
 const result = (rows: unknown[][], names = ['region', 'revenue']) => ({ columns: names.map((name) => ({ name })), rows });
 
@@ -77,6 +77,22 @@ describe('downloads', () => {
     expect(Array.from(bytes.slice(0, 3))).toEqual([0xef, 0xbb, 0xbf]); // the UTF-8 byte order mark
     expect(new TextDecoder().decode(bytes.slice(3))).toBe('region,revenue\r\nZürich,1\r\n');
     expect(document.querySelector('a[download]')).toBeNull(); // the temporary link is removed again
+  });
+
+  it('saves data as indented JSON under the title, with the extension asked for', async () => {
+    downloadJson('Sales / Q1', { name: 'Sales', widgets: [1] }, 'databoard.json');
+
+    expect(clicked.map((a) => [a.download, a.href])).toEqual([['Sales Q1.databoard.json', 'blob:fake']]);
+    const blob = (URL.createObjectURL as unknown as ReturnType<typeof vi.fn>).mock.calls[0][0] as Blob;
+    expect(blob.type).toBe('application/json');
+    expect(JSON.parse(await blob.text())).toEqual({ name: 'Sales', widgets: [1] });
+    expect(await blob.text()).toContain('\n  "name"'); // indented, so a person can read it
+  });
+
+  it('saves JSON as .json when no extension is given', () => {
+    downloadJson('Data', {});
+
+    expect(clicked[0].download).toBe('Data.json');
   });
 
   it('saves an image under the chart name', () => {

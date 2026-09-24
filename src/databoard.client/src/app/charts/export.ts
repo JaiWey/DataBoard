@@ -49,6 +49,13 @@ export function downloadCsv(title: string, result: Tabular): void {
   setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
+/** Saves data as a JSON file. */
+export function downloadJson(title: string, data: unknown, extension = 'json'): void {
+  const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
+  save(url, fileName(title, extension));
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
 export function downloadImage(title: string, dataUrl: string): void {
   save(dataUrl, fileName(title, 'png'));
 }

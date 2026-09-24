@@ -10,8 +10,8 @@ import { DashboardsComponent } from './dashboards.component';
 const ORG = '11111111-1111-1111-1111-111111111111';
 const DATASET = '33333333-3333-3333-3333-333333333333';
 
-const summary = (id: string, name: string, widgetCount = 0, chartIds: string[] = []) => ({
-  id, name, description: null, widgetCount, updatedUtc: '', chartIds,
+const summary = (id: string, name: string, widgetCount = 0, chartIds: string[] = [], folderId: string | null = null) => ({
+  id, name, description: null, widgetCount, updatedUtc: '', chartIds, folderId,
 });
 const widget = (id: string, chartId: string) => ({ id, chartId });
 const full = (id: string, name: string, widgets: unknown[] = []) => ({
@@ -323,4 +323,139 @@ describe('DashboardsComponent', () => {
     expect(el().querySelector('app-chart-card')).toBeNull();
     expect(el().textContent).toContain('No charts yet.');
   });
-});
+
+  // ---- import and copies ----
+
+  describe('import', () => {
+    const importButton = () => Array.from(el().querySelectorAll('button')).find((b) => b.textContent?.trim() === 'Import') as HTMLButtonElement | undefined;
+    const fileInput = () => el().querySelector('input[aria-label="Dashboard file"]') as HTMLInputElement;
+    const importUrl = `/api/organizations/${ORG}/dashboards/import`;
+    const row = (name: string) => Array.from(el().querySelectorAll<HTMLElement>('.list .row')).find((r) => r.querySelector('.name')?.textContent?.trim() === name)!;
+    const choose = async (file: File) => {
+      Object.defineProperty(fileInput(), 'files', { value: [file], configurable: true });
+      fileInput().dispatchEvent(new Event('change'));
+      await fixture.whenStable();
+      await new Promise((resolve) => setTimeout(resolve)); // File.text() answers on a later turn
+      fixture.detectChanges();
+    };
+    const json = (value: unknown, name = 'sales.databoard.json') => new File([typeof value === 'string' ? value : JSON.stringify(value)], name, { type: 'application/json' });
+    const pkg = { format: 'databoard-dashboard', version: 1, name: 'Sales' };
+
+    it('offers viewers no Import button', () => {
+      start('Viewer', []);
+      expect(importButton()).toBeUndefined();
+    });
+
+    it('offers an editor an Import button', () => {
+      start('Editor', []);
+      expect(importButton()).toBeDefined();
+    });
+
+    it('sends the file and shows the dashboard it made, in the folder last clicked', async () => {
+      start('Editor', [summary('d1', 'Old')], [], [{ id: 'f1', name: 'Reports', parentId: null }]);
+      row('Reports').querySelector<HTMLButtonElement>('.main')!.click();
+      fixture.detectChanges();
+
+      await choose(json(pkg));
+
+      const request = http.expectOne({ method: 'POST', url: importUrl });
+      expect(request.request.body).toEqual({ package: pkg, name: null, folderId: 'f1' });
+      request.flush({ dashboard: { ...full('new', 'Sales'), folderId: 'f1' }, missingCharts: [] });
+      http.expectOne({ method: 'GET', url: `/api/organizations/${ORG}/dashboards` }).flush([summary('d1', 'Old'), summary('new', 'Sales', 0, [], 'f1')]);
+      fixture.detectChanges();
+      answerDashboard('new', 'Sales');
+
+      expect(el().querySelector('.notice')).toBeNull();
+      expect(el().querySelector('.fail')).toBeNull();
+    });
+
+    it('tells which charts were not found and so left out', async () => {
+      start('Editor', []);
+
+      await choose(json(pkg));
+      http.expectOne({ method: 'POST', url: importUrl }).flush({ dashboard: full('new', 'Sales'), missingCharts: ['Average', 'Revenue'] });
+      http.expectOne({ method: 'GET', url: `/api/organizations/${ORG}/dashboards` }).flush([summary('new', 'Sales')]);
+      fixture.detectChanges();
+      answerDashboard('new', 'Sales');
+
+      expect(el().querySelector('.notice')?.textContent).toContain('These charts were not found here');
+      expect(el().querySelector('.notice')?.textContent).toContain('Average, Revenue');
+    });
+
+    it('says one chart in the singular', async () => {
+      start('Editor', []);
+
+      await choose(json(pkg));
+      http.expectOne({ method: 'POST', url: importUrl }).flush({ dashboard: full('new', 'Sales'), missingCharts: ['Average'] });
+      http.expectOne({ method: 'GET', url: `/api/organizations/${ORG}/dashboards` }).flush([summary('new', 'Sales')]);
+      fixture.detectChanges();
+      answerDashboard('new', 'Sales');
+
+      expect(el().querySelector('.notice')?.textContent).toContain('This chart was not found here, so its widget was left out: Average.');
+    });
+
+    it('refuses a file that is not JSON, or is some other kind of file, without sending anything', async () => {
+      start('Editor', []);
+
+      await choose(json('{ not json', 'x.json'));
+      expect(el().querySelector('.fail')?.textContent).toContain('not valid JSON');
+
+      await choose(json({ hello: 'world' }));
+      expect(el().querySelector('.fail')?.textContent).toContain('not a DataBoard dashboard file');
+      http.expectNone(importUrl);
+    });
+
+    it('refuses a file that is too big without reading it', async () => {
+      start('Editor', []);
+      const big = new File(['x'], 'big.json');
+      Object.defineProperty(big, 'size', { value: 65 * 1024 * 1024 });
+
+      await choose(big);
+
+      expect(el().querySelector('.fail')?.textContent).toContain('too big');
+      http.expectNone(importUrl);
+    });
+
+    it('shows the server\'s reason when it refuses the file, and can be tried again', async () => {
+      start('Editor', []);
+
+      await choose(json(pkg));
+      http.expectOne({ method: 'POST', url: importUrl }).flush(
+        { title: 'Bad request', errors: { Package: ['This file is version 2; this DataBoard reads version 1.'] } }, { status: 400, statusText: 'Bad Request' },
+      );
+      fixture.detectChanges();
+
+      expect(el().querySelector('.fail')?.textContent).toContain('version 2');
+      expect(importButton()!.disabled).toBe(false);
+    });
+
+    it('clears an old message when another file is chosen', async () => {
+      start('Editor', []);
+      await choose(json('{ not json', 'x.json'));
+      expect(el().querySelector('.fail')).not.toBeNull();
+
+      await choose(json(pkg));
+      http.expectOne({ method: 'POST', url: importUrl }).flush({ dashboard: full('new', 'Sales'), missingCharts: [] });
+      http.expectOne({ method: 'GET', url: `/api/organizations/${ORG}/dashboards` }).flush([summary('new', 'Sales')]);
+      fixture.detectChanges();
+      answerDashboard('new', 'Sales');
+
+      expect(el().querySelector('.fail')).toBeNull();
+    });
+  });
+
+  it('adds a copy to the list and shows it', () => {
+    start('Editor', [summary('d1', 'Sales')]);
+    item(0).click();
+    fixture.detectChanges();
+    answerDashboard('d1', 'Sales');
+
+    (Array.from(el().querySelectorAll('button')).find((b) => b.textContent?.trim() === 'Duplicate') as HTMLButtonElement).click();
+    http.expectOne({ method: 'POST', url: `/api/organizations/${ORG}/dashboards/d1/duplicate` }).flush(full('d2', 'Copy of Sales'));
+    http.expectOne({ method: 'GET', url: `/api/organizations/${ORG}/dashboards` }).flush([summary('d1', 'Sales'), summary('d2', 'Copy of Sales')]);
+    fixture.detectChanges();
+    answerDashboard('d2', 'Copy of Sales');
+
+    expect(Array.from(el().querySelectorAll('.list .row .name')).map((n) => n.textContent?.trim())).toEqual(['Copy of Sales', 'Sales']);
+    expect(el().querySelector('mat-card-title')?.textContent).toContain('Copy of Sales');
+  });});

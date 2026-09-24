@@ -135,6 +135,42 @@ public class DashboardsController : ControllerBase
 		return File(image.Content, image.ContentType);
 	}
 
+	/// <summary>
+	/// The dashboard as a file to keep or take to another organization: its layout, tabs, text, filters and pictures, with
+	/// charts named rather than included. Editors and Owners.
+	/// </summary>
+	[HttpGet("{dashboardId:guid}/export")]
+	public async Task<ActionResult<DashboardPackage>> Export(
+		Guid organizationId, Guid dashboardId, [FromServices] ExportDashboardHandler handler, CancellationToken ct)
+	{
+		var package = await handler.HandleAsync(organizationId, dashboardId, ct);
+		Response.Headers["X-Content-Type-Options"] = "nosniff";
+		return Ok(package);
+	}
+
+	/// <summary>
+	/// Makes a dashboard from an exported file. Charts are found by name; the ones this organization lacks are left out and
+	/// listed in the answer. Editors and Owners.
+	/// </summary>
+	[HttpPost("import")]
+	[RequestSizeLimit(DashboardPackages.MaxRequestBytes)]
+	[RequestFormLimits(MultipartBodyLengthLimit = DashboardPackages.MaxRequestBytes)]
+	public async Task<ActionResult<ImportDashboardResult>> Import(
+		Guid organizationId, ImportDashboardRequest body, [FromServices] ImportDashboardHandler handler, CancellationToken ct)
+	{
+		var result = await handler.HandleAsync(organizationId, body, ct);
+		return Created($"api/organizations/{organizationId}/dashboards/{result.Dashboard.Id}", result);
+	}
+
+	/// <summary>A copy in the same organization: same charts, copied layout, filters, pictures and background. Editors and Owners.</summary>
+	[HttpPost("{dashboardId:guid}/duplicate")]
+	public async Task<ActionResult<DashboardDto>> Duplicate(
+		Guid organizationId, Guid dashboardId, DuplicateDashboardRequest? body, [FromServices] DuplicateDashboardHandler handler, CancellationToken ct)
+	{
+		var copy = await handler.HandleAsync(organizationId, dashboardId, body, ct);
+		return Created($"api/organizations/{organizationId}/dashboards/{copy.Id}", copy);
+	}
+
 	/// <summary>Files the dashboard in a folder (folderId null is the top level). Editors and Owners.</summary>
 	[HttpPut("{dashboardId:guid}/folder")]
 	public async Task<ActionResult<DashboardDto>> Move(

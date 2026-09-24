@@ -8,6 +8,7 @@ import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { ChartViewComponent } from '../charts/chart-view.component';
 import { ExportMenuComponent } from '../charts/export-menu.component';
+import { downloadJson } from '../charts/export';
 import { Observable } from 'rxjs';
 import { Chart, ChartsService } from '../charts/charts.service';
 import { problemMessages } from '../organizations/data-sources.service';
@@ -74,6 +75,8 @@ export function parseFilterInput(operator: SharedFilterOperator, text: string): 
               }
               <button mat-button type="button" class="refresh" [disabled]="busy()" (click)="refresh()">Refresh data</button>
               <button mat-stroked-button type="button" class="share" (click)="share(d)">Share</button>
+              <button mat-stroked-button type="button" class="duplicate" [disabled]="busy()" (click)="duplicate(d)">Duplicate</button>
+              <button mat-stroked-button type="button" class="export" [disabled]="busy()" (click)="exportFile(d)">Export</button>
               <button mat-stroked-button type="button" (click)="addCharts(d)">Add chart</button>
               <button mat-stroked-button type="button" class="add-picture" (click)="addPicture(d)">Add picture</button>
               <button mat-stroked-button type="button" class="add-text" (click)="addText(d)">Add text</button>
@@ -322,6 +325,8 @@ export class DashboardComponent implements OnInit {
   /** The dashboard after it was saved (a chart or filter was added or removed), so the page can update its list. */
   readonly changed = output<Dashboard>();
   readonly deleted = output<string>();
+  /** A copy was made, so the page can add it to its list and show it. */
+  readonly duplicated = output<Dashboard>();
 
   protected readonly operators = SHARED_FILTER_OPERATORS;
 
@@ -682,6 +687,38 @@ export class DashboardComponent implements OnInit {
 
   protected removeWidget(d: Dashboard, widgetId: string): void {
     this.save(d, { ...d.definition, widgets: this.placed(d.definition.widgets.filter((w) => w.id !== widgetId)) });
+  }
+
+  /** Makes a copy of the dashboard in this organization; the page shows it. */
+  protected duplicate(d: Dashboard): void {
+    this.busy.set(true);
+    this.errors.set([]);
+    this.api.duplicate(this.orgId(), d.id).subscribe({
+      next: (copy) => {
+        this.busy.set(false);
+        this.duplicated.emit(copy);
+      },
+      error: (e) => {
+        this.busy.set(false);
+        this.errors.set(problemMessages(e, 'Could not copy the dashboard.'));
+      },
+    });
+  }
+
+  /** Saves the dashboard as a file, to keep or to bring into another organization. */
+  protected exportFile(d: Dashboard): void {
+    this.busy.set(true);
+    this.errors.set([]);
+    this.api.exportPackage(this.orgId(), d.id).subscribe({
+      next: (file) => {
+        this.busy.set(false);
+        downloadJson(d.name, file, 'databoard.json');
+      },
+      error: (e) => {
+        this.busy.set(false);
+        this.errors.set(problemMessages(e, 'Could not export the dashboard.'));
+      },
+    });
   }
 
   protected removeDashboard(d: Dashboard): void {

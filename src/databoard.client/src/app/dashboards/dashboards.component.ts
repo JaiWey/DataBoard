@@ -7,6 +7,7 @@ import { MatDialog } from '@angular/material/dialog';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { tap } from 'rxjs';
 import { CHART_TYPES, Chart, ChartsService } from '../charts/charts.service';
+import { problemMessages } from '../organizations/data-sources.service';
 import { DatasetsService } from '../organizations/datasets.service';
 import { FolderTreeController } from '../shared/folder-tree/folder-tree-controller';
 import { TreeEntry } from '../shared/folder-tree/folder-tree';
@@ -14,7 +15,7 @@ import { FolderTreeComponent } from '../shared/folder-tree/folder-tree.component
 import { ChartCardComponent } from './chart-card.component';
 import { DashboardComponent } from './dashboard.component';
 import { NewDashboardDialogComponent, NewDashboardDialogData } from './new-dashboard-dialog.component';
-import { Dashboard, DashboardSummary, DashboardsService } from './dashboards.service';
+import { DASHBOARD_PACKAGE_FORMAT, Dashboard, DashboardPackage, DashboardSummary, DashboardsService, MAX_PACKAGE_BYTES } from './dashboards.service';
 
 interface Organization {
   id: string;
@@ -44,6 +45,8 @@ type Mode = 'dashboards' | 'charts';
           @if (canEdit()) {
             @if (mode() === 'dashboards') {
               <button mat-flat-button type="button" class="add" (click)="openNewDialog(dashboardTree.selectedFolderId())">New dashboard</button>
+              <input #importFile type="file" class="hidden" accept=".json,application/json" aria-label="Dashboard file" (change)="importFrom($any($event.target))" />
+              <button mat-stroked-button type="button" class="import" [disabled]="importing()" (click)="importFile.click()">Import</button>
             } @else {
               <a mat-flat-button class="add" [routerLink]="['/organizations', orgId, 'charts', 'new']" [queryParams]="newChartParams()">New chart</a>
             }
@@ -51,6 +54,12 @@ type Mode = 'dashboards' | 'charts';
         </mat-card-header>
         <mat-card-content>
           @if (mode() === 'dashboards') {
+            @for (message of importErrors(); track message) {
+              <p class="fail" role="alert">{{ message }}</p>
+            }
+            @if (importNotice(); as notice) {
+              <p class="notice" role="status">{{ notice }}</p>
+            }
             @for (message of dashboardTree.errors(); track message) {
               <p class="fail" role="alert">{{ message }}</p>
             }
@@ -81,7 +90,7 @@ type Mode = 'dashboards' | 'charts';
         @if (mode() === 'dashboards') {
           @for (dashboard of selected(); track dashboard.id) {
             <app-dashboard [orgId]="orgId" [dashboardId]="dashboard.id" [canEdit]="canEdit()"
-                           (changed)="onChanged($event)" (deleted)="onDeleted($event)" />
+                           (changed)="onChanged($event)" (deleted)="onDeleted($event)" (duplicated)="onCreatedCopy($event)" />
           } @empty {
             <mat-card appearance="raised" class="detail empty">
               <mat-card-content class="placeholder">
@@ -112,6 +121,8 @@ type Mode = 'dashboards' | 'charts';
     .list mat-card-content { flex: 1; min-height: 0; display: flex; flex-direction: column; }
     .list app-folder-tree { flex: 1; }
     .fail { color: var(--mat-sys-error); margin: 0 0 0.5rem; }
+    .notice { margin: 0 0 0.5rem; padding: 0.5rem 0.75rem; border-radius: 0.5rem; background: var(--mat-sys-secondary-container); }
+    .hidden { display: none; }
     .workspace { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
     .workspace > app-dashboard, .workspace > app-chart-card { flex: 1; min-height: 0; }
     .workspace > .empty { flex: 1; }
@@ -143,6 +154,10 @@ export class DashboardsComponent implements OnInit {
   });
 
   protected readonly mode = signal<Mode>('dashboards');
+  protected readonly importing = signal(false);
+  protected readonly importErrors = signal<string[]>([]);
+  /** What the last import did, when something was left out of it. */
+  protected readonly importNotice = signal('');
 
   /** The folder trees: one for dashboards, one for charts. */
   protected readonly dashboardTree = new FolderTreeController({
@@ -266,6 +281,79 @@ export class DashboardsComponent implements OnInit {
           : d,
       ),
     );
+  }
+
+  /** A copy was made of the dashboard on show: it joins the list and is shown. */
+  protected onCreatedCopy(copy: Dashboard): void {
+    this.addToList(copy);
+  }
+
+  /** Makes a dashboard from a file (a dashboard exported earlier, here or in another organization). */
+  protected importFrom(input: HTMLInputElement): void {
+    const file = input.files?.[0];
+    input.value = '';
+    this.importErrors.set([]);
+    this.importNotice.set('');
+    if (!file) return;
+    if (file.size > MAX_PACKAGE_BYTES) {
+      this.importErrors.set(['That file is too big to be a dashboard.']);
+      return;
+    }
+
+    this.importing.set(true);
+    file.text().then(
+      (text) => {
+        let pkg: DashboardPackage;
+        try {
+          pkg = JSON.parse(text) as DashboardPackage;
+        } catch {
+          this.fail('That file is not a dashboard file: it is not valid JSON.');
+          return;
+        }
+        if (pkg?.format !== DASHBOARD_PACKAGE_FORMAT) {
+          this.fail('That file is not a DataBoard dashboard file.');
+          return;
+        }
+        this.api.importPackage(this.orgId, pkg, { folderId: this.dashboardTree.selectedFolderId() }).subscribe({
+          next: (result) => {
+            this.importing.set(false);
+            this.addToList(result.dashboard);
+            const missing = result.missingCharts;
+            if (missing.length > 0) {
+              const plural = missing.length > 1;
+              this.importNotice.set(
+                `Imported "${result.dashboard.name}". ${plural ? 'These charts were' : 'This chart was'} not found here, ` +
+                  `so ${plural ? 'their widgets were' : 'its widget was'} left out: ${missing.join(', ')}.`,
+              );
+            }
+          },
+          error: (e) => this.fail(problemMessages(e, 'Could not import the dashboard.').join(' ')),
+        });
+      },
+      () => this.fail('That file could not be read.'),
+    );
+  }
+
+  private fail(message: string): void {
+    this.importing.set(false);
+    this.importErrors.set([message]);
+  }
+
+  /** Puts a dashboard that was just made in the list, and shows it. */
+  private addToList(made: Dashboard): void {
+    const entry: DashboardSummary = {
+      id: made.id,
+      name: made.name,
+      description: made.description,
+      widgetCount: made.definition.widgets.filter((w) => !w.kind || w.kind === 'Chart').length,
+      updatedUtc: made.updatedUtc,
+      chartIds: made.definition.widgets.filter((w) => !w.kind || w.kind === 'Chart').map((w) => w.chartId),
+      folderId: made.folderId ?? null,
+    };
+    this.dashboards.update((items) => [...items, entry]);
+    this.mode.set('dashboards');
+    this.select(made.id);
+    this.reload();
   }
 
   protected onDeleted(id: string): void {

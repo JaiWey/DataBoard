@@ -1291,4 +1291,81 @@ describe('DashboardComponent', () => {
       request.flush(tabbed());
       http.expectOne(runUrl).flush({ widgets: [] }); // the new chart has to be run
     });
+  });
+
+  // ---- duplicate and export ----
+
+  describe('duplicate and export', () => {
+    const open = (role: 'Viewer' | 'Editor' | 'Owner') => {
+      load(role);
+      http.expectOne(runUrl).flush({ widgets: [] });
+      fixture.detectChanges();
+    };
+
+    it('offers Duplicate and Export to editors and not to viewers', () => {
+      open('Viewer');
+      expect(buttonByText('Duplicate')).toBeUndefined();
+      expect(buttonByText('Export')).toBeUndefined();
+    });
+
+    it('shows them to an editor', () => {
+      open('Editor');
+      expect(buttonByText('Duplicate')).toBeDefined();
+      expect(buttonByText('Export')).toBeDefined();
+    });
+
+    it('makes a copy and reports it, without running anything', () => {
+      open('Owner');
+      const copied: unknown[] = [];
+      fixture.componentInstance.duplicated.subscribe((c) => copied.push(c));
+
+      buttonByText('Duplicate').click();
+      const request = http.expectOne({ method: 'POST', url: `${dashboardUrl}/duplicate` });
+      expect(request.request.body).toEqual({});
+      request.flush({ ...dashboard(), id: 'copy-id', name: 'Copy of Sales overview' });
+
+      expect(copied).toEqual([expect.objectContaining({ id: 'copy-id', name: 'Copy of Sales overview' })]);
+      http.expectNone(runUrl);
+    });
+
+    it('shows the reason when the copy fails, and can try again', () => {
+      open('Owner');
+
+      buttonByText('Duplicate').click();
+      http.expectOne({ method: 'POST', url: `${dashboardUrl}/duplicate` }).flush(
+        { title: 'Conflict', detail: 'A dashboard with that name already exists.' }, { status: 409, statusText: 'Conflict' },
+      );
+      fixture.detectChanges();
+
+      expect(el().querySelector('[role=alert]')?.textContent).toContain('already exists');
+      expect(buttonByText('Duplicate').disabled).toBe(false);
+    });
+
+    it('saves the dashboard as a file named after it', async () => {
+      open('Owner');
+      const clicked: HTMLAnchorElement[] = [];
+      vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) { clicked.push(this); });
+      const made = vi.fn(() => 'blob:file');
+      (URL as unknown as Record<string, unknown>)['createObjectURL'] = made;
+      (URL as unknown as Record<string, unknown>)['revokeObjectURL'] = vi.fn();
+
+      buttonByText('Export').click();
+      http.expectOne({ method: 'GET', url: `${dashboardUrl}/export` }).flush({ format: 'databoard-dashboard', version: 1, name: 'Sales overview' });
+
+      expect(clicked.map((a) => a.download)).toEqual(['Sales overview.databoard.json']);
+      const blob = made.mock.calls[0] as unknown as [Blob];
+      expect(JSON.parse(await blob[0].text())).toMatchObject({ format: 'databoard-dashboard', name: 'Sales overview' });
+    });
+
+    it('shows the reason when the export fails', () => {
+      open('Owner');
+
+      buttonByText('Export').click();
+      http.expectOne({ method: 'GET', url: `${dashboardUrl}/export` }).flush(
+        { title: 'Bad request', errors: { Pictures: ['The pictures on this dashboard are too big to export in one file.'] } }, { status: 400, statusText: 'Bad Request' },
+      );
+      fixture.detectChanges();
+
+      expect(el().querySelector('[role=alert]')?.textContent).toContain('too big to export');
+    });
   });});
