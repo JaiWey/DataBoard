@@ -48,6 +48,79 @@ export interface ChartStyleOptions {
   innerRadius?: number | null;
   rose?: boolean;
   pieLabel?: PieLabel;
+
+  // Bars
+  barBorderStyle?: LineType;
+  /** 0 is no border. */
+  barBorderWidth?: number;
+  /** Missing is the colour of the bar. */
+  barBorderColor?: string | null;
+  /** Space between the bars of a group, as a percentage of a bar. */
+  barGap?: number | null;
+  /** Space between groups of bars, as a percentage of a bar. */
+  barCategoryGap?: number | null;
+
+  // Value labels
+  labelPosition?: LabelPosition;
+  labelFont?: FontOptions | null;
+
+  // Legend
+  legendType?: LegendType;
+  /** Buttons that select all the series or invert the selection. */
+  legendSelector?: boolean;
+  legendHeight?: number | null;
+  legendFont?: FontOptions | null;
+
+  // Axes, lines across the plot, and the space around it. X is the horizontal axis, Y the vertical one.
+  xAxis?: AxisOptions | null;
+  yAxis?: AxisOptions | null;
+  xSplitLine?: SplitLineOptions | null;
+  ySplitLine?: SplitLineOptions | null;
+  margin?: MarginOptions | null;
+}
+
+export type LineType = 'solid' | 'dashed' | 'dotted';
+export type LabelPosition = 'auto' | 'top' | 'bottom' | 'left' | 'right' | 'inside' | 'insideTop' | 'insideBottom';
+export type LegendType = 'auto' | 'scroll' | 'plain';
+
+/** Fonts a chart can use. Missing is the default font. */
+export const FONT_FAMILIES = ['sans-serif', 'serif', 'monospace', 'Arial', 'Georgia', 'Verdana', 'Courier New'];
+
+/** How text is drawn. Anything left out is the chart's own. */
+export interface FontOptions {
+  family?: string | null;
+  size?: number | null;
+  weight?: 'normal' | 'bold' | null;
+  italic?: boolean;
+  color?: string | null;
+}
+
+/** Which parts of an axis show, and the text on it. */
+export interface AxisOptions {
+  show?: boolean;
+  line?: boolean;
+  ticks?: boolean;
+  labels?: boolean;
+  lineColor?: string | null;
+  labelFont?: FontOptions | null;
+  titleFont?: FontOptions | null;
+}
+
+/** The lines across the plot that belong to one axis. */
+export interface SplitLineOptions {
+  /** Missing follows the usual for that axis (and the Grid choice). */
+  show?: boolean | null;
+  color?: string | null;
+  width?: number | null;
+  lineType?: LineType | null;
+}
+
+/** The space between the plot and the edge of the chart, in pixels. Missing is worked out. */
+export interface MarginOptions {
+  left?: number | null;
+  top?: number | null;
+  right?: number | null;
+  bottom?: number | null;
 }
 
 /** Colour sets a chart can choose from. "default" leaves ECharts' own colours alone. */
@@ -92,19 +165,38 @@ const titleOption = (style: ChartStyleOptions) =>
 const fmt = (style: ChartStyleOptions) => (value: unknown): string =>
   typeof value === 'number' && Number.isFinite(value) ? formatNumber(value, style.numberFormat) : label(value);
 
+/** The parts of a font that were chosen, as ECharts writes them. Nothing chosen gives nothing. */
+export function fontProps(font: FontOptions | null | undefined): Record<string, unknown> {
+  if (!font) return {};
+  return {
+    ...(font.family ? { fontFamily: font.family } : {}),
+    ...(font.size ? { fontSize: font.size } : {}),
+    ...(font.weight ? { fontWeight: font.weight } : {}),
+    ...(font.italic ? { fontStyle: 'italic' } : {}),
+    ...(font.color ? { color: font.color } : {}),
+  };
+}
+
 /** Where the legend goes and how it looks. */
 function legendOption(style: ChartStyleOptions, count: number, round = false): Record<string, unknown> {
   const position = style.legendPosition ?? 'bottom';
-  const scroll = round || count > LEGEND_SCROLL_FROM ? { type: 'scroll' } : {};
+  // "auto" pages a long legend (and always a pie's); the others are the person's choice.
+  const pages = style.legendType === 'scroll' || (style.legendType !== 'plain' && (round || count > LEGEND_SCROLL_FROM));
+  const scroll = pages ? { type: 'scroll' } : {};
+  const extras = {
+    ...(style.legendSelector ? { selector: true } : {}),
+    ...(style.legendHeight ? { height: style.legendHeight } : {}),
+    ...(Object.keys(fontProps(style.legendFont)).length > 0 ? { textStyle: fontProps(style.legendFont) } : {}),
+  };
   switch (position) {
-    case 'top': return { ...scroll, top: hasTitle(style) ? TITLE_SPACE : 0 };
-    case 'left': return { ...scroll, orient: 'vertical', left: 0, top: 'middle' };
-    case 'right': return { ...scroll, orient: 'vertical', right: 0, top: 'middle' };
-    default: return { ...scroll, bottom: 0 };
+    case 'top': return { ...scroll, ...extras, top: hasTitle(style) ? TITLE_SPACE : 0 };
+    case 'left': return { ...scroll, ...extras, orient: 'vertical', left: 0, top: 'middle' };
+    case 'right': return { ...scroll, ...extras, orient: 'vertical', right: 0, top: 'middle' };
+    default: return { ...scroll, ...extras, bottom: 0 };
   }
 }
 
-/** The plot's margins: the base ones plus what the title, the axis titles and the legend take. */
+/** The plot's margins: the base ones plus what the title, the axis titles and the legend take, or the ones that were chosen. */
 function gridOption(
   style: ChartStyleOptions, showLegend: boolean, base: { left: number; right: number; top: number; bottom: number },
 ): Record<string, unknown> {
@@ -118,7 +210,52 @@ function gridOption(
     else if (position === 'left') grid.left += SIDE_LEGEND_SPACE;
     else if (position === 'right') grid.right += SIDE_LEGEND_SPACE;
   }
+  // What was chosen replaces what was worked out.
+  const chosen = style.margin;
+  for (const side of ['left', 'top', 'right', 'bottom'] as const) {
+    const value = chosen?.[side];
+    if (value !== null && value !== undefined) grid[side] = value;
+  }
   return { ...grid, containLabel: true };
+}
+
+/**
+ * What an axis's own choices add to the axis: its line, ticks and labels (all gone when the axis is hidden), the colour
+ * of the line, and the fonts of its labels and title. Choices that were not made add nothing.
+ */
+function withAxis(axis: Record<string, unknown>, options: AxisOptions | null | undefined): Record<string, unknown> {
+  if (!options) return axis;
+  const hidden = options.show === false;
+  const labelFont = fontProps(options.labelFont);
+  const titleFont = fontProps(options.titleFont);
+  const label = axis['axisLabel'] as Record<string, unknown> | undefined;
+  const name = axis['nameTextStyle'] as Record<string, unknown> | undefined;
+  return {
+    ...axis,
+    ...(hidden || options.line === false ? { axisLine: { show: false } } : options.lineColor ? { axisLine: { lineStyle: { color: options.lineColor } } } : {}),
+    ...(hidden || options.ticks === false ? { axisTick: { show: false } } : {}),
+    ...(hidden || options.labels === false ? { axisLabel: { ...label, show: false } } : Object.keys(labelFont).length > 0 ? { axisLabel: { ...label, ...labelFont } } : {}),
+    ...(Object.keys(titleFont).length > 0 ? { nameTextStyle: { ...name, ...titleFont } } : {}),
+  };
+}
+
+/**
+ * The lines across the plot that belong to an axis. A value axis has them unless the Grid choice (or this one) turns them
+ * off; a category axis has none unless this turns them on.
+ */
+function withSplitLine(
+  axis: Record<string, unknown>, options: SplitLineOptions | null | undefined, valueAxis: boolean, gridOff: boolean,
+): Record<string, unknown> {
+  const usual = valueAxis && !gridOff;
+  const show = options?.show ?? usual;
+  const lineStyle = {
+    ...(options?.color ? { color: options.color } : {}),
+    ...(options?.width ? { width: options.width } : {}),
+    ...(options?.lineType ? { type: options.lineType } : {}),
+  };
+  const styled = Object.keys(lineStyle).length > 0;
+  if (show === usual && !styled) return valueAxis && !show ? { ...axis, splitLine: { show: false } } : axis;
+  return { ...axis, splitLine: { show, ...(styled ? { lineStyle } : {}) } };
 }
 
 /** The axis's title, drawn under (horizontal axis) or above (vertical axis) it. */
@@ -197,7 +334,7 @@ export function buildChartOption(
         ...(style.rose ? { roseType: 'radius' } : {}),
         // The legend and title take room from the circle, which is centred in what is left.
         ...(pieCentre(style, style.legend !== false)),
-        label: { show: showLabels, formatter: slice },
+        label: { show: showLabels, formatter: slice, ...fontProps(style.labelFont) },
         data,
       }],
     };
@@ -257,9 +394,15 @@ export function buildChartOption(
 
   const radius = style.barRadius ?? 0;
   const rounded = type === 'bar' && radius > 0 ? { borderRadius: horizontal ? [0, radius, radius, 0] : [radius, radius, 0, 0] } : {};
+  const border = type === 'bar' && (style.barBorderWidth ?? 0) > 0
+    ? { borderWidth: style.barBorderWidth, borderType: style.barBorderStyle ?? 'solid', ...(style.barBorderColor ? { borderColor: style.barBorderColor } : {}) }
+    : {};
+  const labelPosition = style.labelPosition && style.labelPosition !== 'auto'
+    ? style.labelPosition
+    : horizontal ? (stacked ? 'inside' : 'right') : stacked ? 'inside' : 'top';
   const chartSeries = series.map((s) => {
     const fill = own(s.name);
-    const itemStyle = { ...rounded, ...(fill ? { color: fill } : {}) };
+    const itemStyle = { ...rounded, ...border, ...(fill ? { color: fill } : {}) };
     return {
       type,
       name: s.name,
@@ -267,6 +410,8 @@ export function buildChartOption(
       ...(Object.keys(itemStyle).length > 0 ? { itemStyle } : {}),
       // The width is what the bars of one slot take together, so side by side they share it.
       ...(type === 'bar' && style.barWidth ? { barWidth: `${Math.round((style.barWidth / (stacked ? 1 : series.length)) * 10) / 10}%` } : {}),
+      ...(type === 'bar' && style.barGap !== null && style.barGap !== undefined ? { barGap: `${style.barGap}%` } : {}),
+      ...(type === 'bar' && style.barCategoryGap !== null && style.barCategoryGap !== undefined ? { barCategoryGap: `${style.barCategoryGap}%` } : {}),
       ...(type === 'line'
         ? {
             ...(style.smooth ? { smooth: true } : {}),
@@ -279,7 +424,8 @@ export function buildChartOption(
       ...(series.length > 1 ? { emphasis: { focus: 'series' } } : {}),
       label: {
         show: showLabels,
-        position: horizontal ? (stacked ? 'inside' : 'right') : stacked ? 'inside' : 'top',
+        position: labelPosition,
+        ...fontProps(style.labelFont),
         ...(formatted ? { formatter: (p: { value: unknown }) => text(p.value) } : {}),
       },
     };
@@ -289,7 +435,6 @@ export function buildChartOption(
     type: 'value',
     ...(percent ? { max: 100 } : { ...(style.yMin !== null && style.yMin !== undefined ? { min: style.yMin } : {}), ...(style.yMax !== null && style.yMax !== undefined ? { max: style.yMax } : {}) }),
     ...(formatted ? { axisLabel: { formatter: percent ? '{value}%' : (v: number) => text(v) } } : {}),
-    ...(style.grid === false ? { splitLine: { show: false } } : {}),
   };
 
   const showLegend = series.length > 1 && style.legend !== false;
@@ -299,8 +444,15 @@ export function buildChartOption(
     axisLabel: { hideOverlap: true, ...(style.labelRotate ? { rotate: style.labelRotate } : {}) },
     ...(horizontal ? { inverse: true } : {}),
   };
-  const xAxis = { ...(horizontal ? valueAxis : categoryAxis), ...axisName(style.xAxisTitle, true) };
-  const yAxis = { ...(horizontal ? categoryAxis : valueAxis), ...axisName(style.yAxisTitle, false) };
+  const gridOff = style.grid === false;
+  const xAxis = withAxis(
+    withSplitLine({ ...(horizontal ? valueAxis : categoryAxis), ...axisName(style.xAxisTitle, true) }, style.xSplitLine, horizontal, gridOff),
+    style.xAxis,
+  );
+  const yAxis = withAxis(
+    withSplitLine({ ...(horizontal ? categoryAxis : valueAxis), ...axisName(style.yAxisTitle, false) }, style.ySplitLine, !horizontal, gridOff),
+    style.yAxis,
+  );
 
   const bottomLegend = showLegend && (style.legendPosition ?? 'bottom') === 'bottom';
   return {
@@ -367,12 +519,15 @@ function heatmapOption(result: ResultShape, dims: number, style: ChartStyleOptio
         `${across[p.value[0]]} · ${down[p.value[1]]}<br/>${columns[2].name}: <b>${text(p.value[2]).toString()}</b>`,
     },
     grid: gridOption(style, false, { left: 16, right: 16, top: 16, bottom: 56 }),
-    xAxis: {
+    xAxis: withAxis(withSplitLine({
       type: 'category', data: across, splitArea: { show: true },
       axisLabel: { hideOverlap: true, ...(style.labelRotate ? { rotate: style.labelRotate } : {}) },
       ...axisName(style.xAxisTitle, true),
-    },
-    yAxis: { type: 'category', data: down, inverse: true, splitArea: { show: true }, ...axisName(style.yAxisTitle, false) },
+    }, style.xSplitLine, false, style.grid === false), style.xAxis),
+    yAxis: withAxis(withSplitLine(
+      { type: 'category', data: down, inverse: true, splitArea: { show: true }, ...axisName(style.yAxisTitle, false) },
+      style.ySplitLine, false, style.grid === false,
+    ), style.yAxis),
     visualMap: {
       min: Math.min(...values),
       max: Math.max(...values),
@@ -421,7 +576,7 @@ function scatterOption(result: ResultShape, dims: number, style: ChartStyleOptio
 
   const text = (v: number | null | undefined): string => (v === null || v === undefined ? '∅' : fmt(style)(v));
   const showLegend = groups.size > 1 && style.legend !== false;
-  const grid = style.grid === false ? { splitLine: { show: false } } : {};
+  const gridOff = style.grid === false;
   const yLimits = {
     ...(style.yMin !== null && style.yMin !== undefined ? { min: style.yMin } : {}),
     ...(style.yMax !== null && style.yMax !== undefined ? { max: style.yMax } : {}),
@@ -441,14 +596,14 @@ function scatterOption(result: ResultShape, dims: number, style: ChartStyleOptio
     grid: gridOption(style, showLegend, { left: 16, right: 24, top: 24, bottom: showLegend && (style.legendPosition ?? 'bottom') === 'bottom' ? 56 : 32 }),
     legend: showLegend ? legendOption(style, groups.size) : undefined,
     // The axes say what they are (unless named otherwise): there are no categories to read them from.
-    xAxis: {
-      type: 'value', name: style.xAxisTitle?.trim() || columns[x].name, nameLocation: 'middle', nameGap: 28, scale: true, ...grid,
+    xAxis: withAxis(withSplitLine({
+      type: 'value', name: style.xAxisTitle?.trim() || columns[x].name, nameLocation: 'middle', nameGap: 28, scale: true,
       ...(style.numberFormat ? { axisLabel: { formatter: (v: number) => text(v) } } : {}),
-    },
-    yAxis: {
-      type: 'value', name: style.yAxisTitle?.trim() || columns[x + 1].name, scale: true, ...grid, ...yLimits,
+    }, style.xSplitLine, true, gridOff), style.xAxis),
+    yAxis: withAxis(withSplitLine({
+      type: 'value', name: style.yAxisTitle?.trim() || columns[x + 1].name, scale: true, ...yLimits,
       ...(style.numberFormat ? { axisLabel: { formatter: (v: number) => text(v) } } : {}),
-    },
+    }, style.ySplitLine, true, gridOff), style.yAxis),
     series: [...groups].map(([name, data]) => ({
       type: 'scatter',
       name,
@@ -456,7 +611,11 @@ function scatterOption(result: ResultShape, dims: number, style: ChartStyleOptio
       symbolSize,
       ...(style.seriesColors?.[name] ? { itemStyle: { color: style.seriesColors[name] } } : {}),
       ...(groups.size > 1 ? { emphasis: { focus: 'series' } } : {}),
-      label: { show: style.labels === true, formatter: (p: { name: string }) => p.name, position: 'top' },
+      label: {
+        show: style.labels === true, formatter: (p: { name: string }) => p.name,
+        position: style.labelPosition && style.labelPosition !== 'auto' ? style.labelPosition : 'top',
+        ...fontProps(style.labelFont),
+      },
     })),
   };
 }

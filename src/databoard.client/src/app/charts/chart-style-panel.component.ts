@@ -1,8 +1,9 @@
 import { Component, computed, input, output } from '@angular/core';
 import { MatCheckboxModule } from '@angular/material/checkbox';
-import { LegendPosition, PieLabel, colorsOf } from './chart-option';
+import { AxisOptions, LabelPosition, LegendPosition, LegendType, LineType, MarginOptions, PieLabel, SplitLineOptions, colorsOf } from './chart-option';
 import { ChartStyle, ChartType } from './charts.service';
 import { NumberFormatOptions } from './number-format';
+import { ColorFieldComponent, FontFieldsComponent } from './style-fields.component';
 
 const MAX_COLORS = 12;
 /** What new custom colours start as, so the first few differ. */
@@ -11,6 +12,13 @@ const STARTING_COLORS = ['#1971c2', '#e8590c', '#2b8a3e', '#d6336c', '#5f3dc4', 
 const LEGEND_POSITIONS: { value: LegendPosition; label: string }[] = [
   { value: 'bottom', label: 'Bottom' }, { value: 'top', label: 'Top' }, { value: 'left', label: 'Left' }, { value: 'right', label: 'Right' },
 ];
+const LINE_TYPES: { value: LineType; label: string }[] = [{ value: 'solid', label: 'Solid' }, { value: 'dashed', label: 'Dashed' }, { value: 'dotted', label: 'Dotted' }];
+const LABEL_POSITIONS: { value: LabelPosition; label: string }[] = [
+  { value: 'auto', label: 'Automatic' }, { value: 'top', label: 'Top' }, { value: 'bottom', label: 'Bottom' }, { value: 'left', label: 'Left' },
+  { value: 'right', label: 'Right' }, { value: 'inside', label: 'Inside' }, { value: 'insideTop', label: 'Inside top' }, { value: 'insideBottom', label: 'Inside bottom' },
+];
+const LEGEND_TYPES: { value: LegendType; label: string }[] = [{ value: 'auto', label: 'Automatic' }, { value: 'scroll', label: 'Scroll' }, { value: 'plain', label: 'Plain' }];
+
 const PIE_LABELS: { value: PieLabel; label: string }[] = [
   { value: 'name', label: 'Name' }, { value: 'value', label: 'Value' }, { value: 'percent', label: 'Percent' },
   { value: 'name-value', label: 'Name and value' }, { value: 'name-percent', label: 'Name and percent' },
@@ -23,7 +31,7 @@ const PIE_LABELS: { value: PieLabel; label: string }[] = [
  */
 @Component({
   selector: 'app-chart-style-panel',
-  imports: [MatCheckboxModule],
+  imports: [MatCheckboxModule, ColorFieldComponent, FontFieldsComponent],
   template: `
     @if (titled()) {
       <details class="section" open>
@@ -107,28 +115,129 @@ const PIE_LABELS: { value: PieLabel; label: string }[] = [
       </details>
     }
 
-    @if (looks()) {
+    @if (axes()) {
+      @for (axis of axisKeys; track axis) {
+        <details class="section">
+          <summary>{{ axis === 'x' ? 'X axis' : 'Y axis' }}</summary>
+          <div class="body">
+            <mat-checkbox [checked]="axisOf(axis).show !== false" (change)="patchAxis(axis, { show: $event.checked })">Show the axis</mat-checkbox>
+            <mat-checkbox [checked]="axisOf(axis).line !== false" [disabled]="axisOf(axis).show === false" (change)="patchAxis(axis, { line: $event.checked })">Axis line</mat-checkbox>
+            <mat-checkbox [checked]="axisOf(axis).ticks !== false" [disabled]="axisOf(axis).show === false" (change)="patchAxis(axis, { ticks: $event.checked })">Tick marks</mat-checkbox>
+            <mat-checkbox [checked]="axisOf(axis).labels !== false" [disabled]="axisOf(axis).show === false" (change)="patchAxis(axis, { labels: $event.checked })">Labels</mat-checkbox>
+            <div class="row"><span>Line colour</span>
+              <app-color-field [label]="(axis === 'x' ? 'X' : 'Y') + ' axis line colour'" [value]="axisOf(axis).lineColor" (changed)="patchAxis(axis, { lineColor: $event })" /></div>
+            <div class="row"><span>Label font</span>
+              <app-font-fields [label]="(axis === 'x' ? 'X' : 'Y') + ' axis label font'" [font]="axisOf(axis).labelFont" (changed)="patchAxis(axis, { labelFont: $event })" /></div>
+            <div class="row"><span>Title font</span>
+              <app-font-fields [label]="(axis === 'x' ? 'X' : 'Y') + ' axis title font'" [font]="axisOf(axis).titleFont" (changed)="patchAxis(axis, { titleFont: $event })" /></div>
+          </div>
+        </details>
+      }
+
+      <details class="section">
+        <summary>Split lines</summary>
+        <div class="body">
+          @for (axis of axisKeys; track axis) {
+            <mat-checkbox [checked]="splitOf(axis).show ?? usualSplit(axis)" (change)="patchSplit(axis, { show: $event.checked })">
+              {{ axis === 'x' ? 'X' : 'Y' }} axis lines
+            </mat-checkbox>
+            <div class="row"><span>Colour</span>
+              <app-color-field [label]="(axis === 'x' ? 'X' : 'Y') + ' split line colour'" fallback="#dee2e6" [value]="splitOf(axis).color" (changed)="patchSplit(axis, { color: $event })" /></div>
+            <label class="row"><span>Width</span>
+              <input type="number" min="1" max="10" [attr.aria-label]="(axis === 'x' ? 'X' : 'Y') + ' split line width'" placeholder="1" [value]="splitOf(axis).width ?? ''"
+                     (input)="patchSplit(axis, { width: whole($event, 1, 10) })" /></label>
+            <label class="row"><span>Style</span>
+              <select [attr.aria-label]="(axis === 'x' ? 'X' : 'Y') + ' split line style'" (change)="patchSplit(axis, { lineType: lineTypeOf($event) })">
+                <option value="" [selected]="!splitOf(axis).lineType">Default</option>
+                @for (t of lineTypes; track t.value) { <option [value]="t.value" [selected]="splitOf(axis).lineType === t.value">{{ t.label }}</option> }
+              </select></label>
+          }
+        </div>
+      </details>
+
+      <details class="section">
+        <summary>Margin</summary>
+        <div class="body">
+          @for (side of sides; track side) {
+            <label class="row"><span>{{ side[0].toUpperCase() + side.slice(1) }} (px)</span>
+              <input type="number" min="0" max="300" [attr.aria-label]="side + ' margin'" placeholder="auto" [value]="style().margin?.[side] ?? ''"
+                     (input)="patchMargin(side, $event)" /></label>
+          }
+        </div>
+      </details>
+    }
+
+    @if (bars()) {
+      <details class="section">
+        <summary>Bars</summary>
+        <div class="body">
+          <label class="row"><span>Bar width (%)</span>
+            <input type="number" min="10" max="100" aria-label="Bar width" placeholder="auto" [value]="style().barWidth ?? ''" (input)="changed.emit({ barWidth: whole($event, 10, 100) })" /></label>
+          <label class="row"><span>Rounded corners</span>
+            <input type="number" min="0" max="20" aria-label="Bar corner radius" [value]="style().barRadius ?? 0" (input)="changed.emit({ barRadius: whole($event, 0, 20) ?? 0 })" /></label>
+          <label class="row"><span>Border style</span>
+            <select aria-label="Bar border style" (change)="changed.emit({ barBorderStyle: $any($event.target).value })">
+              @for (t of lineTypes; track t.value) { <option [value]="t.value" [selected]="(style().barBorderStyle ?? 'solid') === t.value">{{ t.label }}</option> }
+            </select></label>
+          <label class="row"><span>Border width</span>
+            <input type="number" min="0" max="10" aria-label="Bar border width" [value]="style().barBorderWidth ?? 0" (input)="changed.emit({ barBorderWidth: whole($event, 0, 10) ?? 0 })" /></label>
+          <div class="row"><span>Border colour</span>
+            <app-color-field label="Bar border colour" [value]="style().barBorderColor" (changed)="changed.emit({ barBorderColor: $event })" /></div>
+          <label class="row"><span>Gap in a group (%)</span>
+            <input type="number" min="0" max="100" aria-label="Bar gap" placeholder="auto" [value]="style().barGap ?? ''" (input)="changed.emit({ barGap: whole($event, 0, 100) })" /></label>
+          <label class="row"><span>Gap between groups (%)</span>
+            <input type="number" min="0" max="100" aria-label="Group gap" placeholder="auto" [value]="style().barCategoryGap ?? ''" (input)="changed.emit({ barCategoryGap: whole($event, 0, 100) })" /></label>
+        </div>
+      </details>
+    }
+
+    @if (titled()) {
+      <details class="section">
+        <summary>Labels</summary>
+        <div class="body">
+          @if (!round()) {
+            <label class="row"><span>Position</span>
+              <select aria-label="Label position" (change)="changed.emit({ labelPosition: $any($event.target).value })">
+                @for (p of labelPositions; track p.value) { <option [value]="p.value" [selected]="(style().labelPosition ?? 'auto') === p.value">{{ p.label }}</option> }
+              </select></label>
+          }
+          <div class="row"><span>Font</span>
+            <app-font-fields label="Label font" [font]="style().labelFont" (changed)="changed.emit({ labelFont: $event })" /></div>
+          <p class="hint">Labels show when "Show value labels" is on.</p>
+        </div>
+      </details>
+    }
+
+    @if (legendable()) {
+      <details class="section">
+        <summary>Legend</summary>
+        <div class="body">
+          <label class="row"><span>Position</span>
+            <select aria-label="Legend position" (change)="changed.emit({ legendPosition: $any($event.target).value })">
+              @for (p of legendPositions; track p.value) { <option [value]="p.value" [selected]="(style().legendPosition ?? 'bottom') === p.value">{{ p.label }}</option> }
+            </select></label>
+          <label class="row"><span>Type</span>
+            <select aria-label="Legend type" (change)="changed.emit({ legendType: $any($event.target).value })">
+              @for (t of legendTypes; track t.value) { <option [value]="t.value" [selected]="(style().legendType ?? 'auto') === t.value">{{ t.label }}</option> }
+            </select></label>
+          <mat-checkbox [checked]="style().legendSelector === true" (change)="changed.emit({ legendSelector: $event.checked })">Select all and invert buttons</mat-checkbox>
+          <label class="row"><span>Height (px)</span>
+            <input type="number" min="20" max="1000" aria-label="Legend height" placeholder="auto" [value]="style().legendHeight ?? ''"
+                   (input)="changed.emit({ legendHeight: whole($event, 20, 1000) })" /></label>
+          <div class="row"><span>Font</span>
+            <app-font-fields label="Legend font" [font]="style().legendFont" (changed)="changed.emit({ legendFont: $event })" /></div>
+        </div>
+      </details>
+    }
+
+    @if (lines()) {
       <details class="section">
         <summary>Look</summary>
         <div class="body">
-          @if (legendable()) {
-            <label class="row"><span>Legend position</span>
-              <select aria-label="Legend position" (change)="changed.emit({ legendPosition: $any($event.target).value })">
-                @for (p of legendPositions; track p.value) { <option [value]="p.value" [selected]="(style().legendPosition ?? 'bottom') === p.value">{{ p.label }}</option> }
-              </select></label>
-          }
-          @if (bars()) {
-            <label class="row"><span>Bar width (%)</span>
-              <input type="number" min="10" max="100" aria-label="Bar width" placeholder="auto" [value]="style().barWidth ?? ''" (input)="changed.emit({ barWidth: whole($event, 10, 100) })" /></label>
-            <label class="row"><span>Rounded corners</span>
-              <input type="number" min="0" max="20" aria-label="Bar corner radius" [value]="style().barRadius ?? 0" (input)="changed.emit({ barRadius: whole($event, 0, 20) ?? 0 })" /></label>
-          }
-          @if (lines()) {
-            <mat-checkbox [checked]="style().smooth === true" (change)="changed.emit({ smooth: $event.checked })">Smooth lines</mat-checkbox>
-            <mat-checkbox [checked]="style().symbols !== false" (change)="changed.emit({ symbols: $event.checked })">Show points</mat-checkbox>
-            <label class="row"><span>Line width</span>
-              <input type="number" min="1" max="8" aria-label="Line width" [value]="style().lineWidth ?? 2" (input)="changed.emit({ lineWidth: whole($event, 1, 8) ?? 2 })" /></label>
-          }
+          <mat-checkbox [checked]="style().smooth === true" (change)="changed.emit({ smooth: $event.checked })">Smooth lines</mat-checkbox>
+          <mat-checkbox [checked]="style().symbols !== false" (change)="changed.emit({ symbols: $event.checked })">Show points</mat-checkbox>
+          <label class="row"><span>Line width</span>
+            <input type="number" min="1" max="8" aria-label="Line width" [value]="style().lineWidth ?? 2" (input)="changed.emit({ lineWidth: whole($event, 1, 8) ?? 2 })" /></label>
           @if (area()) {
             <label class="row"><span>Area opacity (%)</span>
               <input type="number" min="0" max="100" aria-label="Area opacity" [value]="style().areaOpacity ?? 70" (input)="changed.emit({ areaOpacity: whole($event, 0, 100) ?? 70 })" /></label>
@@ -181,6 +290,11 @@ export class ChartStylePanelComponent {
 
   protected readonly maxColors = MAX_COLORS;
   protected readonly legendPositions = LEGEND_POSITIONS;
+  protected readonly lineTypes = LINE_TYPES;
+  protected readonly labelPositions = LABEL_POSITIONS;
+  protected readonly legendTypes = LEGEND_TYPES;
+  protected readonly axisKeys: ('x' | 'y')[] = ['x', 'y'];
+  protected readonly sides: (keyof MarginOptions)[] = ['left', 'top', 'right', 'bottom'];
   protected readonly pieLabels = PIE_LABELS;
 
   protected readonly round = computed(() => this.type() === 'Pie' || this.type() === 'Donut');
@@ -194,7 +308,6 @@ export class ChartStylePanelComponent {
   protected readonly bars = computed(() => this.type() === 'Bar' || this.type() === 'BarHorizontal');
   protected readonly lines = computed(() => this.type() === 'Line' || this.type() === 'Area');
   protected readonly area = computed(() => this.type() === 'Area');
-  protected readonly looks = computed(() => this.legendable() || this.bars() || this.lines());
 
   protected readonly format = computed<NumberFormatOptions>(() => this.style().numberFormat ?? {});
 
@@ -210,6 +323,41 @@ export class ChartStylePanelComponent {
       options.maximumFractionDigits = f.decimals;
     }
     return `${f.prefix ?? ''}${new Intl.NumberFormat('en-US', options).format(1234567.891)}${f.suffix ?? ''}`;
+  }
+
+  // ---- axes, split lines and margin ---
+
+  protected axisOf(axis: 'x' | 'y'): AxisOptions {
+    return (axis === 'x' ? this.style().xAxis : this.style().yAxis) ?? {};
+  }
+
+  protected patchAxis(axis: 'x' | 'y', changes: Partial<AxisOptions>): void {
+    const next = { ...this.axisOf(axis), ...changes };
+    this.changed.emit(axis === 'x' ? { xAxis: next } : { yAxis: next });
+  }
+
+  protected splitOf(axis: 'x' | 'y'): SplitLineOptions {
+    return (axis === 'x' ? this.style().xSplitLine : this.style().ySplitLine) ?? {};
+  }
+
+  protected patchSplit(axis: 'x' | 'y', changes: Partial<SplitLineOptions>): void {
+    const next = { ...this.splitOf(axis), ...changes };
+    this.changed.emit(axis === 'x' ? { xSplitLine: next } : { ySplitLine: next });
+  }
+
+  /** Whether the lines of an axis show when nothing was chosen: only a value axis has them (unless Grid lines is off). */
+  protected usualSplit(axis: 'x' | 'y'): boolean {
+    const type = this.type();
+    const valueAxis = type === 'Scatter' || (axis === 'x' ? type === 'BarHorizontal' : type === 'Bar' || type === 'Line' || type === 'Area');
+    return valueAxis && this.style().grid !== false;
+  }
+
+  protected lineTypeOf(event: Event): LineType | null {
+    return (this.text(event) as LineType | null);
+  }
+
+  protected patchMargin(side: keyof MarginOptions, event: Event): void {
+    this.changed.emit({ margin: { ...(this.style().margin ?? {}), [side]: this.whole(event, 0, 300) } });
   }
 
   // ---- reading inputs -------------------------------------------------------------------------------------

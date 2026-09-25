@@ -59,6 +59,42 @@ internal static class ChartDefinitionValidator
     public const int MaxAxisTitleLength = 60;
     public const int MaxAffixLength = 12;
 
+    public static readonly string[] FontFamilies = ["sans-serif", "serif", "monospace", "Arial", "Georgia", "Verdana", "Courier New"];
+    public static readonly string[] FontWeights = ["normal", "bold"];
+    public static readonly string[] LineTypes = ["solid", "dashed", "dotted"];
+    public static readonly string[] LabelPositions = ["auto", "top", "bottom", "left", "right", "inside", "insideTop", "insideBottom"];
+    public static readonly string[] LegendTypes = ["auto", "scroll", "plain"];
+
+    private static void CheckColor(string? color, string what, Action<string> fail)
+    {
+        if (color is not null && !HexColor.IsMatch(color)) fail($"{what} is written like #1971c2 or #19c.");
+    }
+
+    private static void CheckFont(FontStyle? font, string what, Action<string> fail)
+    {
+        if (font is null) return;
+        if (font.Family is not null && !FontFamilies.Contains(font.Family)) fail($"{what} is one of: {string.Join(", ", FontFamilies)}.");
+        if (font.Size is < 8 or > 48) fail($"{what} is 8 to 48 pixels.");
+        if (font.Weight is not null && !FontWeights.Contains(font.Weight)) fail($"{what} is normal or bold.");
+        CheckColor(font.Color, $"{what} colour", fail);
+    }
+
+    private static void CheckAxis(AxisStyle? axis, string what, Action<string> fail)
+    {
+        if (axis is null) return;
+        CheckColor(axis.LineColor, $"{what} line colour", fail);
+        CheckFont(axis.LabelFont, $"{what} label font", fail);
+        CheckFont(axis.TitleFont, $"{what} title font", fail);
+    }
+
+    private static void CheckSplitLine(SplitLineStyle? line, string what, Action<string> fail)
+    {
+        if (line is null) return;
+        CheckColor(line.Color, $"{what} colour", fail);
+        if (line.Width is < 1 or > 10) fail($"{what} are 1 to 10 thick.");
+        if (line.LineType is not null && !LineTypes.Contains(line.LineType)) fail($"{what} are: {string.Join(", ", LineTypes)}.");
+    }
+
     private static readonly System.Text.RegularExpressions.Regex HexColor = new("^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$");
 
     /// <summary>Ranges and shapes of the look choices. Anything outside them is refused with the field's name, so nothing odd is stored.</summary>
@@ -100,6 +136,23 @@ internal static class ChartDefinitionValidator
         if (style.AreaOpacity is < 0 or > 100) Fail("An area is 0 to 100 percent solid.");
         if (style.InnerRadius is < 0 or > 90) Fail("The hole of a donut is 0 to 90 percent.");
         if (!PieLabels.Contains(style.PieLabel)) Fail($"A slice label is one of: {string.Join(", ", PieLabels)}.");
+
+        if (!LineTypes.Contains(style.BarBorderStyle)) Fail($"A bar border is: {string.Join(", ", LineTypes)}.");
+        if (style.BarBorderWidth is < 0 or > 10) Fail("A bar border is 0 to 10 thick.");
+        CheckColor(style.BarBorderColor, "The bar border colour", Fail);
+        if (style.BarGap is < 0 or > 100) Fail("The gap between bars is 0 to 100 percent.");
+        if (style.BarCategoryGap is < 0 or > 100) Fail("The gap between groups of bars is 0 to 100 percent.");
+        if (!LabelPositions.Contains(style.LabelPosition)) Fail($"A label goes at: {string.Join(", ", LabelPositions)}.");
+        CheckFont(style.LabelFont, "The label font", Fail);
+        if (!LegendTypes.Contains(style.LegendType)) Fail($"The legend is: {string.Join(", ", LegendTypes)}.");
+        if (style.LegendHeight is < 20 or > 1000) Fail("The legend is 20 to 1000 pixels high.");
+        CheckFont(style.LegendFont, "The legend font", Fail);
+        CheckAxis(style.XAxis, "The horizontal axis", Fail);
+        CheckAxis(style.YAxis, "The vertical axis", Fail);
+        CheckSplitLine(style.XSplitLine, "The horizontal axis lines", Fail);
+        CheckSplitLine(style.YSplitLine, "The vertical axis lines", Fail);
+        if (style.Margin is { } margin && new[] { margin.Left, margin.Top, margin.Right, margin.Bottom }.Any(v => v is < 0 or > 300))
+            Fail("The space around the plot is 0 to 300 pixels.");
     }
 
     /// <summary>What the types that need a particular shape of result need. The others draw whatever they are given.</summary>

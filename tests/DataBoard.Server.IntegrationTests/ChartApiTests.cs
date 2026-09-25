@@ -332,6 +332,84 @@ public class ChartApiTests(ApiFactory factory)
     }
 
     [Fact]
+    public async Task The_finer_style_groups_round_trip_and_default_to_nothing()
+    {
+        var f = await NewFixtureAsync();
+
+        var plain = await ReadAsync(await f.Owner.PostAsJsonAsync(Url(f.Org), Revenue(f.Orders, name: "Plain")));
+        var defaults = plain.GetProperty("definition").GetProperty("style");
+        Assert.Equal("solid", defaults.GetProperty("barBorderStyle").GetString());
+        Assert.Equal(0, defaults.GetProperty("barBorderWidth").GetInt32());
+        Assert.Equal("auto", defaults.GetProperty("labelPosition").GetString());
+        Assert.Equal("auto", defaults.GetProperty("legendType").GetString());
+        Assert.False(defaults.GetProperty("legendSelector").GetBoolean());
+        Assert.Equal(JsonValueKind.Null, defaults.GetProperty("xAxis").ValueKind);
+        Assert.Equal(JsonValueKind.Null, defaults.GetProperty("margin").ValueKind);
+
+        var styled = await ReadAsync(await f.Owner.PostAsJsonAsync(Url(f.Org), Revenue(f.Orders, name: "Styled", style: new
+        {
+            barBorderStyle = "dashed", barBorderWidth = 2, barBorderColor = "#c92a2a", barGap = 10, barCategoryGap = 40,
+            labelPosition = "insideTop", labelFont = new { family = "serif", size = 14, weight = "bold", italic = true, color = "#343a40" },
+            legendType = "scroll", legendSelector = true, legendHeight = 120, legendFont = new { size = 11 },
+            xAxis = new { show = true, line = false, ticks = false, labels = true, lineColor = "#adb5bd", labelFont = new { size = 10 }, titleFont = new { weight = "bold" } },
+            yAxis = new { show = false },
+            xSplitLine = new { show = true, color = "#dee2e6", width = 2, lineType = "dotted" },
+            ySplitLine = new { lineType = "dashed" },
+            margin = new { left = 40, top = 30, right = 20, bottom = 50 },
+        })));
+
+        var style = styled.GetProperty("definition").GetProperty("style");
+        Assert.Equal("dashed", style.GetProperty("barBorderStyle").GetString());
+        Assert.Equal(40, style.GetProperty("barCategoryGap").GetInt32());
+        Assert.Equal("insideTop", style.GetProperty("labelPosition").GetString());
+        Assert.Equal("serif", style.GetProperty("labelFont").GetProperty("family").GetString());
+        Assert.True(style.GetProperty("labelFont").GetProperty("italic").GetBoolean());
+        Assert.Equal("scroll", style.GetProperty("legendType").GetString());
+        Assert.Equal(120, style.GetProperty("legendHeight").GetInt32());
+        Assert.False(style.GetProperty("xAxis").GetProperty("line").GetBoolean());
+        Assert.False(style.GetProperty("yAxis").GetProperty("show").GetBoolean());
+        Assert.Equal("#adb5bd", style.GetProperty("xAxis").GetProperty("lineColor").GetString());
+        Assert.Equal("dotted", style.GetProperty("xSplitLine").GetProperty("lineType").GetString());
+        Assert.Equal(JsonValueKind.Null, style.GetProperty("ySplitLine").GetProperty("show").ValueKind);
+        Assert.Equal(50, style.GetProperty("margin").GetProperty("bottom").GetInt32());
+    }
+
+    [Theory]
+    [InlineData("""{ "barBorderStyle": "wavy" }""")]
+    [InlineData("""{ "barBorderWidth": 11 }""")]
+    [InlineData("""{ "barBorderColor": "red" }""")]
+    [InlineData("""{ "barGap": 101 }""")]
+    [InlineData("""{ "barCategoryGap": -1 }""")]
+    [InlineData("""{ "labelPosition": "middle" }""")]
+    [InlineData("""{ "labelFont": { "family": "Comic Sans" } }""")]
+    [InlineData("""{ "labelFont": { "size": 7 } }""")]
+    [InlineData("""{ "labelFont": { "size": 49 } }""")]
+    [InlineData("""{ "labelFont": { "weight": "heavy" } }""")]
+    [InlineData("""{ "labelFont": { "color": "#12" } }""")]
+    [InlineData("""{ "legendType": "fancy" }""")]
+    [InlineData("""{ "legendHeight": 10 }""")]
+    [InlineData("""{ "legendHeight": 1001 }""")]
+    [InlineData("""{ "legendFont": { "family": "x" } }""")]
+    [InlineData("""{ "xAxis": { "lineColor": "blue" } }""")]
+    [InlineData("""{ "yAxis": { "labelFont": { "size": 100 } } }""")]
+    [InlineData("""{ "xAxis": { "titleFont": { "color": "nope" } } }""")]
+    [InlineData("""{ "xSplitLine": { "color": "grey" } }""")]
+    [InlineData("""{ "ySplitLine": { "width": 0 } }""")]
+    [InlineData("""{ "ySplitLine": { "width": 11 } }""")]
+    [InlineData("""{ "xSplitLine": { "lineType": "wavy" } }""")]
+    [InlineData("""{ "margin": { "left": -1 } }""")]
+    [InlineData("""{ "margin": { "bottom": 301 } }""")]
+    public async Task A_finer_style_choice_out_of_range_is_rejected(string styleJson)
+    {
+        var f = await NewFixtureAsync();
+        var style = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(styleJson);
+
+        var response = await f.Owner.PostAsJsonAsync(Url(f.Org), Revenue(f.Orders, name: "Odd", style: style));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Empty((await ReadAsync(await f.Owner.GetAsync(Url(f.Org)))).EnumerateArray());
+    }
+    [Fact]
     public async Task Update_changes_the_chart_and_may_move_it_to_another_dataset()
     {
         var f = await NewFixtureAsync();

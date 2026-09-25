@@ -230,8 +230,10 @@ public class DashboardShareApiTests(ApiFactory factory)
         Assert.Equal(1, chart.GetProperty("dimensionCount").GetInt32());
 
         // Nothing about where the data comes from: no queries, datasets, columns, SQL or organization.
-        foreach (var secret in new[] { "query", "datasetId", "dataset", "column", "sql", "organizationId", "price", "orders", f.Org.ToString() })
+        foreach (var secret in new[] { "query", "datasetId", "dataset", "column", "sql", "organizationId", "price", f.Org.ToString() })
             Assert.DoesNotContain(secret, body, StringComparison.OrdinalIgnoreCase);
+        // The table is called "orders": as a whole word (a style choice such as "barBorderStyle" happens to contain those letters).
+        Assert.DoesNotMatch(@"\borders\b", body);
     }
 
     [Fact]
