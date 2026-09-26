@@ -62,7 +62,8 @@ internal static class ChartDefinitionValidator
     public static readonly string[] FontFamilies = ["sans-serif", "serif", "monospace", "Arial", "Georgia", "Verdana", "Courier New"];
     public static readonly string[] FontWeights = ["normal", "bold"];
     public static readonly string[] LineTypes = ["solid", "dashed", "dotted"];
-    public static readonly string[] LabelPositions = ["auto", "top", "bottom", "left", "right", "inside", "insideTop", "insideBottom"];
+    public static readonly string[] LabelPositions = ["auto", "top", "bottom", "left", "right", "inside", "insideTop", "insideBottom", "outside", "center"];
+    public static readonly string[] MarginUnits = ["px", "%"];
     public static readonly string[] LegendTypes = ["auto", "scroll", "plain"];
 
     private static void CheckColor(string? color, string what, Action<string> fail)
@@ -151,8 +152,13 @@ internal static class ChartDefinitionValidator
         CheckAxis(style.YAxis, "The vertical axis", Fail);
         CheckSplitLine(style.XSplitLine, "The horizontal axis lines", Fail);
         CheckSplitLine(style.YSplitLine, "The vertical axis lines", Fail);
-        if (style.Margin is { } margin && new[] { margin.Left, margin.Top, margin.Right, margin.Bottom }.Any(v => v is < 0 or > 300))
-            Fail("The space around the plot is 0 to 300 pixels.");
+        if (style.Margin is { } margin)
+        {
+            if (!MarginUnits.Contains(margin.Unit)) Fail($"The space around the plot is in: {string.Join(", ", MarginUnits)}.");
+            var most = margin.Unit == "%" ? 50 : 300;
+            if (new[] { margin.Left, margin.Top, margin.Right, margin.Bottom }.Any(v => v < 0 || v > most))
+                Fail($"The space around the plot is 0 to {most} {margin.Unit}.");
+        }
     }
 
     /// <summary>What the types that need a particular shape of result need. The others draw whatever they are given.</summary>

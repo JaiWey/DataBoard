@@ -2,7 +2,7 @@ import { BarChart, HeatmapChart, LineChart, PieChart, ScatterChart } from 'echar
 import { AriaComponent, GridComponent, LegendComponent, TitleComponent, TooltipComponent, VisualMapComponent } from 'echarts/components';
 import * as echarts from 'echarts/core';
 import { SVGRenderer } from 'echarts/renderers';
-import { ChartKind, ChartStyleOptions, buildChartOption, fontProps } from './chart-option';
+import { ChartKind, ChartStyleOptions, buildChartOption, fontProps, pieParts } from './chart-option';
 
 echarts.use([
   BarChart, LineChart, PieChart, HeatmapChart, ScatterChart,
@@ -280,5 +280,86 @@ describe('drawn by ECharts', () => {
   it('a scatter and a heatmap with axis, split line and margin choices', () => {
     expect(draw(option('Scatter', result(['c', 'r', 'x', 'y'], [['a', 'N', 1, 2], ['b', 'S', 3, 4]]), everything, 2))).toContain('<svg');
     expect(draw(option('Heatmap', result(['a', 'b', 'n'], [['x', 'p', 1], ['y', 'q', 4]]), everything, 2))).toContain('<svg');
+  });
+});
+
+describe('pie labels', () => {
+  const slice = { name: 'Auckland', value: 1200, percent: 25.04 };
+  const label = (style: ChartStyleOptions) => option('Pie', sales, { labels: true, ...style }, 1)['series'][0].label.formatter as (p: typeof slice) => string;
+
+  it('reads the parts from the older single choice while none of the three was chosen', () => {
+    expect(pieParts({})).toEqual({ name: true, value: false, percent: false });
+    expect(pieParts({ pieLabel: 'value' })).toEqual({ name: false, value: true, percent: false });
+    expect(pieParts({ pieLabel: 'percent' })).toEqual({ name: false, value: false, percent: true });
+    expect(pieParts({ pieLabel: 'name-value' })).toEqual({ name: true, value: true, percent: false });
+    expect(pieParts({ pieLabel: 'name-percent' })).toEqual({ name: true, value: false, percent: true });
+  });
+
+  it('takes the three choices instead once any was made, a missing one counting as off', () => {
+    expect(pieParts({ pieLabel: 'name-percent', pieShowValue: true })).toEqual({ name: false, value: true, percent: false });
+    expect(pieParts({ pieShowName: true, pieShowValue: null, pieShowPercent: true })).toEqual({ name: true, value: false, percent: true });
+  });
+
+  it('writes the parts that are on: name: value (percent)', () => {
+    const on = (name: boolean, value: boolean, percent: boolean) => label({ pieShowName: name, pieShowValue: value, pieShowPercent: percent, numberFormat: { prefix: '$' } })(slice);
+
+    expect(on(true, false, false)).toBe('Auckland');
+    expect(on(false, true, false)).toBe('$1,200');
+    expect(on(false, false, true)).toBe('25%');
+    expect(on(true, true, false)).toBe('Auckland: $1,200');
+    expect(on(true, false, true)).toBe('Auckland (25%)');
+    expect(on(false, true, true)).toBe('$1,200 (25%)');
+    expect(on(true, true, true)).toBe('Auckland: $1,200 (25%)');
+    expect(on(false, false, false)).toBe('');
+  });
+
+  it('puts the label where it was told and leaves it to the chart when not', () => {
+    expect(option('Pie', sales, { labelPosition: 'inside' }, 1)['series'][0].label.position).toBe('inside');
+    expect(option('Donut', sales, { labelPosition: 'center' }, 1)['series'][0].label.position).toBe('center');
+    expect(option('Pie', sales, { labelPosition: 'outside' }, 1)['series'][0].label.position).toBe('outside');
+    expect(option('Pie', sales, { labelPosition: 'auto' }, 1)['series'][0].label.position).toBeUndefined();
+    expect(option('Pie', sales, { labelPosition: 'top' }, 1)['series'][0].label.position).toBeUndefined(); // that is for charts with axes
+  });
+
+  it('shows every label, even where they overlap, when forced', () => {
+    expect(option('Pie', sales, { pieForceLabels: true }, 1)['series'][0].avoidLabelOverlap).toBe(false);
+    expect(option('Pie', sales, {}, 1)['series'][0].avoidLabelOverlap).toBeUndefined();
+  });
+});
+
+describe('margin units', () => {
+  it('writes percent as text, which ECharts reads as a share of the chart', () => {
+    const o = option('Bar', sales, { margin: { left: 5, right: 5, top: 5, bottom: 5, unit: '%' } });
+
+    expect(o['grid']).toMatchObject({ left: '5%', right: '5%', top: '5%', bottom: '5%' });
+  });
+
+  it('writes pixels as numbers, also when the unit is spelt out', () => {
+    expect(option('Bar', sales, { margin: { left: 5, unit: 'px' } })['grid'].left).toBe(5);
+  });
+
+  it('keeps labels inside the plot unless told otherwise', () => {
+    expect(option('Bar', sales)['grid'].containLabel).toBe(true);
+    expect(option('Bar', sales, { margin: { left: 5 } })['grid'].containLabel).toBe(true);
+    expect(option('Bar', sales, { margin: { containLabel: false } })['grid'].containLabel).toBe(false);
+  });
+
+  it('is the box a pie sits in, in either unit, in place of the centring', () => {
+    const percent = option('Pie', sales, { margin: { left: 5, right: 5, top: 10, bottom: 10, unit: '%' }, legendPosition: 'right' }, 1)['series'][0];
+    const pixels = option('Pie', sales, { margin: { left: 20 } }, 1)['series'][0];
+
+    expect(percent).toMatchObject({ left: '5%', right: '5%', top: '10%', bottom: '10%' });
+    expect(percent.center).toBeUndefined();
+    expect(pixels.left).toBe(20);
+    expect(pixels.top).toBeUndefined();
+  });
+
+  it('leaves a pie centred away from the legend when no margin is chosen', () => {
+    expect(option('Pie', sales, { legendPosition: 'right' }, 1)['series'][0].center).toBeDefined();
+  });
+
+  it('is drawn by ECharts', () => {
+    expect(draw(option('Pie', sales, { margin: { left: 5, right: 5, top: 5, bottom: 5, unit: '%' }, labels: true, labelPosition: 'outside', pieShowName: true, pieShowPercent: true, pieForceLabels: true }, 1))).toContain('<svg');
+    expect(draw(option('Bar', sales, { margin: { left: 10, unit: '%', containLabel: false } }))).toContain('<svg');
   });
 });

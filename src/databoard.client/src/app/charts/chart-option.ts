@@ -48,6 +48,12 @@ export interface ChartStyleOptions {
   innerRadius?: number | null;
   rose?: boolean;
   pieLabel?: PieLabel;
+  /** What a slice's label says, part by part. Once any of the three is chosen they replace `pieLabel`. */
+  pieShowName?: boolean | null;
+  pieShowValue?: boolean | null;
+  pieShowPercent?: boolean | null;
+  /** Every label is shown, even where they overlap. */
+  pieForceLabels?: boolean;
 
   // Bars
   barBorderStyle?: LineType;
@@ -80,7 +86,8 @@ export interface ChartStyleOptions {
 }
 
 export type LineType = 'solid' | 'dashed' | 'dotted';
-export type LabelPosition = 'auto' | 'top' | 'bottom' | 'left' | 'right' | 'inside' | 'insideTop' | 'insideBottom';
+/** Where a value label goes. The first group is for charts with axes, outside and center for a pie. */
+export type LabelPosition = 'auto' | 'top' | 'bottom' | 'left' | 'right' | 'inside' | 'insideTop' | 'insideBottom' | 'outside' | 'center';
 export type LegendType = 'auto' | 'scroll' | 'plain';
 
 /** Fonts a chart can use. Missing is the default font. */
@@ -115,12 +122,30 @@ export interface SplitLineOptions {
   lineType?: LineType | null;
 }
 
-/** The space between the plot and the edge of the chart, in pixels. Missing is worked out. */
+/** The space between the plot (or a pie) and the edge of the chart, in pixels or percent. Missing is worked out. */
 export interface MarginOptions {
   left?: number | null;
   top?: number | null;
   right?: number | null;
   bottom?: number | null;
+  /** Missing is pixels. */
+  unit?: 'px' | '%';
+  /** Axis labels are kept inside the margin. On unless turned off. */
+  containLabel?: boolean;
+}
+
+/** Which parts a slice's label has: the three choices if any was made, else what the older `pieLabel` says. */
+export function pieParts(style: ChartStyleOptions): { name: boolean; value: boolean; percent: boolean } {
+  if (style.pieShowName != null || style.pieShowValue != null || style.pieShowPercent != null) {
+    return { name: style.pieShowName === true, value: style.pieShowValue === true, percent: style.pieShowPercent === true };
+  }
+  switch (style.pieLabel ?? 'name') {
+    case 'value': return { name: false, value: true, percent: false };
+    case 'percent': return { name: false, value: false, percent: true };
+    case 'name-value': return { name: true, value: true, percent: false };
+    case 'name-percent': return { name: true, value: false, percent: true };
+    default: return { name: true, value: false, percent: false };
+  }
 }
 
 /** Colour sets a chart can choose from. "default" leaves ECharts' own colours alone. */
@@ -196,6 +221,16 @@ function legendOption(style: ChartStyleOptions, count: number, round = false): R
   }
 }
 
+/** The sides of the margin that were chosen, in the unit that was chosen (pixels, or percent as text). */
+function marginSides(style: ChartStyleOptions): Record<string, number | string> {
+  const out: Record<string, number | string> = {};
+  for (const side of ['left', 'top', 'right', 'bottom'] as const) {
+    const value = style.margin?.[side];
+    if (value !== null && value !== undefined) out[side] = style.margin?.unit === '%' ? `${value}%` : value;
+  }
+  return out;
+}
+
 /** The plot's margins: the base ones plus what the title, the axis titles and the legend take, or the ones that were chosen. */
 function gridOption(
   style: ChartStyleOptions, showLegend: boolean, base: { left: number; right: number; top: number; bottom: number },
@@ -210,13 +245,8 @@ function gridOption(
     else if (position === 'left') grid.left += SIDE_LEGEND_SPACE;
     else if (position === 'right') grid.right += SIDE_LEGEND_SPACE;
   }
-  // What was chosen replaces what was worked out.
-  const chosen = style.margin;
-  for (const side of ['left', 'top', 'right', 'bottom'] as const) {
-    const value = chosen?.[side];
-    if (value !== null && value !== undefined) grid[side] = value;
-  }
-  return { ...grid, containLabel: true };
+  // What was chosen replaces what was worked out (and may be in percent).
+  return { ...grid, ...marginSides(style), containLabel: style.margin?.containLabel !== false };
 }
 
 /**
@@ -309,16 +339,17 @@ export function buildChartOption(
       .map((d) => (own(d.name) ? { ...d, itemStyle: { color: own(d.name) } } : d));
     const inner = style.innerRadius ?? (kind === 'Donut' ? 45 : 0);
     const text = fmt(style);
+    // The parts of a label that were chosen: "name: value (percent)", or whichever of them are on.
+    const parts = pieParts(style);
     const slice = (p: { name: string; value: number; percent: number }): string => {
       const percent = `${Math.round(p.percent * 10) / 10}%`;
-      switch (style.pieLabel ?? 'name') {
-        case 'value': return text(p.value);
-        case 'percent': return percent;
-        case 'name-value': return `${p.name}: ${text(p.value)}`;
-        case 'name-percent': return `${p.name} (${percent})`;
-        default: return p.name;
-      }
+      let out = parts.name ? p.name : '';
+      if (parts.value) out = out ? `${out}: ${text(p.value)}` : text(p.value);
+      if (parts.percent) out = out ? `${out} (${percent})` : percent;
+      return out;
     };
+    const place = style.labelPosition && ['outside', 'inside', 'center'].includes(style.labelPosition) ? style.labelPosition : null;
+    const boxed = Object.keys(marginSides(style)).length > 0;
     return {
       ...common,
       tooltip: {
@@ -332,9 +363,11 @@ export function buildChartOption(
         // Labels sit outside the circle, so with labels it is smaller to leave them room.
         radius: [`${inner}%`, `${showLabels ? 54 : 70}%`],
         ...(style.rose ? { roseType: 'radius' } : {}),
-        // The legend and title take room from the circle, which is centred in what is left.
-        ...(pieCentre(style, style.legend !== false)),
-        label: { show: showLabels, formatter: slice, ...fontProps(style.labelFont) },
+        // The legend and title take room from the circle, which is centred in what is left. A margin that was
+        // chosen is the box the circle sits in instead.
+        ...(boxed ? marginSides(style) : pieCentre(style, style.legend !== false)),
+        ...(style.pieForceLabels ? { avoidLabelOverlap: false } : {}),
+        label: { show: showLabels, formatter: slice, ...(place ? { position: place } : {}), ...fontProps(style.labelFont) },
         data,
       }],
     };

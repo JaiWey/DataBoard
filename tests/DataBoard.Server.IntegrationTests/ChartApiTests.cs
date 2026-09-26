@@ -374,7 +374,34 @@ public class ChartApiTests(ApiFactory factory)
         Assert.Equal(50, style.GetProperty("margin").GetProperty("bottom").GetInt32());
     }
 
-    [Theory]
+        [Fact]
+    public async Task The_pie_label_choices_and_margin_units_round_trip()
+    {
+        var f = await NewFixtureAsync();
+
+        var plain = await ReadAsync(await f.Owner.PostAsJsonAsync(Url(f.Org), Revenue(f.Orders, name: "Plain", type: "Pie")));
+        var defaults = plain.GetProperty("definition").GetProperty("style");
+        Assert.Equal(JsonValueKind.Null, defaults.GetProperty("pieShowName").ValueKind);
+        Assert.Equal(JsonValueKind.Null, defaults.GetProperty("pieShowValue").ValueKind);
+        Assert.False(defaults.GetProperty("pieForceLabels").GetBoolean());
+
+        var styled = await ReadAsync(await f.Owner.PostAsJsonAsync(Url(f.Org), Revenue(f.Orders, name: "Styled", type: "Pie", style: new
+        {
+            labelPosition = "outside", pieShowName = true, pieShowValue = false, pieShowPercent = true, pieForceLabels = true,
+            margin = new { left = 5, right = 5, top = 5, bottom = 5, unit = "%", containLabel = false },
+        })));
+
+        var style = styled.GetProperty("definition").GetProperty("style");
+        Assert.Equal("outside", style.GetProperty("labelPosition").GetString());
+        Assert.True(style.GetProperty("pieShowName").GetBoolean());
+        Assert.False(style.GetProperty("pieShowValue").GetBoolean());
+        Assert.True(style.GetProperty("pieShowPercent").GetBoolean());
+        Assert.True(style.GetProperty("pieForceLabels").GetBoolean());
+        Assert.Equal("%", style.GetProperty("margin").GetProperty("unit").GetString());
+        Assert.False(style.GetProperty("margin").GetProperty("containLabel").GetBoolean());
+        Assert.Equal(5, style.GetProperty("margin").GetProperty("left").GetInt32());
+    }
+[Theory]
     [InlineData("""{ "barBorderStyle": "wavy" }""")]
     [InlineData("""{ "barBorderWidth": 11 }""")]
     [InlineData("""{ "barBorderColor": "red" }""")]
@@ -399,6 +426,9 @@ public class ChartApiTests(ApiFactory factory)
     [InlineData("""{ "xSplitLine": { "lineType": "wavy" } }""")]
     [InlineData("""{ "margin": { "left": -1 } }""")]
     [InlineData("""{ "margin": { "bottom": 301 } }""")]
+    [InlineData("""{ "margin": { "unit": "em" } }""")]
+    [InlineData("""{ "margin": { "unit": "%", "left": 51 } }""")]
+    [InlineData("""{ "labelPosition": "outsideish" }""")]
     public async Task A_finer_style_choice_out_of_range_is_rejected(string styleJson)
     {
         var f = await NewFixtureAsync();

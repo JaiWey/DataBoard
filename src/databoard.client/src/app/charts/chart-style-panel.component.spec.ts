@@ -27,7 +27,7 @@ describe('ChartStylePanelComponent', () => {
     it.each([
       ['Bar', ['Title and axes', 'Colours', 'Numbers', 'X axis', 'Y axis', 'Split lines', 'Margin', 'Bars', 'Labels', 'Legend']],
       ['Line', ['Title and axes', 'Colours', 'Numbers', 'X axis', 'Y axis', 'Split lines', 'Margin', 'Labels', 'Legend', 'Look']],
-      ['Pie', ['Title', 'Colours', 'Numbers', 'Labels', 'Legend', 'Pie']],
+      ['Pie', ['Title', 'Colours', 'Numbers', 'Margin', 'Labels', 'Legend', 'Pie']],
       ['Heatmap', ['Title and axes', 'Colours', 'Numbers', 'X axis', 'Y axis', 'Split lines', 'Margin', 'Labels']],
       ['Scatter', ['Title and axes', 'Colours', 'Numbers', 'X axis', 'Y axis', 'Split lines', 'Margin', 'Labels', 'Legend']],
       ['Number', ['Numbers']],
@@ -203,11 +203,8 @@ describe('ChartStylePanelComponent', () => {
 
       type(field('Hole size'), '60');
       Array.from(el().querySelectorAll('mat-checkbox')).find((c) => c.textContent?.includes('Slice radius'))!.querySelector('input')!.click();
-      const label = field<HTMLSelectElement>('Slice label');
-      label.value = 'name-percent';
-      label.dispatchEvent(new Event('change'));
 
-      expect(changes).toEqual([{ innerRadius: 60 }, { rose: true }, { pieLabel: 'name-percent' }]);
+      expect(changes).toEqual([{ innerRadius: 60 }, { rose: true }]);
     });
   });
 
@@ -390,12 +387,13 @@ describe('ChartStylePanelComponent', () => {
     });
 
     describe('labels', () => {
-      it('has a position for axis charts and a font for all, but no position for a pie', () => {
+      it('has a position and a font for axis charts and for pies, with the positions that suit each', () => {
         create('Bar');
-        expect(field('Label position')).not.toBeNull();
-        expect(field('Label font')).not.toBeNull();
+        const options = () => Array.from(field<HTMLSelectElement>('Label position').options).map((o) => o.value);
+        expect(options()).toContain('insideTop');
+        expect(options()).not.toContain('outside');
         create('Pie');
-        expect(field('Label position')).toBeNull();
+        expect(options()).toEqual(['auto', 'outside', 'inside', 'center']);
         expect(field('Label font')).not.toBeNull();
       });
 
@@ -411,6 +409,91 @@ describe('ChartStylePanelComponent', () => {
       });
     });
 
+    describe('pie labels', () => {
+      const pieBox = (text: string) => Array.from(el().querySelectorAll('mat-checkbox')).find((c) => c.textContent?.trim() === text)!.querySelector('input') as HTMLInputElement;
+
+      it('shows the name, value and percentage that a pie has, from the older single choice when nothing else was chosen', () => {
+        create('Pie', { pieLabel: 'name-percent' });
+        expect([pieBox('Show name').checked, pieBox('Show value').checked, pieBox('Show percentage').checked]).toEqual([true, false, true]);
+        create('Pie');
+        expect([pieBox('Show name').checked, pieBox('Show value').checked, pieBox('Show percentage').checked]).toEqual([true, false, false]);
+      });
+
+      it('shows what was chosen once any of the three was', () => {
+        create('Pie', { pieLabel: 'name-percent', pieShowValue: true });
+
+        expect([pieBox('Show name').checked, pieBox('Show value').checked, pieBox('Show percentage').checked]).toEqual([false, true, false]);
+      });
+
+      it('reports all three choices together, so the older choice no longer decides', () => {
+        create('Pie', { pieLabel: 'name-percent' });
+
+        pieBox('Show value').click();
+
+        expect(changes).toEqual([{ pieShowName: true, pieShowValue: true, pieShowPercent: true }]);
+      });
+
+      it('reports taking the name off', () => {
+        create('Donut');
+
+        pieBox('Show name').click();
+
+        expect(changes).toEqual([{ pieShowName: false, pieShowValue: false, pieShowPercent: false }]);
+      });
+
+      it('reports forcing every label to show', () => {
+        create('Pie');
+
+        pieBox('Force display of all labels').click();
+
+        expect(changes).toEqual([{ pieForceLabels: true }]);
+      });
+
+      it('has these only for a pie', () => {
+        create('Bar');
+
+        expect(Array.from(el().querySelectorAll('mat-checkbox')).some((c) => c.textContent?.includes('Show percentage'))).toBe(false);
+      });
+    });
+
+    describe('margin units', () => {
+      it('is offered for a pie too, in pixels to begin with, and has no Contain label there', () => {
+        create('Pie');
+
+        expect(field<HTMLSelectElement>('Margin unit').value).toBe('px');
+        expect(field('left margin')).not.toBeNull();
+        expect(Array.from(el().querySelectorAll('mat-checkbox')).some((c) => c.textContent?.includes('Contain label'))).toBe(false);
+      });
+
+      it('has Contain label for charts with axes, on unless turned off, and reports it', () => {
+        create('Bar');
+        const containLabel = Array.from(el().querySelectorAll('mat-checkbox')).find((c) => c.textContent?.includes('Contain label'))!.querySelector('input') as HTMLInputElement;
+        expect(containLabel.checked).toBe(true);
+
+        containLabel.click();
+
+        expect(changes).toEqual([{ margin: { containLabel: false } }]);
+      });
+
+      it('switches to percent, bringing a side that is too big down to 50, and then allows only up to 50', () => {
+        create('Pie', { margin: { left: 120, top: 20 } });
+
+        select('Margin unit', '%');
+        expect(changes).toEqual([{ margin: { left: 50, top: 20, unit: '%' } }]);
+        create('Pie', { margin: { unit: '%' } });
+        const right = field<HTMLInputElement>('right margin');
+        expect(right.max).toBe('50');
+        right.value = '80';
+        right.dispatchEvent(new Event('input'));
+        expect(changes).toEqual([{ margin: { unit: '%', right: 50 } }]);
+      });
+
+      it('names the unit on each side', () => {
+        create('Pie', { margin: { unit: '%' } });
+
+        expect(el().textContent).toContain('Left (%)');
+      });
+    });
     describe('legend', () => {
       it('reports its type, buttons, height and font', () => {
         create('Bar');

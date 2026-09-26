@@ -34,8 +34,10 @@ public sealed record AxisStyle(
 /// <param name="LineType">solid, dashed or dotted.</param>
 public sealed record SplitLineStyle(bool? Show = null, string? Color = null, int? Width = null, string? LineType = null);
 
-/// <summary>The space between the plot and the edge of the chart, in pixels (0 to 300). Left out, it is worked out.</summary>
-public sealed record MarginStyle(int? Left = null, int? Top = null, int? Right = null, int? Bottom = null);
+/// <summary>The space between the plot (or a pie) and the edge of the chart. Left out, it is worked out.</summary>
+/// <param name="Unit">px (each side 0 to 300) or % (each side 0 to 50, of the chart's width or height).</param>
+/// <param name="ContainLabel">The axis labels are kept inside the margin (the plot gives up room for them). Axis charts only.</param>
+public sealed record MarginStyle(int? Left = null, int? Top = null, int? Right = null, int? Bottom = null, string Unit = "px", bool ContainLabel = true);
 
 /// <summary>How a saved chart is drawn. Only the stored choices; the data comes from the query.</summary>
 /// <param name="Palette">One of <see cref="ChartDefinitionValidator.Palettes"/>.</param>
@@ -62,13 +64,19 @@ public sealed record MarginStyle(int? Left = null, int? Top = null, int? Right =
 /// <param name="AreaOpacity">How solid an area is, 0 to 100.</param>
 /// <param name="InnerRadius">Size of the hole of a donut, as a percentage of the radius (0 to 90). Null uses the type's own.</param>
 /// <param name="Rose">Pie slices differ in radius as well as angle.</param>
-/// <param name="PieLabel">What a slice's label says: name, value, percent, name-value or name-percent.</param>
+/// <param name="PieLabel">What a slice's label says: name, value, percent, name-value or name-percent. Used while none of the three Pie choices below is made.</param>
+/// <param name="PieShowName">The slice's name is on its label. With the next two, replaces <paramref name="PieLabel"/>.</param>
+/// <param name="PieShowValue">The slice's value is on its label.</param>
+/// <param name="PieShowPercent">The slice's share is on its label.</param>
+/// <param name="PieForceLabels">Every label is shown, even where they overlap.</param>
 /// <param name="BarBorderStyle">solid, dashed or dotted.</param>
 /// <param name="BarBorderWidth">0 (none) to 10.</param>
 /// <param name="BarBorderColor">#rgb or #rrggbb. Null is the colour of the bar.</param>
 /// <param name="BarGap">Space between the bars of a group, as a percentage of a bar, 0 to 100. Null lets the chart decide.</param>
 /// <param name="BarCategoryGap">Space between groups of bars, as a percentage of a bar, 0 to 100. Null lets the chart decide.</param>
-/// <param name="LabelPosition">auto, top, bottom, left, right, inside, insideTop or insideBottom.</param>
+/// <param name="LabelPosition">
+/// auto, top, bottom, left, right, inside, insideTop or insideBottom for charts with axes; auto, outside, inside or center for a pie.
+/// </param>
 /// <param name="LabelFont">The value labels.</param>
 /// <param name="LegendType">auto, scroll (pages when it is long) or plain.</param>
 /// <param name="LegendSelector">Buttons that select all the series or invert the selection.</param>
@@ -120,7 +128,11 @@ public sealed record ChartStyle(
     AxisStyle? YAxis = null,
     SplitLineStyle? XSplitLine = null,
     SplitLineStyle? YSplitLine = null,
-    MarginStyle? Margin = null);
+    MarginStyle? Margin = null,
+    bool? PieShowName = null,
+    bool? PieShowValue = null,
+    bool? PieShowPercent = null,
+    bool PieForceLabels = false);
 
 /// <summary>The part of a saved chart that is stored as one JSON document: its query (row limit and sorting included) and style.</summary>
 public sealed record ChartDefinition(ChartQuery Query, ChartStyle? Style = null)

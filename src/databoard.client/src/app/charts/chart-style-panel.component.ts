@@ -1,6 +1,6 @@
 import { Component, computed, input, output } from '@angular/core';
 import { MatCheckboxModule } from '@angular/material/checkbox';
-import { AxisOptions, LabelPosition, LegendPosition, LegendType, LineType, MarginOptions, PieLabel, SplitLineOptions, colorsOf } from './chart-option';
+import { AxisOptions, LabelPosition, LegendPosition, LegendType, LineType, MarginOptions, SplitLineOptions, colorsOf, pieParts } from './chart-option';
 import { ChartStyle, ChartType } from './charts.service';
 import { NumberFormatOptions } from './number-format';
 import { ColorFieldComponent, FontFieldsComponent } from './style-fields.component';
@@ -19,9 +19,8 @@ const LABEL_POSITIONS: { value: LabelPosition; label: string }[] = [
 ];
 const LEGEND_TYPES: { value: LegendType; label: string }[] = [{ value: 'auto', label: 'Automatic' }, { value: 'scroll', label: 'Scroll' }, { value: 'plain', label: 'Plain' }];
 
-const PIE_LABELS: { value: PieLabel; label: string }[] = [
-  { value: 'name', label: 'Name' }, { value: 'value', label: 'Value' }, { value: 'percent', label: 'Percent' },
-  { value: 'name-value', label: 'Name and value' }, { value: 'name-percent', label: 'Name and percent' },
+const PIE_POSITIONS: { value: LabelPosition; label: string }[] = [
+  { value: 'auto', label: 'Automatic' }, { value: 'outside', label: 'Outside' }, { value: 'inside', label: 'Inside' }, { value: 'center', label: 'Centre' },
 ];
 
 /**
@@ -155,13 +154,24 @@ const PIE_LABELS: { value: PieLabel; label: string }[] = [
         </div>
       </details>
 
+    }
+
+    @if (axes() || round()) {
       <details class="section">
         <summary>Margin</summary>
         <div class="body">
+          <label class="row"><span>Unit</span>
+            <select aria-label="Margin unit" (change)="patchMarginUnit($any($event.target).value)">
+              <option value="px" [selected]="marginUnit() === 'px'">Pixels</option>
+              <option value="%" [selected]="marginUnit() === '%'">Percent</option>
+            </select></label>
+          @if (axes()) {
+            <mat-checkbox [checked]="style().margin?.containLabel !== false" (change)="patchMargin('containLabel', $event.checked)">Contain label</mat-checkbox>
+          }
           @for (side of sides; track side) {
-            <label class="row"><span>{{ side[0].toUpperCase() + side.slice(1) }} (px)</span>
-              <input type="number" min="0" max="300" [attr.aria-label]="side + ' margin'" placeholder="auto" [value]="style().margin?.[side] ?? ''"
-                     (input)="patchMargin(side, $event)" /></label>
+            <label class="row"><span>{{ side[0].toUpperCase() + side.slice(1) }} ({{ marginUnit() }})</span>
+              <input type="number" min="0" [max]="marginMax()" [attr.aria-label]="side + ' margin'" placeholder="auto" [value]="marginValue(side)"
+                     (input)="patchMarginSide(side, $event)" /></label>
           }
         </div>
       </details>
@@ -195,11 +205,15 @@ const PIE_LABELS: { value: PieLabel; label: string }[] = [
       <details class="section">
         <summary>Labels</summary>
         <div class="body">
-          @if (!round()) {
-            <label class="row"><span>Position</span>
-              <select aria-label="Label position" (change)="changed.emit({ labelPosition: $any($event.target).value })">
-                @for (p of labelPositions; track p.value) { <option [value]="p.value" [selected]="(style().labelPosition ?? 'auto') === p.value">{{ p.label }}</option> }
-              </select></label>
+          <label class="row"><span>Position</span>
+            <select aria-label="Label position" (change)="changed.emit({ labelPosition: $any($event.target).value })">
+              @for (p of positionChoices(); track p.value) { <option [value]="p.value" [selected]="(style().labelPosition ?? 'auto') === p.value">{{ p.label }}</option> }
+            </select></label>
+          @if (round()) {
+            <mat-checkbox [checked]="parts().name" (change)="patchParts({ name: $event.checked })">Show name</mat-checkbox>
+            <mat-checkbox [checked]="parts().value" (change)="patchParts({ value: $event.checked })">Show value</mat-checkbox>
+            <mat-checkbox [checked]="parts().percent" (change)="patchParts({ percent: $event.checked })">Show percentage</mat-checkbox>
+            <mat-checkbox [checked]="style().pieForceLabels === true" (change)="changed.emit({ pieForceLabels: $event.checked })">Force display of all labels</mat-checkbox>
           }
           <div class="row"><span>Font</span>
             <app-font-fields label="Label font" [font]="style().labelFont" (changed)="changed.emit({ labelFont: $event })" /></div>
@@ -254,11 +268,6 @@ const PIE_LABELS: { value: PieLabel; label: string }[] = [
             <input type="number" min="0" max="90" aria-label="Hole size" [placeholder]="type() === 'Donut' ? '45' : '0'"
                    [value]="style().innerRadius ?? ''" (input)="changed.emit({ innerRadius: whole($event, 0, 90) })" /></label>
           <mat-checkbox [checked]="style().rose === true" (change)="changed.emit({ rose: $event.checked })">Slice radius follows the value</mat-checkbox>
-          <label class="row"><span>Slice label</span>
-            <select aria-label="Slice label" (change)="changed.emit({ pieLabel: $any($event.target).value })">
-              @for (p of pieLabels; track p.value) { <option [value]="p.value" [selected]="(style().pieLabel ?? 'name') === p.value">{{ p.label }}</option> }
-            </select></label>
-          <p class="hint">Labels show when "Show value labels" is on.</p>
         </div>
       </details>
     }
@@ -295,7 +304,7 @@ export class ChartStylePanelComponent {
   protected readonly legendTypes = LEGEND_TYPES;
   protected readonly axisKeys: ('x' | 'y')[] = ['x', 'y'];
   protected readonly sides: (keyof MarginOptions)[] = ['left', 'top', 'right', 'bottom'];
-  protected readonly pieLabels = PIE_LABELS;
+  protected readonly positionChoices = computed(() => (this.round() ? PIE_POSITIONS : LABEL_POSITIONS));
 
   protected readonly round = computed(() => this.type() === 'Pie' || this.type() === 'Donut');
   /** Axis charts: they have a category axis and a value axis. */
@@ -356,8 +365,42 @@ export class ChartStylePanelComponent {
     return (this.text(event) as LineType | null);
   }
 
-  protected patchMargin(side: keyof MarginOptions, event: Event): void {
-    this.changed.emit({ margin: { ...(this.style().margin ?? {}), [side]: this.whole(event, 0, 300) } });
+  protected readonly marginUnit = computed(() => this.style().margin?.unit ?? 'px');
+  /** The most a side can be: 300 pixels, or half of the chart. */
+  protected readonly marginMax = computed(() => (this.marginUnit() === '%' ? 50 : 300));
+
+  protected marginValue(side: keyof MarginOptions): number | string {
+    const value = this.style().margin?.[side];
+    return typeof value === 'number' ? value : '';
+  }
+
+  protected patchMarginSide(side: keyof MarginOptions, event: Event): void {
+    this.patchMargin(side, this.whole(event, 0, this.marginMax()));
+  }
+
+  protected patchMargin(key: keyof MarginOptions, value: number | boolean | null): void {
+    this.changed.emit({ margin: { ...(this.style().margin ?? {}), [key]: value } });
+  }
+
+  /** Another unit keeps the sides that fit it and brings the others down to the most it allows. */
+  protected patchMarginUnit(unit: 'px' | '%'): void {
+    const most = unit === '%' ? 50 : 300;
+    const margin = { ...(this.style().margin ?? {}), unit };
+    for (const side of this.sides) {
+      const value = margin[side];
+      if (typeof value === 'number' && value > most) (margin as Record<string, unknown>)[side] = most;
+    }
+    this.changed.emit({ margin });
+  }
+
+  // ---- a pie's label ---
+
+  protected readonly parts = computed(() => pieParts(this.style()));
+
+  /** Writes all three choices, so the older single choice no longer decides. */
+  protected patchParts(changes: Partial<{ name: boolean; value: boolean; percent: boolean }>): void {
+    const next = { ...this.parts(), ...changes };
+    this.changed.emit({ pieShowName: next.name, pieShowValue: next.value, pieShowPercent: next.percent });
   }
 
   // ---- reading inputs -------------------------------------------------------------------------------------
