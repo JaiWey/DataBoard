@@ -864,4 +864,16 @@ describe('ChartEditorComponent', () => {
       expect(byLabel<HTMLInputElement>('Value of region').disabled).toBe(true);
     });
   });
-});
+
+  it('groups the chart types under tabs, and picking one from a tab changes the chart', () => {
+    open();
+    const tab = (name: string) => Array.from(el().querySelectorAll<HTMLButtonElement>('[role=tab]')).find((t) => t.textContent?.trim() === name)!;
+    expect(Array.from(el().querySelectorAll('app-chart-type-picker [role=tab]')).map((t) => t.textContent?.trim())).toContain('Pie Chart');
+
+    tab('Pie Chart').click();
+    fixture.detectChanges();
+    expect(Array.from(el().querySelectorAll('app-chart-type-picker button.type')).map((b) => b.getAttribute('aria-label'))).toEqual(['Pie', 'Donut']);
+    click('Donut');
+
+    expect(byLabel('Donut').getAttribute('aria-pressed')).toBe('true');
+  });});

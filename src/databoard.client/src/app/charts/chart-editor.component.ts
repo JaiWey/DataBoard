@@ -35,7 +35,8 @@ import {
 import { ChartKind, seriesNamesOf } from './chart-option';
 import { ChartStylePanelComponent } from './chart-style-panel.component';
 import { ChartViewComponent } from './chart-view.component';
-import { CHART_TYPES, ChartType, ChartsService, PALETTE_NAMES } from './charts.service';
+import { ChartTypePickerComponent } from './chart-type-picker.component';
+import { ChartType, ChartsService, PALETTE_NAMES } from './charts.service';
 
 type Zone = 'dimensions' | 'metrics' | 'filters';
 
@@ -51,7 +52,7 @@ interface Organization {
  */
 @Component({
   selector: 'app-chart-editor',
-  imports: [CdkDropList, CdkDrag, MatButtonModule, MatButtonToggleModule, MatCheckboxModule, MatMenuModule, MatTabsModule, ChartStylePanelComponent, ChartViewComponent],
+  imports: [CdkDropList, CdkDrag, MatButtonModule, MatButtonToggleModule, MatCheckboxModule, MatMenuModule, MatTabsModule, ChartStylePanelComponent, ChartTypePickerComponent, ChartViewComponent],
   template: `
     <header class="top">
       <button type="button" class="back" aria-label="Back to dashboards" (click)="back()">←</button>
@@ -252,31 +253,7 @@ interface Organization {
       </section>
 
       <section class="preview">
-        <div class="types" role="group" aria-label="Chart type">
-          @for (t of chartTypes; track t.value) {
-            <button type="button" class="type" [class.selected]="state().type === t.value" [attr.aria-pressed]="state().type === t.value"
-                    [attr.aria-label]="t.label" [title]="t.label" (click)="patch({ type: t.value })">
-              <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
-                @switch (t.value) {
-                  @case ('Table') { <rect x="3" y="4" width="18" height="16" rx="1.5" /><path d="M3 10h18M3 15h18M9 4v16" /> }
-                  @case ('Bar') { <path d="M5 20V11M12 20V5M19 20v-8" stroke-width="3.2" /> }
-                  @case ('BarHorizontal') { <path d="M4 5h11M4 12h16M4 19h8" stroke-width="3.2" /> }
-                  @case ('Line') { <path d="M3 17l5-6 4 3 8-9" /><path d="M3 21h18" /> }
-                  @case ('Area') { <path d="M3 18l5-7 4 3 8-8v12z" fill="currentColor" fill-opacity="0.25" /><path d="M3 18l5-7 4 3 8-8" /> }
-                  @case ('Pie') { <circle cx="12" cy="12" r="8" /><path d="M12 12V4M12 12l6.5 4.5" /> }
-                  @case ('Donut') { <circle cx="12" cy="12" r="8" /><circle cx="12" cy="12" r="3.5" /> }
-                  @case ('Number') { <text x="2.5" y="16" font-size="11" font-weight="700" fill="currentColor" stroke="none">123</text> }
-                  @case ('Heatmap') {
-                    <rect x="3" y="3" width="5" height="5" fill="currentColor" fill-opacity="0.85" /><rect x="9.5" y="3" width="5" height="5" fill="currentColor" fill-opacity="0.3" /><rect x="16" y="3" width="5" height="5" fill="currentColor" fill-opacity="0.55" />
-                    <rect x="3" y="9.5" width="5" height="5" fill="currentColor" fill-opacity="0.4" /><rect x="9.5" y="9.5" width="5" height="5" fill="currentColor" fill-opacity="0.9" /><rect x="16" y="9.5" width="5" height="5" fill="currentColor" fill-opacity="0.2" />
-                    <rect x="3" y="16" width="5" height="5" fill="currentColor" fill-opacity="0.6" /><rect x="9.5" y="16" width="5" height="5" fill="currentColor" fill-opacity="0.25" /><rect x="16" y="16" width="5" height="5" fill="currentColor" fill-opacity="0.75" />
-                  }
-                  @case ('Scatter') { <path d="M3 3v18h18" /><circle cx="9" cy="14" r="2" /><circle cx="13" cy="9" r="3.2" /><circle cx="18" cy="15" r="1.6" /> }
-                }
-              </svg>
-            </button>
-          }
-        </div>
+        <app-chart-type-picker [value]="state().type" (pick)="patch({ type: $event })" />
 
         <div class="preview-box">
           <mat-button-toggle-group class="views" aria-label="Preview" [value]="view()" (change)="view.set($event.value)">
@@ -342,9 +319,6 @@ interface Organization {
     .remove { border: 0; background: none; cursor: pointer; font-size: 1.1rem; color: inherit; }
     .row { display: grid; gap: 0.25rem; font: var(--mat-sys-label-medium); }
     .row input { font: var(--mat-sys-body-medium); }
-    .types { display: flex; flex-wrap: wrap; gap: 0.35rem; padding-bottom: 0.75rem; border-bottom: 1px solid var(--mat-sys-outline-variant); }
-    .type { width: 2.7rem; height: 2.7rem; display: grid; place-items: center; border: 0; border-radius: 6px; background: var(--mat-sys-surface-container); color: var(--mat-sys-on-surface-variant); cursor: pointer; }
-    .type.selected { background: var(--mat-sys-primary); color: var(--mat-sys-on-primary); }
     .preview-box { padding-top: 0.75rem; }
     .views { margin-bottom: 0.5rem; }
     .problems { margin: 0.5rem 0; padding-left: 1.2rem; color: var(--mat-sys-on-surface-variant); }
@@ -378,7 +352,6 @@ export class ChartEditorComponent implements OnInit {
   /** The values the dataset's SQL takes; a chart can choose them, and what it leaves alone uses the default. */
   protected readonly datasetParameters = computed<DatasetParameter[]>(() => this.dataset()?.parameters ?? []);
 
-  protected readonly chartTypes = CHART_TYPES;
   protected readonly palettes = PALETTE_NAMES;
   protected readonly operators = FILTER_OPERATORS;
   protected readonly grains = TIME_GRAINS;
