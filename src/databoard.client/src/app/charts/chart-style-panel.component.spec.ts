@@ -31,7 +31,7 @@ describe('ChartStylePanelComponent', () => {
       ['Heatmap', ['Title and axes', 'Colours', 'Numbers', 'X axis', 'Y axis', 'Split lines', 'Margin', 'Labels']],
       ['Scatter', ['Title and axes', 'Colours', 'Numbers', 'X axis', 'Y axis', 'Split lines', 'Margin', 'Labels', 'Legend']],
       ['Number', ['Numbers']],
-      ['Table', []],
+      ['Table', ['Numbers', 'Table', 'Header', 'Body']],
     ] as [ChartType, string[]][])('for a %s chart', (chartType, expected) => {
       create(chartType);
 
@@ -528,5 +528,108 @@ describe('ChartStylePanelComponent', () => {
 
         expect(field('Legend type')).toBeNull();
       });
+    });
+  });
+
+  describe('table', () => {
+    const tbox = (text: string) => Array.from(el().querySelectorAll('mat-checkbox')).find((c) => c.textContent?.trim() === text)!.querySelector('input') as HTMLInputElement;
+    const choose = (label: string, value: string) => {
+      const s = field<HTMLSelectElement>(label);
+      s.value = value;
+      s.dispatchEvent(new Event('change'));
+    };
+
+    it('shows the usual look to begin with: fixed header, borders and sorting on, no row numbers, no pages', () => {
+      create('Table');
+
+      expect([tbox('Fixed header').checked, tbox('Show border').checked, tbox('Row numbers').checked, tbox('Sort by clicking a header').checked, tbox('Pages').checked])
+        .toEqual([true, true, false, true, false]);
+      expect(field<HTMLSelectElement>('Table size').value).toBe('small');
+      expect(field('Rows per page')).toBeNull();
+    });
+
+    it('reports each choice together with what was chosen before', () => {
+      create('Table', { table: { size: 'large' } });
+
+      tbox('Fixed header').click();
+      tbox('Show border').click();
+      tbox('Row numbers').click();
+      tbox('Sort by clicking a header').click();
+      choose('Table size', 'medium');
+
+      expect(changes).toEqual([
+        { table: { size: 'large', fixedHeader: false } },
+        { table: { size: 'large', border: false } },
+        { table: { size: 'large', rowNumber: true } },
+        { table: { size: 'large', sortable: false } },
+        { table: { size: 'medium' } },
+      ]);
+    });
+
+    it('turns pages on with 20 rows, asks for the number, keeps it inside 5 to 500, and turns them off', () => {
+      create('Table');
+      tbox('Pages').click();
+      expect(changes).toEqual([{ table: { pageSize: 20 } }]);
+
+      create('Table', { table: { pageSize: 20 } });
+      const rows = field<HTMLInputElement>('Rows per page');
+      expect(rows.value).toBe('20');
+      rows.value = '9999';
+      rows.dispatchEvent(new Event('input'));
+      rows.value = '1';
+      rows.dispatchEvent(new Event('input'));
+      rows.value = '';
+      rows.dispatchEvent(new Event('input'));
+      tbox('Pages').click();
+
+      expect(changes).toEqual([{ table: { pageSize: 500 } }, { table: { pageSize: 5 } }, { table: { pageSize: 20 } }, { table: { pageSize: null } }]);
+    });
+
+    it('reports the header colour, font and alignment', () => {
+      create('Table');
+
+      const colour = field<HTMLInputElement>('Header background');
+      colour.value = '#f1f3f5';
+      colour.dispatchEvent(new Event('input'));
+      const size = field<HTMLInputElement>('Header font size');
+      size.value = '13';
+      size.dispatchEvent(new Event('input'));
+      choose('Header align', 'center');
+
+      expect(changes).toEqual([{ table: { headerBackground: '#f1f3f5' } }, { table: { headerFont: { size: 13 } } }, { table: { headerAlign: 'center' } }]);
+    });
+
+    it('reports the colours of odd and even rows and the font of the body', () => {
+      create('Table');
+
+      for (const [label, value] of [['Odd row text colour', '#111111'], ['Odd row background', '#ffffff'], ['Even row text colour', '#222222'], ['Even row background', '#f8f9fa']]) {
+        const input = field<HTMLInputElement>(label);
+        input.value = value;
+        input.dispatchEvent(new Event('input'));
+      }
+      const size = field<HTMLInputElement>('Table font size');
+      size.value = '12';
+      size.dispatchEvent(new Event('input'));
+
+      expect(changes).toEqual([
+        { table: { oddRowColor: '#111111' } }, { table: { oddRowBackground: '#ffffff' } },
+        { table: { evenRowColor: '#222222' } }, { table: { evenRowBackground: '#f8f9fa' } },
+        { table: { bodyFont: { size: 12 } } },
+      ]);
+    });
+
+    it('takes a colour back to the default', () => {
+      create('Table', { table: { headerBackground: '#f1f3f5' } });
+
+      (el().querySelector('[aria-label="Use the default header background"]') as HTMLButtonElement).click();
+
+      expect(changes).toEqual([{ table: { headerBackground: null } }]);
+    });
+
+    it('is for tables only, and number format is offered to tables too', () => {
+      create('Bar');
+      expect(field('Table size')).toBeNull();
+      create('Table');
+      expect(field('Number prefix')).not.toBeNull();
     });
   });});

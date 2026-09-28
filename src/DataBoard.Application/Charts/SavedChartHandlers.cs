@@ -64,7 +64,24 @@ internal static class ChartDefinitionValidator
     public static readonly string[] LineTypes = ["solid", "dashed", "dotted"];
     public static readonly string[] LabelPositions = ["auto", "top", "bottom", "left", "right", "inside", "insideTop", "insideBottom", "outside", "center"];
     public static readonly string[] MarginUnits = ["px", "%"];
+    public static readonly string[] TableSizes = ["small", "medium", "large"];
+    public static readonly string[] TableAligns = ["left", "center", "right"];
     public static readonly string[] LegendTypes = ["auto", "scroll", "plain"];
+
+    private static void CheckTable(TableStyle? table, Action<string> fail)
+    {
+        if (table is null) return;
+        if (!TableSizes.Contains(table.Size)) fail($"A table is: {string.Join(", ", TableSizes)}.");
+        if (!TableAligns.Contains(table.HeaderAlign)) fail($"A table header is aligned: {string.Join(", ", TableAligns)}.");
+        if (table.PageSize is < 5 or > 500) fail("A table page is 5 to 500 rows.");
+        CheckColor(table.HeaderBackground, "The header colour", fail);
+        CheckColor(table.OddRowColor, "The odd row text colour", fail);
+        CheckColor(table.OddRowBackground, "The odd row background", fail);
+        CheckColor(table.EvenRowColor, "The even row text colour", fail);
+        CheckColor(table.EvenRowBackground, "The even row background", fail);
+        CheckFont(table.HeaderFont, "The header font", fail);
+        CheckFont(table.BodyFont, "The table font", fail);
+    }
 
     private static void CheckColor(string? color, string what, Action<string> fail)
     {
@@ -152,6 +169,8 @@ internal static class ChartDefinitionValidator
         CheckAxis(style.YAxis, "The vertical axis", Fail);
         CheckSplitLine(style.XSplitLine, "The horizontal axis lines", Fail);
         CheckSplitLine(style.YSplitLine, "The vertical axis lines", Fail);
+        CheckTable(style.Table, Fail);
+
         if (style.Margin is { } margin)
         {
             if (!MarginUnits.Contains(margin.Unit)) Fail($"The space around the plot is in: {string.Join(", ", MarginUnits)}.");

@@ -401,6 +401,47 @@ public class ChartApiTests(ApiFactory factory)
         Assert.False(style.GetProperty("margin").GetProperty("containLabel").GetBoolean());
         Assert.Equal(5, style.GetProperty("margin").GetProperty("left").GetInt32());
     }
+    [Fact]
+    public async Task The_table_style_round_trips_and_defaults_to_the_usual_look()
+    {
+        var f = await NewFixtureAsync();
+
+        var plain = await ReadAsync(await f.Owner.PostAsJsonAsync(Url(f.Org), Revenue(f.Orders, name: "Plain", type: "Table")));
+        Assert.Equal(JsonValueKind.Null, plain.GetProperty("definition").GetProperty("style").GetProperty("table").ValueKind);
+
+        var styled = await ReadAsync(await f.Owner.PostAsJsonAsync(Url(f.Org), Revenue(f.Orders, name: "Styled", type: "Table", style: new
+        {
+            table = new
+            {
+                fixedHeader = false, border = false, rowNumber = true, size = "large", sortable = false, pageSize = 25,
+                headerBackground = "#f1f3f5", headerFont = new { size = 13, weight = "bold", color = "#343a40" }, headerAlign = "center",
+                oddRowColor = "#000000", oddRowBackground = "#ffffff", evenRowColor = "#212529", evenRowBackground = "#f8f9fa",
+                bodyFont = new { family = "monospace", size = 12 },
+            },
+        })));
+
+        var table = styled.GetProperty("definition").GetProperty("style").GetProperty("table");
+        Assert.False(table.GetProperty("fixedHeader").GetBoolean());
+        Assert.False(table.GetProperty("border").GetBoolean());
+        Assert.True(table.GetProperty("rowNumber").GetBoolean());
+        Assert.Equal("large", table.GetProperty("size").GetString());
+        Assert.False(table.GetProperty("sortable").GetBoolean());
+        Assert.Equal(25, table.GetProperty("pageSize").GetInt32());
+        Assert.Equal("#f1f3f5", table.GetProperty("headerBackground").GetString());
+        Assert.Equal("bold", table.GetProperty("headerFont").GetProperty("weight").GetString());
+        Assert.Equal("center", table.GetProperty("headerAlign").GetString());
+        Assert.Equal("#f8f9fa", table.GetProperty("evenRowBackground").GetString());
+        Assert.Equal("monospace", table.GetProperty("bodyFont").GetProperty("family").GetString());
+
+        var onlySome = await ReadAsync(await f.Owner.PostAsJsonAsync(Url(f.Org), Revenue(f.Orders, name: "Some", type: "Table", style: new { table = new { rowNumber = true } })));
+        var defaults = onlySome.GetProperty("definition").GetProperty("style").GetProperty("table");
+        Assert.True(defaults.GetProperty("fixedHeader").GetBoolean());
+        Assert.True(defaults.GetProperty("border").GetBoolean());
+        Assert.True(defaults.GetProperty("sortable").GetBoolean());
+        Assert.Equal("small", defaults.GetProperty("size").GetString());
+        Assert.Equal("left", defaults.GetProperty("headerAlign").GetString());
+        Assert.Equal(JsonValueKind.Null, defaults.GetProperty("pageSize").ValueKind);
+    }
 [Theory]
     [InlineData("""{ "barBorderStyle": "wavy" }""")]
     [InlineData("""{ "barBorderWidth": 11 }""")]
@@ -427,6 +468,17 @@ public class ChartApiTests(ApiFactory factory)
     [InlineData("""{ "margin": { "left": -1 } }""")]
     [InlineData("""{ "margin": { "bottom": 301 } }""")]
     [InlineData("""{ "margin": { "unit": "em" } }""")]
+    [InlineData("""{ "table": { "size": "huge" } }""")]
+    [InlineData("""{ "table": { "headerAlign": "justify" } }""")]
+    [InlineData("""{ "table": { "pageSize": 4 } }""")]
+    [InlineData("""{ "table": { "pageSize": 501 } }""")]
+    [InlineData("""{ "table": { "headerBackground": "grey" } }""")]
+    [InlineData("""{ "table": { "oddRowColor": "red" } }""")]
+    [InlineData("""{ "table": { "oddRowBackground": "#12" } }""")]
+    [InlineData("""{ "table": { "evenRowColor": "blue" } }""")]
+    [InlineData("""{ "table": { "evenRowBackground": "none" } }""")]
+    [InlineData("""{ "table": { "headerFont": { "size": 3 } } }""")]
+    [InlineData("""{ "table": { "bodyFont": { "family": "Papyrus" } } }""")]
     [InlineData("""{ "margin": { "unit": "%", "left": 51 } }""")]
     [InlineData("""{ "labelPosition": "outsideish" }""")]
     public async Task A_finer_style_choice_out_of_range_is_rejected(string styleJson)

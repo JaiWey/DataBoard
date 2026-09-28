@@ -39,6 +39,27 @@ public sealed record SplitLineStyle(bool? Show = null, string? Color = null, int
 /// <param name="ContainLabel">The axis labels are kept inside the margin (the plot gives up room for them). Axis charts only.</param>
 public sealed record MarginStyle(int? Left = null, int? Top = null, int? Right = null, int? Bottom = null, string Unit = "px", bool ContainLabel = true);
 
+/// <summary>How a Table chart looks. Anything left out is the usual look.</summary>
+/// <param name="FixedHeader">The header stays in view while the rows scroll.</param>
+/// <param name="Border">Lines between cells.</param>
+/// <param name="RowNumber">A first column that counts the rows.</param>
+/// <param name="Size">small, medium or large: how roomy the rows are.</param>
+/// <param name="Sortable">Clicking a column header sorts the rows that are loaded.</param>
+/// <param name="PageSize">Rows per page, 5 to 500. Null shows all the rows, scrolling.</param>
+/// <param name="HeaderBackground">#rgb or #rrggbb.</param>
+/// <param name="HeaderFont">The header's text.</param>
+/// <param name="HeaderAlign">left, center or right.</param>
+/// <param name="OddRowColor">Text colour of the 1st, 3rd... rows.</param>
+/// <param name="OddRowBackground">Background of the 1st, 3rd... rows.</param>
+/// <param name="EvenRowColor">Text colour of the 2nd, 4th... rows.</param>
+/// <param name="EvenRowBackground">Background of the 2nd, 4th... rows.</param>
+/// <param name="BodyFont">The text of the rows (a row colour above wins over its colour).</param>
+public sealed record TableStyle(
+    bool FixedHeader = true, bool Border = true, bool RowNumber = false, string Size = "small", bool Sortable = true, int? PageSize = null,
+    string? HeaderBackground = null, FontStyle? HeaderFont = null, string HeaderAlign = "left",
+    string? OddRowColor = null, string? OddRowBackground = null, string? EvenRowColor = null, string? EvenRowBackground = null,
+    FontStyle? BodyFont = null);
+
 /// <summary>How a saved chart is drawn. Only the stored choices; the data comes from the query.</summary>
 /// <param name="Palette">One of <see cref="ChartDefinitionValidator.Palettes"/>.</param>
 /// <param name="Stack">Bars, lines and areas with several series are piled on top of each other instead of side by side.</param>
@@ -69,6 +90,7 @@ public sealed record MarginStyle(int? Left = null, int? Top = null, int? Right =
 /// <param name="PieShowValue">The slice's value is on its label.</param>
 /// <param name="PieShowPercent">The slice's share is on its label.</param>
 /// <param name="PieForceLabels">Every label is shown, even where they overlap.</param>
+/// <param name="Table">How a Table chart looks.</param>
 /// <param name="BarBorderStyle">solid, dashed or dotted.</param>
 /// <param name="BarBorderWidth">0 (none) to 10.</param>
 /// <param name="BarBorderColor">#rgb or #rrggbb. Null is the colour of the bar.</param>
@@ -132,7 +154,8 @@ public sealed record ChartStyle(
     bool? PieShowName = null,
     bool? PieShowValue = null,
     bool? PieShowPercent = null,
-    bool PieForceLabels = false);
+    bool PieForceLabels = false,
+    TableStyle? Table = null);
 
 /// <summary>The part of a saved chart that is stored as one JSON document: its query (row limit and sorting included) and style.</summary>
 public sealed record ChartDefinition(ChartQuery Query, ChartStyle? Style = null)

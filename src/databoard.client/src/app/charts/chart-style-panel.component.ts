@@ -1,6 +1,6 @@
 import { Component, computed, input, output } from '@angular/core';
 import { MatCheckboxModule } from '@angular/material/checkbox';
-import { AxisOptions, LabelPosition, LegendPosition, LegendType, LineType, MarginOptions, SplitLineOptions, colorsOf, pieParts } from './chart-option';
+import { AxisOptions, LabelPosition, TableAlign, TableOptions, TableSize, LegendPosition, LegendType, LineType, MarginOptions, SplitLineOptions, colorsOf, pieParts } from './chart-option';
 import { ChartStyle, ChartType } from './charts.service';
 import { NumberFormatOptions } from './number-format';
 import { ColorFieldComponent, FontFieldsComponent } from './style-fields.component';
@@ -94,7 +94,6 @@ const PIE_POSITIONS: { value: LabelPosition; label: string }[] = [
       </details>
     }
 
-    @if (numeric()) {
       <details class="section">
         <summary>Numbers</summary>
         <div class="body">
@@ -112,8 +111,58 @@ const PIE_POSITIONS: { value: LabelPosition; label: string }[] = [
           <p class="hint">Example: {{ example() }}</p>
         </div>
       </details>
-    }
 
+    @if (isTable()) {
+      <details class="section">
+        <summary>Table</summary>
+        <div class="body">
+          <mat-checkbox [checked]="tableOf().fixedHeader !== false" (change)="patchTable({ fixedHeader: $event.checked })">Fixed header</mat-checkbox>
+          <mat-checkbox [checked]="tableOf().border !== false" (change)="patchTable({ border: $event.checked })">Show border</mat-checkbox>
+          <mat-checkbox [checked]="tableOf().rowNumber === true" (change)="patchTable({ rowNumber: $event.checked })">Row numbers</mat-checkbox>
+          <mat-checkbox [checked]="tableOf().sortable !== false" (change)="patchTable({ sortable: $event.checked })">Sort by clicking a header</mat-checkbox>
+          <label class="row"><span>Size</span>
+            <select aria-label="Table size" (change)="patchTable({ size: $any($event.target).value })">
+              @for (s of tableSizes; track s.value) { <option [value]="s.value" [selected]="(tableOf().size ?? 'small') === s.value">{{ s.label }}</option> }
+            </select></label>
+          <mat-checkbox [checked]="tableOf().pageSize != null" (change)="patchTable({ pageSize: $event.checked ? 20 : null })">Pages</mat-checkbox>
+          @if (tableOf().pageSize != null) {
+            <label class="row"><span>Rows per page</span>
+              <input type="number" min="5" max="500" aria-label="Rows per page" [value]="tableOf().pageSize ?? ''"
+                     (input)="patchTable({ pageSize: whole($event, 5, 500) ?? 20 })" /></label>
+          }
+        </div>
+      </details>
+
+      <details class="section">
+        <summary>Header</summary>
+        <div class="body">
+          <div class="row"><span>Background</span>
+            <app-color-field label="Header background" fallback="#f1f3f5" [value]="tableOf().headerBackground" (changed)="patchTable({ headerBackground: $event })" /></div>
+          <div class="row"><span>Font</span>
+            <app-font-fields label="Header font" [font]="tableOf().headerFont" (changed)="patchTable({ headerFont: $event })" /></div>
+          <label class="row"><span>Align</span>
+            <select aria-label="Header align" (change)="patchTable({ headerAlign: $any($event.target).value })">
+              @for (a of tableAligns; track a.value) { <option [value]="a.value" [selected]="(tableOf().headerAlign ?? 'left') === a.value">{{ a.label }}</option> }
+            </select></label>
+        </div>
+      </details>
+
+      <details class="section">
+        <summary>Body</summary>
+        <div class="body">
+          <div class="row"><span>Odd row text</span>
+            <app-color-field label="Odd row text colour" [value]="tableOf().oddRowColor" (changed)="patchTable({ oddRowColor: $event })" /></div>
+          <div class="row"><span>Odd row background</span>
+            <app-color-field label="Odd row background" fallback="#ffffff" [value]="tableOf().oddRowBackground" (changed)="patchTable({ oddRowBackground: $event })" /></div>
+          <div class="row"><span>Even row text</span>
+            <app-color-field label="Even row text colour" [value]="tableOf().evenRowColor" (changed)="patchTable({ evenRowColor: $event })" /></div>
+          <div class="row"><span>Even row background</span>
+            <app-color-field label="Even row background" fallback="#f8f9fa" [value]="tableOf().evenRowBackground" (changed)="patchTable({ evenRowBackground: $event })" /></div>
+          <div class="row"><span>Font</span>
+            <app-font-fields label="Table font" [font]="tableOf().bodyFont" (changed)="patchTable({ bodyFont: $event })" /></div>
+        </div>
+      </details>
+    }
     @if (axes()) {
       @for (axis of axisKeys; track axis) {
         <details class="section">
@@ -306,13 +355,21 @@ export class ChartStylePanelComponent {
   protected readonly sides: (keyof MarginOptions)[] = ['left', 'top', 'right', 'bottom'];
   protected readonly positionChoices = computed(() => (this.round() ? PIE_POSITIONS : LABEL_POSITIONS));
 
+  protected readonly isTable = computed(() => this.type() === 'Table');
+  protected readonly tableOf = computed<TableOptions>(() => this.style().table ?? {});
+  protected readonly tableSizes: { value: TableSize; label: string }[] = [{ value: 'small', label: 'Small' }, { value: 'medium', label: 'Medium' }, { value: 'large', label: 'Large' }];
+  protected readonly tableAligns: { value: TableAlign; label: string }[] = [{ value: 'left', label: 'Left' }, { value: 'center', label: 'Centre' }, { value: 'right', label: 'Right' }];
+
+  protected patchTable(changes: Partial<TableOptions>): void {
+    this.changed.emit({ table: { ...this.tableOf(), ...changes } });
+  }
+
   protected readonly round = computed(() => this.type() === 'Pie' || this.type() === 'Donut');
   /** Axis charts: they have a category axis and a value axis. */
   protected readonly axes = computed(() => ['Bar', 'BarHorizontal', 'Line', 'Area', 'Heatmap', 'Scatter'].includes(this.type()));
   protected readonly categoryAxis = computed(() => ['Bar', 'BarHorizontal', 'Line', 'Area', 'Heatmap'].includes(this.type()));
   protected readonly titled = computed(() => this.axes() || this.round());
   protected readonly coloured = computed(() => this.titled());
-  protected readonly numeric = computed(() => this.type() !== 'Table');
   protected readonly legendable = computed(() => this.titled() && this.type() !== 'Heatmap');
   protected readonly bars = computed(() => this.type() === 'Bar' || this.type() === 'BarHorizontal');
   protected readonly lines = computed(() => this.type() === 'Line' || this.type() === 'Area');

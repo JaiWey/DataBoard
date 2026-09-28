@@ -1,6 +1,7 @@
 import { Component, computed, input } from '@angular/core';
 import { ChartKind, ChartStyleOptions, ResultShape } from './chart-option';
 import { ChartComponent } from './chart.component';
+import { DataTableComponent } from './data-table.component';
 import { ChartType } from './charts.service';
 import { formatNumber } from './number-format';
 
@@ -10,21 +11,12 @@ import { formatNumber } from './number-format';
  */
 @Component({
   selector: 'app-chart-view',
-  imports: [ChartComponent],
+  imports: [ChartComponent, DataTableComponent],
   template: `
     @if (result().rows.length === 0) {
       <p class="empty"><em>No data.</em></p>
     } @else if (type() === 'Table') {
-      <div class="results">
-        <table>
-          <thead><tr>@for (c of result().columns; track $index) { <th>{{ c.name }}</th> }</tr></thead>
-          <tbody>
-            @for (row of result().rows; track $index) {
-              <tr>@for (cell of row; track $index) { <td>{{ cell === null ? '∅' : cell }}</td> }</tr>
-            }
-          </tbody>
-        </table>
-      </div>
+      <app-data-table [result]="result()" [tableStyle]="chartStyle().table" [numberFormat]="chartStyle().numberFormat" [fill]="fill()" />
     } @else if (type() === 'Number') {
       <div class="number" role="img" [attr.aria-label]="label() + ': ' + number()">
         <span class="value">{{ number() }}</span>
@@ -42,7 +34,6 @@ import { formatNumber } from './number-format';
     .caption { color: var(--mat-sys-on-surface-variant); }
     /* On a dashboard the widget decides how tall the view is; a long table scrolls inside it. */
     :host(.fill) { height: 100%; }
-    :host(.fill) .results { height: 100%; max-height: none; overflow: auto; }
     :host(.fill) .number { min-height: 0; height: 100%; }
   `,
   host: { '[class.fill]': 'fill()' },

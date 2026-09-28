@@ -83,6 +83,9 @@ export interface ChartStyleOptions {
   xSplitLine?: SplitLineOptions | null;
   ySplitLine?: SplitLineOptions | null;
   margin?: MarginOptions | null;
+
+  /** How a Table chart looks. */
+  table?: TableOptions | null;
 }
 
 export type LineType = 'solid' | 'dashed' | 'dotted';
@@ -132,6 +135,32 @@ export interface MarginOptions {
   unit?: 'px' | '%';
   /** Axis labels are kept inside the margin. On unless turned off. */
   containLabel?: boolean;
+}
+
+export type TableSize = 'small' | 'medium' | 'large';
+export type TableAlign = 'left' | 'center' | 'right';
+
+/** How a Table chart looks. Anything missing is the usual look. */
+export interface TableOptions {
+  /** The header stays in view while the rows scroll. On unless turned off. */
+  fixedHeader?: boolean;
+  /** Lines between cells. On unless turned off. */
+  border?: boolean;
+  /** A first column that counts the rows. */
+  rowNumber?: boolean;
+  size?: TableSize;
+  /** Clicking a column header sorts the rows that are loaded. On unless turned off. */
+  sortable?: boolean;
+  /** Rows per page. Missing or null shows all the rows, scrolling. */
+  pageSize?: number | null;
+  headerBackground?: string | null;
+  headerFont?: FontOptions | null;
+  headerAlign?: TableAlign;
+  oddRowColor?: string | null;
+  oddRowBackground?: string | null;
+  evenRowColor?: string | null;
+  evenRowBackground?: string | null;
+  bodyFont?: FontOptions | null;
 }
 
 /** Which parts a slice's label has: the three choices if any was made, else what the older `pieLabel` says. */
