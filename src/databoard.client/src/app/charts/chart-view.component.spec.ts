@@ -33,6 +33,15 @@ describe('ChartViewComponent', () => {
     expect(el.querySelector('table')).toBeNull();
   });
 
+  it('shows a word cloud as an SVG picture with the words, not with ECharts', () => {
+    const { el } = setup('WordCloud');
+
+    expect(el.querySelector('app-word-cloud svg')).not.toBeNull();
+    expect(Array.from(el.querySelectorAll('text')).map((t) => t.textContent!.trim().split(':')[0])).toEqual(['Auckland']);
+    expect(el.querySelector('app-chart')).toBeNull();
+    expect(el.querySelector('svg')!.getAttribute('aria-label')).toBe('Revenue');
+  });
+
   it('shows a number as one big, readable value with the name of the metric', () => {
     const { el } = setup('Number', result(['sum_price'], [[1234567]]));
 

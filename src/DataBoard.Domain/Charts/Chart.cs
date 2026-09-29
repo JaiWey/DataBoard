@@ -19,6 +19,8 @@ public enum ChartType
     /// series), two measures give X and Y, and an optional third gives the size (a bubble chart).
     /// </summary>
     Scatter,
+    /// <summary>One dimension is the word and one measure is its weight: heavier words are drawn bigger.</summary>
+    WordCloud,
 }
 
 /// <summary>

@@ -60,6 +60,13 @@ public sealed record TableStyle(
     string? OddRowColor = null, string? OddRowBackground = null, string? EvenRowColor = null, string? EvenRowBackground = null,
     FontStyle? BodyFont = null);
 
+/// <summary>How a Word cloud looks. Null fields are the usual look.</summary>
+/// <param name="MaxWords">Only the heaviest words are drawn, 5 to 300 (100 when null).</param>
+/// <param name="MinFontSize">Size of the lightest word, 8 to 60.</param>
+/// <param name="MaxFontSize">Size of the heaviest word, 12 to 150.</param>
+/// <param name="Rotation">none (all flat), mixed (some upright) or vertical (all upright).</param>
+public sealed record WordCloudStyle(int? MaxWords = null, int? MinFontSize = null, int? MaxFontSize = null, string? Rotation = null);
+
 /// <summary>How a saved chart is drawn. Only the stored choices; the data comes from the query.</summary>
 /// <param name="Palette">One of <see cref="ChartDefinitionValidator.Palettes"/>.</param>
 /// <param name="Stack">Bars, lines and areas with several series are piled on top of each other instead of side by side.</param>
@@ -91,6 +98,7 @@ public sealed record TableStyle(
 /// <param name="PieShowPercent">The slice's share is on its label.</param>
 /// <param name="PieForceLabels">Every label is shown, even where they overlap.</param>
 /// <param name="Table">How a Table chart looks.</param>
+/// <param name="WordCloud">How a Word cloud looks.</param>
 /// <param name="BarBorderStyle">solid, dashed or dotted.</param>
 /// <param name="BarBorderWidth">0 (none) to 10.</param>
 /// <param name="BarBorderColor">#rgb or #rrggbb. Null is the colour of the bar.</param>
@@ -155,7 +163,8 @@ public sealed record ChartStyle(
     bool? PieShowValue = null,
     bool? PieShowPercent = null,
     bool PieForceLabels = false,
-    TableStyle? Table = null);
+    TableStyle? Table = null,
+    WordCloudStyle? WordCloud = null);
 
 /// <summary>The part of a saved chart that is stored as one JSON document: its query (row limit and sorting included) and style.</summary>
 public sealed record ChartDefinition(ChartQuery Query, ChartStyle? Style = null)

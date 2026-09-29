@@ -278,6 +278,11 @@ export function problemsOf(state: EditorState, options: { forSave: boolean } = {
         problems.push('A heatmap needs two dimensions (across, then down) and one metric (the colour).');
       }
       break;
+    case 'WordCloud':
+      if (state.dimensions.length !== 1 || state.metrics.length !== 1) {
+        problems.push('A word cloud needs one dimension (the word) and one metric (how big it is).');
+      }
+      break;
     case 'Scatter':
       if (state.dimensions.length < 1 || state.dimensions.length > 2) {
         problems.push('A scatter chart needs one dimension for what each point is (a second splits the points into colours).');

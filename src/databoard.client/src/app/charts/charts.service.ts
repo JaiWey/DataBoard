@@ -5,7 +5,7 @@ import { ChartQuery, ChartResult } from '../organizations/datasets.service';
 import { ChartStyleOptions } from './chart-option';
 
 /** How a saved chart is drawn: ECharts kinds, plus a plain table and a single big number. */
-export type ChartType = 'Table' | 'Bar' | 'Line' | 'Pie' | 'Area' | 'BarHorizontal' | 'Donut' | 'Number' | 'Heatmap' | 'Scatter';
+export type ChartType = 'Table' | 'Bar' | 'Line' | 'Pie' | 'Area' | 'BarHorizontal' | 'Donut' | 'Number' | 'Heatmap' | 'Scatter' | 'WordCloud';
 
 export const CHART_TYPES: { value: ChartType; label: string }[] = [
   { value: 'Table', label: 'Table' },
@@ -18,6 +18,7 @@ export const CHART_TYPES: { value: ChartType; label: string }[] = [
   { value: 'Number', label: 'Number' },
   { value: 'Heatmap', label: 'Heatmap' },
   { value: 'Scatter', label: 'Scatter / bubble' },
+  { value: 'WordCloud', label: 'Word cloud' },
 ];
 
 export const PALETTE_NAMES = ['default', 'warm', 'cool', 'mono'];

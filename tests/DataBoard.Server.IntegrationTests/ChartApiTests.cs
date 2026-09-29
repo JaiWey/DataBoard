@@ -442,7 +442,37 @@ public class ChartApiTests(ApiFactory factory)
         Assert.Equal("left", defaults.GetProperty("headerAlign").GetString());
         Assert.Equal(JsonValueKind.Null, defaults.GetProperty("pageSize").ValueKind);
     }
-[Theory]
+
+    [Fact]
+    public async Task A_word_cloud_has_one_dimension_and_one_measure_and_keeps_its_style()
+    {
+        var f = await NewFixtureAsync();
+
+        var created = await ReadAsync(await f.Owner.PostAsJsonAsync(Url(f.Org), Shaped(f.Orders, "WordCloud", [Product], [Revenue1],
+            new { wordCloud = new { maxWords = 50, minFontSize = 10, maxFontSize = 80, rotation = "none" } })));
+
+        Assert.Equal("WordCloud", created.GetProperty("type").GetString());
+        var cloud = created.GetProperty("definition").GetProperty("style").GetProperty("wordCloud");
+        Assert.Equal(50, cloud.GetProperty("maxWords").GetInt32());
+        Assert.Equal(10, cloud.GetProperty("minFontSize").GetInt32());
+        Assert.Equal(80, cloud.GetProperty("maxFontSize").GetInt32());
+        Assert.Equal("none", cloud.GetProperty("rotation").GetString());
+
+        foreach (var wrong in new[]
+        {
+            Shaped(f.Orders, "WordCloud", [], [Revenue1]),
+            Shaped(f.Orders, "WordCloud", [Product], []),
+            Shaped(f.Orders, "WordCloud", [Product, Region], [Revenue1]),
+            Shaped(f.Orders, "WordCloud", [Product], [Revenue1, Orders1]),
+        })
+        {
+            var response = await f.Owner.PostAsJsonAsync(Url(f.Org), wrong);
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+            Assert.Contains("word cloud", await response.Content.ReadAsStringAsync());
+        }
+    }
+
+    [Theory]
     [InlineData("""{ "barBorderStyle": "wavy" }""")]
     [InlineData("""{ "barBorderWidth": 11 }""")]
     [InlineData("""{ "barBorderColor": "red" }""")]
@@ -470,6 +500,12 @@ public class ChartApiTests(ApiFactory factory)
     [InlineData("""{ "margin": { "unit": "em" } }""")]
     [InlineData("""{ "table": { "size": "huge" } }""")]
     [InlineData("""{ "table": { "headerAlign": "justify" } }""")]
+    [InlineData("""{ "wordCloud": { "maxWords": 4 } }""")]
+    [InlineData("""{ "wordCloud": { "maxWords": 301 } }""")]
+    [InlineData("""{ "wordCloud": { "minFontSize": 7 } }""")]
+    [InlineData("""{ "wordCloud": { "maxFontSize": 151 } }""")]
+    [InlineData("""{ "wordCloud": { "minFontSize": 40, "maxFontSize": 20 } }""")]
+    [InlineData("""{ "wordCloud": { "rotation": "spin" } }""")]
     [InlineData("""{ "table": { "pageSize": 4 } }""")]
     [InlineData("""{ "table": { "pageSize": 501 } }""")]
     [InlineData("""{ "table": { "headerBackground": "grey" } }""")]

@@ -24,6 +24,7 @@ export const CHART_CATEGORIES: ChartCategory[] = [
   { id: 'scatter', label: 'Scatter Chart', types: ['Scatter'] },
   { id: 'heatmap', label: 'Heatmap', types: ['Heatmap'] },
   { id: 'score', label: 'Score Card', types: ['Number'] },
+  { id: 'wordcloud', label: 'Word Cloud', types: ['WordCloud'] },
 ];
 
 /** How many recent types are remembered. */

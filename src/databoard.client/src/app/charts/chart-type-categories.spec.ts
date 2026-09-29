@@ -9,7 +9,7 @@ describe('chart categories', () => {
 
   it('starts with All and Recent, then the kinds of chart', () => {
     expect(CHART_CATEGORIES.map((c) => c.label)).toEqual([
-      'All', 'Recent', 'Table', 'Bar Chart', 'Line Chart', 'Pie Chart', 'Scatter Chart', 'Heatmap', 'Score Card',
+      'All', 'Recent', 'Table', 'Bar Chart', 'Line Chart', 'Pie Chart', 'Scatter Chart', 'Heatmap', 'Score Card', 'Word Cloud',
     ]);
   });
 
@@ -30,6 +30,7 @@ describe('chart categories', () => {
     expect(typesIn('score', [])).toEqual(['Number']);
     expect(typesIn('table', [])).toEqual(['Table']);
     expect(typesIn('heatmap', [])).toEqual(['Heatmap']);
+    expect(typesIn('wordcloud', [])).toEqual(['WordCloud']);
   });
 
   it('shows what was picked lately under Recent, newest first, and shows All for a tab it does not know', () => {

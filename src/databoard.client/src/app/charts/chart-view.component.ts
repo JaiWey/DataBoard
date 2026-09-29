@@ -4,6 +4,7 @@ import { ChartComponent } from './chart.component';
 import { DataTableComponent } from './data-table.component';
 import { ChartType } from './charts.service';
 import { formatNumber } from './number-format';
+import { WordCloudComponent } from './word-cloud.component';
 
 /**
  * Shows a query result the way a saved chart wants it: as a table, as one big number, or as an ECharts chart. Used by
@@ -11,7 +12,7 @@ import { formatNumber } from './number-format';
  */
 @Component({
   selector: 'app-chart-view',
-  imports: [ChartComponent, DataTableComponent],
+  imports: [ChartComponent, DataTableComponent, WordCloudComponent],
   template: `
     @if (result().rows.length === 0) {
       <p class="empty"><em>No data.</em></p>
@@ -22,6 +23,8 @@ import { formatNumber } from './number-format';
         <span class="value">{{ number() }}</span>
         <span class="caption">{{ numberCaption() }}</span>
       </div>
+    } @else if (type() === 'WordCloud') {
+      <app-word-cloud [result]="result()" [chartStyle]="chartStyle()" [label]="label()" [fill]="fill()" />
     } @else {
       <app-chart [kind]="kind()" [result]="result()" [chartStyle]="chartStyle()" [dimensions]="dimensions()" [label]="label()" [fill]="fill()" />
     }

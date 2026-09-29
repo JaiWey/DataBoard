@@ -83,6 +83,18 @@ internal static class ChartDefinitionValidator
         CheckFont(table.BodyFont, "The table font", fail);
     }
 
+    public static readonly string[] CloudRotations = ["none", "mixed", "vertical"];
+
+    private static void CheckWordCloud(WordCloudStyle? cloud, Action<string> fail)
+    {
+        if (cloud is null) return;
+        if (cloud.MaxWords is < 5 or > 300) fail("A word cloud shows 5 to 300 words.");
+        if (cloud.MinFontSize is < 8 or > 60) fail("The smallest word is 8 to 60 pixels.");
+        if (cloud.MaxFontSize is < 12 or > 150) fail("The largest word is 12 to 150 pixels.");
+        if (cloud.MinFontSize is { } min && cloud.MaxFontSize is { } max && min > max) fail("The smallest word cannot be bigger than the largest.");
+        if (cloud.Rotation is not null && !CloudRotations.Contains(cloud.Rotation)) fail($"Words run: {string.Join(", ", CloudRotations)}.");
+    }
+
     private static void CheckColor(string? color, string what, Action<string> fail)
     {
         if (color is not null && !HexColor.IsMatch(color)) fail($"{what} is written like #1971c2 or #19c.");
@@ -170,6 +182,7 @@ internal static class ChartDefinitionValidator
         CheckSplitLine(style.XSplitLine, "The horizontal axis lines", Fail);
         CheckSplitLine(style.YSplitLine, "The vertical axis lines", Fail);
         CheckTable(style.Table, Fail);
+        CheckWordCloud(style.WordCloud, Fail);
 
         if (style.Margin is { } margin)
         {
@@ -190,6 +203,8 @@ internal static class ChartDefinitionValidator
         {
             case ChartType.Heatmap when dimensions != 2 || measures != 1:
                 throw new ValidationException("Type", "A heatmap needs exactly two dimensions (across and down) and one measure (the colour).");
+            case ChartType.WordCloud when dimensions != 1 || measures != 1:
+                throw new ValidationException("Type", "A word cloud needs exactly one dimension (the word) and one measure (how big it is).");
             case ChartType.Scatter when dimensions is < 1 or > 2 || measures is < 2 or > 3:
                 throw new ValidationException("Type",
                     "A scatter chart needs one dimension (what each point is) and two measures (X and Y). " +

@@ -282,6 +282,17 @@ describe('problemsOf', () => {
     expect(problemsOf({ ...one, dimensions: [dimensionFor(region)] })).toContain('A number shows exactly one metric and no dimensions.');
   });
 
+  it('wants a word cloud to have one dimension and one metric', () => {
+    const ok = state({ type: 'WordCloud', dimensions: [dimensionFor(region)], metrics: [metricFor(price)] });
+    const message = 'A word cloud needs one dimension (the word) and one metric (how big it is).';
+
+    expect(problemsOf(ok)).toEqual([]);
+    expect(problemsOf({ ...ok, dimensions: [] })).toContain(message);
+    expect(problemsOf({ ...ok, dimensions: [...ok.dimensions, dimensionFor(ordered)] })).toContain(message);
+    expect(problemsOf({ ...ok, metrics: [] })).toContain(message);
+    expect(problemsOf({ ...ok, metrics: [metricFor(price), rowCountMetric()] })).toContain(message);
+  });
+
   it('wants a heatmap to have two dimensions and one metric', () => {
     const ok = state({ type: 'Heatmap', dimensions: [dimensionFor(region), dimensionFor(ordered)], metrics: [metricFor(price)] });
     const message = 'A heatmap needs two dimensions (across, then down) and one metric (the colour).';

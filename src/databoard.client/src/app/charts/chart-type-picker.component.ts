@@ -34,6 +34,12 @@ import { CHART_TYPES, ChartType } from './charts.service';
                 <rect x="3" y="9.5" width="5" height="5" fill="currentColor" fill-opacity="0.4" /><rect x="9.5" y="9.5" width="5" height="5" fill="currentColor" fill-opacity="0.9" /><rect x="16" y="9.5" width="5" height="5" fill="currentColor" fill-opacity="0.2" />
                 <rect x="3" y="16" width="5" height="5" fill="currentColor" fill-opacity="0.6" /><rect x="9.5" y="16" width="5" height="5" fill="currentColor" fill-opacity="0.25" /><rect x="16" y="16" width="5" height="5" fill="currentColor" fill-opacity="0.75" />
               }
+              @case ('WordCloud') {
+                <text x="3" y="11" font-size="9" font-weight="700" fill="currentColor" stroke="none">Data</text>
+                <text x="12" y="17" font-size="6" font-weight="700" fill="currentColor" stroke="none">board</text>
+                <text x="3" y="21" font-size="5" font-weight="700" fill="currentColor" stroke="none">word</text>
+                <text x="15" y="8" font-size="5" font-weight="700" fill="currentColor" stroke="none">cloud</text>
+              }
               @case ('Scatter') { <path d="M3 3v18h18" /><circle cx="9" cy="14" r="2" /><circle cx="13" cy="9" r="3.2" /><circle cx="18" cy="15" r="1.6" /> }
             }
           </svg>

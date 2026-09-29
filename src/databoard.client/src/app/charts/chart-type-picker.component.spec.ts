@@ -25,8 +25,8 @@ describe('ChartTypePickerComponent', () => {
   it('has the tabs of the kinds of chart and shows every type under All to begin with', () => {
     create();
 
-    expect(tabs()).toEqual(['All', 'Recent', 'Table', 'Bar Chart', 'Line Chart', 'Pie Chart', 'Scatter Chart', 'Heatmap', 'Score Card']);
-    expect(types()).toEqual(['Table', 'Bar', 'Horizontal bar', 'Line', 'Area', 'Pie', 'Donut', 'Number', 'Heatmap', 'Scatter / bubble']);
+    expect(tabs()).toEqual(['All', 'Recent', 'Table', 'Bar Chart', 'Line Chart', 'Pie Chart', 'Scatter Chart', 'Heatmap', 'Score Card', 'Word Cloud']);
+    expect(types()).toEqual(['Table', 'Bar', 'Horizontal bar', 'Line', 'Area', 'Pie', 'Donut', 'Number', 'Heatmap', 'Scatter / bubble', 'Word cloud']);
     expect(tab('All').getAttribute('aria-selected')).toBe('true');
   });
 
@@ -99,7 +99,7 @@ describe('ChartTypePickerComponent', () => {
   it('draws an icon for every type', () => {
     create();
 
-    expect(el().querySelectorAll('button.type svg').length).toBe(10);
+    expect(el().querySelectorAll('button.type svg').length).toBe(11);
     expect(Array.from(el().querySelectorAll('button.type svg')).every((s) => s.children.length > 0)).toBe(true);
   });
 

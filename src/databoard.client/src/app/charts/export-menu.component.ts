@@ -32,8 +32,8 @@ export class ExportMenuComponent {
   private readonly element = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly loader = inject(ECHARTS_LOADER);
 
-  /** A table and a number are not drawn on a canvas, so there is no picture to take; they have the CSV. */
-  protected readonly drawn = computed(() => this.type() !== 'Table' && this.type() !== 'Number' && this.result().rows.length > 0);
+  /** A table, a number and a word cloud are not drawn on a canvas, so there is no picture to take; they have the CSV. */
+  protected readonly drawn = computed(() => !['Table', 'Number', 'WordCloud'].includes(this.type()) && this.result().rows.length > 0);
 
   protected csv(): void {
     downloadCsv(this.name(), this.result());

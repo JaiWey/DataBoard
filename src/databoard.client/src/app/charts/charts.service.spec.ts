@@ -52,8 +52,8 @@ describe('ChartsService', () => {
     http.expectOne({ method: 'POST', url: `/api/organizations/${ORG}/charts/c1/run` }).flush({});
   });
 
-  it('knows the ten chart types, each with a readable name', () => {
-    expect(CHART_TYPES.map((t) => t.value)).toEqual(['Table', 'Bar', 'BarHorizontal', 'Line', 'Area', 'Pie', 'Donut', 'Number', 'Heatmap', 'Scatter']);
+  it('knows the eleven chart types, each with a readable name', () => {
+    expect(CHART_TYPES.map((t) => t.value)).toEqual(['Table', 'Bar', 'BarHorizontal', 'Line', 'Area', 'Pie', 'Donut', 'Number', 'Heatmap', 'Scatter', 'WordCloud']);
     expect(CHART_TYPES.find((t) => t.value === 'BarHorizontal')?.label).toBe('Horizontal bar');
   });
 });

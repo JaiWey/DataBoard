@@ -3,6 +3,7 @@ import { MatCheckboxModule } from '@angular/material/checkbox';
 import { AxisOptions, LabelPosition, TableAlign, TableOptions, TableSize, LegendPosition, LegendType, LineType, MarginOptions, SplitLineOptions, colorsOf, pieParts } from './chart-option';
 import { ChartStyle, ChartType } from './charts.service';
 import { NumberFormatOptions } from './number-format';
+import { CLOUD_DEFAULTS, CLOUD_ROTATIONS, WordCloudOptions } from './word-cloud';
 import { ColorFieldComponent, FontFieldsComponent } from './style-fields.component';
 
 const MAX_COLORS = 12;
@@ -160,6 +161,28 @@ const PIE_POSITIONS: { value: LabelPosition; label: string }[] = [
             <app-color-field label="Even row background" fallback="#f8f9fa" [value]="tableOf().evenRowBackground" (changed)="patchTable({ evenRowBackground: $event })" /></div>
           <div class="row"><span>Font</span>
             <app-font-fields label="Table font" [font]="tableOf().bodyFont" (changed)="patchTable({ bodyFont: $event })" /></div>
+        </div>
+      </details>
+    }
+    @if (isCloud()) {
+      <details class="section">
+        <summary>Word cloud</summary>
+        <div class="body">
+          <label class="row"><span>Most words</span>
+            <input type="number" min="5" max="300" aria-label="Most words" [value]="cloudOf().maxWords ?? cloudDefaults.maxWords"
+                   (input)="patchCloud({ maxWords: whole($event, 5, 300) ?? cloudDefaults.maxWords })" /></label>
+          <label class="row"><span>Smallest text</span>
+            <input type="number" min="8" max="60" aria-label="Smallest text" [value]="cloudOf().minFontSize ?? cloudDefaults.minFontSize"
+                   (input)="patchCloud({ minFontSize: whole($event, 8, 60) ?? cloudDefaults.minFontSize })" /></label>
+          <label class="row"><span>Largest text</span>
+            <input type="number" min="12" max="150" aria-label="Largest text" [value]="cloudOf().maxFontSize ?? cloudDefaults.maxFontSize"
+                   (input)="patchCloud({ maxFontSize: whole($event, 12, 150) ?? cloudDefaults.maxFontSize })" /></label>
+          <label class="row"><span>Direction</span>
+            <select aria-label="Word direction" (change)="patchCloud({ rotation: $any($event.target).value })">
+              @for (r of cloudRotations; track r.value) { <option [value]="r.value" [selected]="(cloudOf().rotation ?? cloudDefaults.rotation) === r.value">{{ r.label }}</option> }
+            </select></label>
+          <div class="row"><span>Font</span>
+            <app-font-fields label="Word font" [font]="style().labelFont" (changed)="changed.emit({ labelFont: $event })" /></div>
         </div>
       </details>
     }
@@ -364,12 +387,21 @@ export class ChartStylePanelComponent {
     this.changed.emit({ table: { ...this.tableOf(), ...changes } });
   }
 
+  protected readonly isCloud = computed(() => this.type() === 'WordCloud');
+  protected readonly cloudOf = computed<WordCloudOptions>(() => this.style().wordCloud ?? {});
+  protected readonly cloudDefaults = CLOUD_DEFAULTS;
+  protected readonly cloudRotations = CLOUD_ROTATIONS;
+
+  protected patchCloud(changes: Partial<WordCloudOptions>): void {
+    this.changed.emit({ wordCloud: { ...this.cloudOf(), ...changes } });
+  }
+
   protected readonly round = computed(() => this.type() === 'Pie' || this.type() === 'Donut');
   /** Axis charts: they have a category axis and a value axis. */
   protected readonly axes = computed(() => ['Bar', 'BarHorizontal', 'Line', 'Area', 'Heatmap', 'Scatter'].includes(this.type()));
   protected readonly categoryAxis = computed(() => ['Bar', 'BarHorizontal', 'Line', 'Area', 'Heatmap'].includes(this.type()));
   protected readonly titled = computed(() => this.axes() || this.round());
-  protected readonly coloured = computed(() => this.titled());
+  protected readonly coloured = computed(() => this.titled() || this.isCloud());
   protected readonly legendable = computed(() => this.titled() && this.type() !== 'Heatmap');
   protected readonly bars = computed(() => this.type() === 'Bar' || this.type() === 'BarHorizontal');
   protected readonly lines = computed(() => this.type() === 'Line' || this.type() === 'Area');

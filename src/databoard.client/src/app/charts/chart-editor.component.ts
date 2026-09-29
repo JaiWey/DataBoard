@@ -362,7 +362,7 @@ export class ChartEditorComponent implements OnInit {
   protected readonly seriesNames = computed(() => {
     const r = this.result();
     const type = this.state().type;
-    if (!r || type === 'Table' || type === 'Number') return [];
+    if (!r || type === 'Table' || type === 'Number' || type === 'WordCloud') return [];
     return seriesNamesOf(type as ChartKind, r, this.state().dimensions.length);
   });
   protected readonly problems = computed(() => problemsOf(this.state()));

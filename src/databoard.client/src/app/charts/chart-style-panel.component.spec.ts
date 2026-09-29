@@ -32,6 +32,7 @@ describe('ChartStylePanelComponent', () => {
       ['Scatter', ['Title and axes', 'Colours', 'Numbers', 'X axis', 'Y axis', 'Split lines', 'Margin', 'Labels', 'Legend']],
       ['Number', ['Numbers']],
       ['Table', ['Numbers', 'Table', 'Header', 'Body']],
+      ['WordCloud', ['Colours', 'Numbers', 'Word cloud']],
     ] as [ChartType, string[]][])('for a %s chart', (chartType, expected) => {
       create(chartType);
 
@@ -632,4 +633,45 @@ describe('ChartStylePanelComponent', () => {
       create('Table');
       expect(field('Number prefix')).not.toBeNull();
     });
-  });});
+  });  describe('word cloud', () => {
+    const choose = (label: string, value: string) => {
+      const s = field<HTMLSelectElement>(label);
+      s.value = value;
+      s.dispatchEvent(new Event('change'));
+    };
+    const type = (label: string, value: string) => {
+      const i = field<HTMLInputElement>(label);
+      i.value = value;
+      i.dispatchEvent(new Event('input'));
+    };
+
+    it('shows the usual choices to begin with', () => {
+      create('WordCloud');
+
+      expect([field<HTMLInputElement>('Most words').value, field<HTMLInputElement>('Smallest text').value, field<HTMLInputElement>('Largest text').value]).toEqual(['100', '12', '60']);
+      expect(field<HTMLSelectElement>('Word direction').value).toBe('mixed');
+    });
+
+    it('reports each choice together with what was chosen before, kept inside its range', () => {
+      create('WordCloud', { wordCloud: { rotation: 'none' } });
+
+      type('Most words', '9999');
+      type('Smallest text', '1');
+      type('Largest text', '');
+      choose('Word direction', 'vertical');
+
+      expect(changes).toEqual([
+        { wordCloud: { rotation: 'none', maxWords: 300 } },
+        { wordCloud: { rotation: 'none', minFontSize: 8 } },
+        { wordCloud: { rotation: 'none', maxFontSize: 60 } },
+        { wordCloud: { rotation: 'vertical' } },
+      ]);
+    });
+
+    it('is offered only for a word cloud', () => {
+      create('Bar');
+
+      expect(field('Most words')).toBeNull();
+    });
+  });
+});

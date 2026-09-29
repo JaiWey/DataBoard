@@ -1,5 +1,6 @@
 import type { EChartsCoreOption } from 'echarts/core';
 import { NumberFormatOptions, formatNumber } from './number-format';
+import type { WordCloudOptions } from './word-cloud';
 
 /** The kinds ECharts draws. Table and Number are not charts in this sense and are shown by `ChartViewComponent`. */
 export type ChartKind = 'Bar' | 'Line' | 'Pie' | 'Area' | 'BarHorizontal' | 'Donut' | 'Heatmap' | 'Scatter';
@@ -86,6 +87,9 @@ export interface ChartStyleOptions {
 
   /** How a Table chart looks. */
   table?: TableOptions | null;
+
+  /** How a Word cloud looks. */
+  wordCloud?: WordCloudOptions | null;
 }
 
 export type LineType = 'solid' | 'dashed' | 'dotted';
