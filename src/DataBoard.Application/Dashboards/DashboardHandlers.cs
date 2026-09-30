@@ -53,6 +53,8 @@ internal static class DashboardValidator
 
     public static readonly string[] ImageFits = ["contain", "cover", "fill"];
     public const int MaxTabs = 10;
+    public const int MinReloadSeconds = 10;
+    public const int MaxReloadSeconds = 3600;
     public const int MaxTabNameLength = 60;
     public static readonly string[] TextAligns = ["left", "center", "right"];
     public static readonly string[] TextSizes = ["small", "normal", "large"];
@@ -99,6 +101,9 @@ internal static class DashboardValidator
         }
         if (normalizedFilters.Select(f => f.Id).Distinct().Count() != normalizedFilters.Count)
             Fail("Filters", "Filter ids must be unique.");
+
+        if (definition.ReloadSeconds is < MinReloadSeconds or > MaxReloadSeconds)
+            Fail("ReloadSeconds", $"A dashboard reloads every {MinReloadSeconds} to {MaxReloadSeconds} seconds.");
 
         // Tabs first: a widget's place is checked against them. Without tabs the dashboard is a single page.
         var tabs = definition.Tabs ?? [];
@@ -233,7 +238,7 @@ internal static class DashboardValidator
         var firstTab = normalizedTabs.Count > 0 ? normalizedTabs[0].Id : (Guid?)null;
         var known = normalizedTabs.Select(t => t.Id).ToHashSet();
         var placed = normalizedWidgets.Select(w => w with { TabId = w.TabId is { } id && known.Contains(id) ? id : firstTab }).ToList();
-        return new DashboardDefinition(placed, normalizedFilters, normalizedTabs.Count > 0 ? normalizedTabs : null);
+        return new DashboardDefinition(placed, normalizedFilters, normalizedTabs.Count > 0 ? normalizedTabs : null, definition.ReloadSeconds);
     }
 
     internal static bool IsWebAddress(string value) =>

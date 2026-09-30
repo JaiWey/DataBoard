@@ -90,6 +90,8 @@ export interface DashboardDefinition {
   filters: DashboardFilter[];
   /** Missing or empty: the dashboard is one page. */
   tabs?: DashboardTab[] | null;
+  /** How often an open dashboard asks for its charts again, 10 to 3600 seconds. Missing or null: only when asked. */
+  reloadSeconds?: number | null;
 }
 
 export interface DashboardSummary {

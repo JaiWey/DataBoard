@@ -26,6 +26,7 @@ import { TextWidgetDialogComponent, TextWidgetDialogData } from './text-widget-d
 import { DashboardGridComponent } from './dashboard-grid.component';
 import { ShareDialogComponent, ShareDialogData } from './share-dialog.component';
 import { REFRESH_CHOICES, ago, intervalLabel } from '../shared/relative-time';
+import { autoReload, clock, reloadChoices, reloadLabel } from '../shared/auto-reload';
 import { LayoutItem, sameLayout } from './dashboard-layout';
 import { Dataset, DatasetsService } from '../organizations/datasets.service';
 import {
@@ -89,6 +90,27 @@ export function parseFilterInput(operator: SharedFilterOperator, text: string): 
       <mat-card-content>
       @if (d.background; as background) {
         <app-background-layer [load]="loadBackground(d, background.version)" [version]="background.version" [fit]="background.fit" [opacity]="background.opacity" />
+      }
+
+      @if (canEdit() || d.definition.reloadSeconds) {
+        <div class="reload-bar no-print">
+          @if (canEdit()) {
+            <label>
+              <span>Reload page every</span>
+              <select aria-label="Reload interval" [disabled]="busy()" (change)="setReload(d, $any($event.target))">
+                @for (choice of reloadChoices(d.definition.reloadSeconds); track choice.seconds) {
+                  <option [value]="choice.seconds ?? ''" [selected]="choice.seconds === (d.definition.reloadSeconds ?? null)">{{ choice.label }}</option>
+                }
+              </select>
+            </label>
+          }
+          @if (d.definition.reloadSeconds) {
+            <small class="status">
+              @if (!canEdit()) { Reloads every {{ reloadText(d.definition.reloadSeconds) }}. }
+              @if (loadedAt(); as at) { Updated {{ at }}. }
+            </small>
+          }
+        </div>
       }
 
       @if (d.refresh; as schedule) {
@@ -290,9 +312,9 @@ export function parseFilterInput(operator: SharedFilterOperator, text: string): 
     /* The background picture is a layer under everything in the content, so the content makes its own stacking context. */
     .detail > mat-card-content { flex: 1; min-height: 0; overflow: auto; padding-top: 0.75rem; position: relative; isolation: isolate; }
     .filters { margin: 0.5rem 0 1rem; }
-    .schedule { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.75rem; margin: 0 0 0.75rem; }
-    .schedule label { display: flex; align-items: center; gap: 0.5rem; }
-    .schedule select { padding: 0.25rem; }
+    .schedule, .reload-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.75rem; margin: 0 0 0.75rem; }
+    .schedule label, .reload-bar label { display: flex; align-items: center; gap: 0.5rem; }
+    .schedule select, .reload-bar select { padding: 0.25rem; }
     .apply, .remove-filter { margin-top: 0.4rem; }
     /* A widget fills its cell on the grid; its chart takes what the header leaves, and a table scrolls inside. */
     .widget { height: 100%; }
@@ -347,6 +369,11 @@ export class DashboardComponent implements OnInit {
 
   /** True while the editor is arranging widgets; the changes live in `draft` until they are saved. */
   protected readonly editingLayout = signal(false);
+  /** When the charts were last loaded, for "Updated 14:03:15". */
+  protected readonly loadedAt = signal('');
+  protected readonly reloadChoices = reloadChoices;
+  protected readonly reloadText = reloadLabel;
+  private readonly reloading = autoReload(() => this.dashboard()?.definition.reloadSeconds, () => this.execute(false, true), () => this.busy() || this.editingLayout());
   protected readonly draft = signal<LayoutItem[] | null>(null);
   /** Where each widget sits as saved, with places made up for widgets that have none yet. */
   private readonly savedLayout = computed(() => arrangeTab(this.dashboard()?.definition.widgets ?? [], this.tabs(), this.activeTabId()));
@@ -626,6 +653,16 @@ export class DashboardComponent implements OnInit {
     this.execute();
   }
 
+  /** Sets how often the open page reloads its charts. It is saved with the dashboard and applies to everyone. */
+  protected setReload(d: Dashboard, select: HTMLSelectElement): void {
+    const seconds = select.value === '' ? null : Number(select.value);
+    const before = d.definition.reloadSeconds ?? null;
+    if (seconds === before) return;
+    this.save(d, { ...d.definition, reloadSeconds: seconds }, undefined, false, () => {
+      select.value = before === null ? '' : String(before); // nothing in the page changed, so put the control back by hand
+    });
+  }
+
   /** The usual intervals, plus the current one if it was set to something else through the API. */
   protected refreshChoices(current: number | null) {
     return current === null || REFRESH_CHOICES.some((c) => c.minutes === current)
@@ -729,7 +766,7 @@ export class DashboardComponent implements OnInit {
     });
   }
 
-  private save(d: Dashboard, definition: DashboardDefinition, done?: () => void, rerun = true): void {
+  private save(d: Dashboard, definition: DashboardDefinition, done?: () => void, rerun = true, failed?: () => void): void {
     this.busy.set(true);
     this.errors.set([]);
     this.api.update(this.orgId(), d, definition).subscribe({
@@ -743,6 +780,7 @@ export class DashboardComponent implements OnInit {
       error: (e) => {
         this.busy.set(false);
         this.errors.set(problemMessages(e, 'Could not save the dashboard.'));
+        failed?.();
       },
     });
   }
@@ -758,7 +796,11 @@ export class DashboardComponent implements OnInit {
     this.dashboard.set(d);
   }
 
-  private execute(refresh = false): void {
+  /**
+   * Runs the charts again. A quiet run (the timer's) leaves the page as it is until the answer comes, so nothing flickers or
+   * is disabled; the old charts stay if it fails.
+   */
+  private execute(refresh = false, quiet = false): void {
     const d = this.dashboard();
     if (!d) return;
 
@@ -768,15 +810,19 @@ export class DashboardComponent implements OnInit {
       if (parsed.length > 0) values[f.id] = parsed;
     }
 
-    this.busy.set(true);
-    this.errors.set([]);
+    if (!quiet) {
+      this.busy.set(true);
+      this.errors.set([]);
+    }
     this.api.run(this.orgId(), d.id, values, refresh).subscribe({
       next: (r) => {
         this.run.set(r);
-        this.busy.set(false);
+        this.loadedAt.set(clock());
+        if (quiet) this.errors.set([]);
+        else this.busy.set(false);
       },
       error: (e) => {
-        this.busy.set(false);
+        if (!quiet) this.busy.set(false);
         this.errors.set(problemMessages(e, 'Could not run the dashboard.'));
       },
     });

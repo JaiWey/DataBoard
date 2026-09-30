@@ -29,6 +29,7 @@ export interface SharedDashboard {
   background?: DashboardBackground | null;
   /** Missing or empty: one page. */
   tabs?: DashboardTab[] | null;
+  reloadSeconds?: number | null;
 }
 
 /** The public side of a dashboard link: no account, the token in the address is the credential. */

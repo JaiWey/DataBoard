@@ -35,7 +35,8 @@ public sealed record SharedDashboardDto(
     IReadOnlyList<SharedChartDto> Charts,
     DateTime? ExpiresUtc,
     DashboardBackgroundDto? Background = null,
-    IReadOnlyList<DashboardTab>? Tabs = null);
+    IReadOnlyList<DashboardTab>? Tabs = null,
+    int? ReloadSeconds = null);
 
 internal static class ShareTokens
 {
@@ -170,7 +171,8 @@ public sealed class GetSharedDashboardHandler(
             shown,
             share.ExpiresUtc,
             dashboard.ToBackgroundDto(),
-            definition.Tabs);
+            definition.Tabs,
+            definition.ReloadSeconds);
     }
 }
 

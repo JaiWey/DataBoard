@@ -16,6 +16,7 @@ import { arrangeTab } from './dashboard-tabs';
 import { ImageWidgetComponent } from './image-widget.component';
 import { DashboardGridComponent } from './dashboard-grid.component';
 import { ago } from '../shared/relative-time';
+import { autoReload, clock, reloadLabel } from '../shared/auto-reload';
 import { parseFilterInput } from './dashboard.component';
 import { DashboardRun, DashboardWidget, FilterValues, SHARED_FILTER_OPERATORS, WidgetResult } from './dashboards.service';
 import { SharedChart, SharedDashboard, SharedDashboardsService } from './shared-dashboards.service';
@@ -53,6 +54,10 @@ import { SharedChart, SharedDashboard, SharedDashboardsService } from './shared-
             <button mat-stroked-button type="button" class="print no-print" (click)="print()">Print / PDF</button>
           }
         </div>
+
+        @if (d.reloadSeconds) {
+          <p class="reload no-print"><small>Reloads every {{ reloadText(d.reloadSeconds) }}.@if (loadedAt(); as at) { Updated {{ at }}. }</small></p>
+        }
 
         @if (d.filters.length > 0) {
           <form class="filters no-print" [formGroup]="filterForm" (ngSubmit)="execute()">
@@ -168,6 +173,9 @@ export class SharedDashboardComponent implements OnInit {
   protected readonly run = signal<DashboardRun | null>(null);
   protected readonly errors = signal<string[]>([]);
   protected readonly busy = signal(false);
+  protected readonly loadedAt = signal('');
+  protected readonly reloadText = reloadLabel;
+  private readonly reloading = autoReload(() => this.dashboard()?.reloadSeconds, () => this.execute(true), () => this.busy());
 
   protected filterForm: FormGroup<Record<string, FormControl<string>>> = this.fb.nonNullable.group({});
 
@@ -253,7 +261,8 @@ export class SharedDashboardComponent implements OnInit {
     window.print();
   }
 
-  protected execute(): void {
+  /** A quiet run (the timer's) leaves the page as it is until the answer comes; the old charts stay if it fails. */
+  protected execute(quiet = false): void {
     const d = this.dashboard();
     if (!d) return;
 
@@ -263,16 +272,20 @@ export class SharedDashboardComponent implements OnInit {
       if (parsed.length > 0) values[f.id] = parsed;
     }
 
-    this.busy.set(true);
-    this.errors.set([]);
+    if (!quiet) {
+      this.busy.set(true);
+      this.errors.set([]);
+    }
     this.request?.unsubscribe(); // a newer answer is the one that counts
     this.request = this.api.run(this.token, values).subscribe({
       next: (r) => {
         this.run.set(r);
-        this.busy.set(false);
+        this.loadedAt.set(clock());
+        if (quiet) this.errors.set([]);
+        else this.busy.set(false);
       },
       error: (e) => {
-        this.busy.set(false);
+        if (!quiet) this.busy.set(false);
         this.errors.set(problemMessages(e, 'Could not load the data.'));
       },
     });

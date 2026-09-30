@@ -45,7 +45,12 @@ public sealed record DashboardFilter(Guid Id, string Label, string Column, Filte
 public enum FilterTarget { Column = 0, Parameter = 1 }
 
 /// <param name="Tabs">The tabs, in order. Null or empty: the dashboard is one page, as dashboards were before tabs.</param>
-public sealed record DashboardDefinition(IReadOnlyList<DashboardWidget> Widgets, IReadOnlyList<DashboardFilter> Filters, IReadOnlyList<DashboardTab>? Tabs = null);
+/// <param name="ReloadSeconds">
+/// How often an open dashboard (and its public page) asks for its charts again, 10 to 3600 seconds. Null: only when the
+/// viewer asks. This is how often a page re-reads; <see cref="DashboardRefreshDto"/> is how often the server re-queries the databases.
+/// </param>
+public sealed record DashboardDefinition(
+    IReadOnlyList<DashboardWidget> Widgets, IReadOnlyList<DashboardFilter> Filters, IReadOnlyList<DashboardTab>? Tabs = null, int? ReloadSeconds = null);
 
 /// <param name="FolderId">Where a new dashboard is filed (create only; moving one is a separate call). Null is the top level.</param>
 public sealed record SaveDashboardRequest(string Name, string? Description, DashboardDefinition? Definition, Guid? FolderId = null);

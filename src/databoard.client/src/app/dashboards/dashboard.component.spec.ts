@@ -381,6 +381,123 @@ describe('DashboardComponent', () => {
     });
   });
 
+  describe('reload interval', () => {
+    const reloading = (seconds: number | null = 30) => ({ ...dashboard(false), definition: { ...dashboard(false).definition, reloadSeconds: seconds } });
+    const select = () => el().querySelector('select[aria-label="Reload interval"]') as HTMLSelectElement;
+    const bar = () => el().querySelector('.reload-bar')?.textContent?.replace(/\s+/g, ' ').trim();
+    const choose = (value: string) => {
+      select().value = value;
+      select().dispatchEvent(new Event('change'));
+      fixture.detectChanges();
+    };
+
+    afterEach(() => vi.useRealTimers());
+
+    it('shows editors the choice, with Never when none was made', () => {
+      load('Editor', dashboard(false));
+      http.expectOne(runUrl).flush({ widgets: [] });
+
+      expect(select().selectedOptions[0].textContent?.trim()).toBe('Never');
+      expect(bar()).not.toContain('Updated 00');
+    });
+
+    it('shows nothing about it to a viewer when the dashboard does not reload', () => {
+      load('Viewer', dashboard(false));
+      http.expectOne(runUrl).flush({ widgets: [] });
+
+      expect(el().querySelector('.reload-bar')).toBeNull();
+    });
+
+    it('tells a viewer how often the page reloads and when it did, without a way to change it', () => {
+      load('Viewer', reloading(300));
+      http.expectOne(runUrl).flush({ widgets: [] });
+      fixture.detectChanges();
+
+      expect(select()).toBeNull();
+      expect(bar()).toMatch(/^Reloads every 5 minutes\. Updated .+\.$/);
+    });
+
+    it('saves the choice with the dashboard, without running the charts again', () => {
+      load('Editor', dashboard(false));
+      http.expectOne(runUrl).flush({ widgets: [] });
+
+      choose('60');
+
+      const put = http.expectOne({ method: 'PUT', url: dashboardUrl });
+      expect(put.request.body.definition.reloadSeconds).toBe(60);
+      put.flush(reloading(60));
+      fixture.detectChanges();
+      expect(select().selectedOptions[0].textContent?.trim()).toBe('1 minute');
+      http.expectNone(runUrl);
+    });
+
+    it('saves Never as no interval', () => {
+      load('Editor', reloading(30));
+      http.expectOne(runUrl).flush({ widgets: [] });
+
+      choose('');
+
+      const put = http.expectOne({ method: 'PUT', url: dashboardUrl });
+      expect(put.request.body.definition.reloadSeconds).toBeNull();
+      put.flush(reloading(null));
+    });
+
+    it('shows why it could not be saved and puts the choice back', () => {
+      load('Editor', dashboard(false));
+      http.expectOne(runUrl).flush({ widgets: [] });
+
+      choose('10');
+      http.expectOne({ method: 'PUT', url: dashboardUrl }).flush(
+        { errors: { ReloadSeconds: ['A dashboard reloads every 10 to 3600 seconds.'] } }, { status: 400, statusText: 'Bad Request' });
+      fixture.detectChanges();
+
+      expect(el().querySelector('[role=alert]')?.textContent).toContain('reloads every 10 to 3600');
+      expect(select().selectedOptions[0].textContent?.trim()).toBe('Never');
+    });
+
+    it('asks for the charts again on the interval, quietly: nothing is disabled and the old charts stay until the answer', () => {
+      vi.useFakeTimers();
+      load('Editor', reloading(30));
+      http.expectOne(runUrl).flush({ widgets: [] });
+      http.expectNone(runUrl);
+
+      vi.advanceTimersByTime(30_000);
+      const again = http.expectOne(runUrl);
+      fixture.detectChanges();
+      expect(buttonByText('Refresh data').disabled).toBe(false);
+
+      again.flush({ widgets: [] });
+      vi.advanceTimersByTime(30_000);
+      http.expectOne(runUrl).flush({ widgets: [] });
+    });
+
+    it('keeps what is shown, and says why, when a reload fails', () => {
+      vi.useFakeTimers();
+      load('Editor', reloading(30));
+      http.expectOne(runUrl).flush({ widgets: [{ widgetId: W_BAR, result: ok([['Auckland', 1]]), error: null, appliedFilters: [] }] });
+      fixture.detectChanges();
+
+      vi.advanceTimersByTime(30_000);
+      http.expectOne(runUrl).flush({ title: 'Down' }, { status: 500, statusText: 'Server Error' });
+      fixture.detectChanges();
+
+      expect(el().querySelector('[role=alert]')).not.toBeNull();
+      expect(el().querySelector('app-chart-view, app-chart')).not.toBeNull();
+    });
+
+    it('does not reload while the layout is being edited', () => {
+      vi.useFakeTimers();
+      load('Editor', reloading(30));
+      http.expectOne(runUrl).flush({ widgets: [] });
+      (el().querySelector('.edit-layout') as HTMLButtonElement).click();
+      fixture.detectChanges();
+
+      vi.advanceTimersByTime(120_000);
+
+      http.expectNone(runUrl);
+    });
+  });
+
   describe('stored results', () => {
     const cachedWidget = (cachedUtc: string | null) => ({
       widgets: [{ widgetId: W_BAR, result: { ...ok([['Auckland', 3]]), cachedUtc }, error: null, appliedFilters: [] }],

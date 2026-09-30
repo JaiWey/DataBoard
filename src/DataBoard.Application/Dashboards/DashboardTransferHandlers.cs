@@ -22,7 +22,7 @@ namespace DataBoard.Application.Dashboards;
 public sealed record DashboardPackage(
     string Format, int Version, string Name, string? Description,
     IReadOnlyList<PackageTab>? Tabs, IReadOnlyList<PackageFilter>? Filters, IReadOnlyList<PackageWidget>? Widgets,
-    PackageBackground? Background, IReadOnlyDictionary<string, PackageFile>? Files);
+    PackageBackground? Background, IReadOnlyDictionary<string, PackageFile>? Files, int? ReloadSeconds = null);
 
 public sealed record PackageTab(string Key, string Name);
 
@@ -151,7 +151,7 @@ public sealed class ExportDashboardHandler(
             DashboardPackages.Format, DashboardPackages.CurrentVersion, dashboard.Name, dashboard.Description,
             tabs.Count == 0 ? null : tabs.Select(t => new PackageTab(tabKeys[t.Id], t.Name)).ToList(),
             definition.Filters.Select(f => new PackageFilter(f.Label, f.Column, f.Operator, f.Target)).ToList(),
-            widgets, background, files.Count == 0 ? null : files);
+            widgets, background, files.Count == 0 ? null : files, definition.ReloadSeconds);
     }
 }
 
@@ -259,7 +259,7 @@ public sealed class ImportDashboardHandler(
 
             // The same checks as any dashboard; the pictures are "existing" widgets, as the server just made them.
             var definition = await DashboardValidator.NormalizeAsync(
-                new DashboardDefinition(widgets, filters, tabs.Count > 0 ? tabs : null), charts, organizationId, pictures, ct);
+                new DashboardDefinition(widgets, filters, tabs.Count > 0 ? tabs : null, package.ReloadSeconds), charts, organizationId, pictures, ct);
 
             string? backgroundKey = null;
             if (package.Background is { } background)
@@ -351,7 +351,8 @@ public sealed class DuplicateDashboardHandler(
             var copied = new DashboardDefinition(
                 widgets,
                 definition.Filters.Select(f => f with { Id = Guid.NewGuid() }).ToList(),
-                definition.Tabs?.Select(t => t with { Id = tabIds[t.Id] }).ToList() is { Count: > 0 } tabs ? tabs : null);
+                definition.Tabs?.Select(t => t with { Id = tabIds[t.Id] }).ToList() is { Count: > 0 } tabs ? tabs : null,
+                definition.ReloadSeconds);
 
             var wanted = string.IsNullOrWhiteSpace(request?.Name) ? $"Copy of {source.Name}" : request!.Name!;
             var name = await DashboardNames.UniqueAsync(dashboards, organizationId, wanted, ct);

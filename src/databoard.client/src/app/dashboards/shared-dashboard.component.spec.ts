@@ -178,6 +178,44 @@ describe('SharedDashboardComponent', () => {
     expect(buttons()).toEqual([]); // nothing to print, no filters
   });
 
+  describe('reload interval', () => {
+    afterEach(() => vi.useRealTimers());
+
+    it('says nothing when the dashboard does not reload', () => {
+      open();
+      http.expectOne(runUrl).flush(run());
+      fixture.detectChanges();
+
+      expect(el().querySelector('.reload')).toBeNull();
+    });
+
+    it('tells the visitor how often it reloads and when it last did', () => {
+      open({ ...page(), reloadSeconds: 60 });
+      http.expectOne(runUrl).flush(run());
+      fixture.detectChanges();
+
+      expect(el().querySelector('.reload')?.textContent?.replace(/\s+/g, ' ')).toMatch(/Reloads every 1 minute\. Updated .+\./);
+    });
+
+    it('runs the charts again on the interval with the filters typed, quietly', () => {
+      vi.useFakeTimers();
+      open({ ...page(), reloadSeconds: 30 });
+      http.expectOne(runUrl).flush(run());
+      fixture.detectChanges();
+      const input = el().querySelector('input') as HTMLInputElement;
+      input.value = 'Auckland';
+      input.dispatchEvent(new Event('input'));
+
+      vi.advanceTimersByTime(30_000);
+      const again = http.expectOne(runUrl);
+      fixture.detectChanges();
+
+      expect(again.request.body).toEqual({ filters: { [F_REGION]: ['Auckland'] } });
+      expect((el().querySelector('button.apply') as HTMLButtonElement).disabled).toBe(false);
+      again.flush(run());
+    });
+  });
+
   describe('background picture', () => {
     beforeEach(() => {
       vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:picture');
