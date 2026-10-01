@@ -28,6 +28,7 @@ builder.Services.AddExceptionHandler<ApplicationExceptionHandler>();
 // Options are read lazily so settings supplied after startup (for example by tests) are honoured.
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 	.AddJwtBearer()
+	.AddGitHubSignIn()
 	// Personal access tokens are for the MCP endpoint only; the rest of the API takes a sign-in (JWT) and nothing else.
 	.AddScheme<Microsoft.AspNetCore.Authentication.AuthenticationSchemeOptions, ApiTokenAuthenticationHandler>(ApiTokenDefaults.Scheme, null);
 builder.Services.AddDataBoardMcp();

@@ -1,7 +1,11 @@
 using DataBoard.Application.Identity;
+using System.Security.Claims;
+using DataBoard.Server.Infrastructure;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.JsonWebTokens;
 
 namespace DataBoard.Server.Controllers;
@@ -9,7 +13,7 @@ namespace DataBoard.Server.Controllers;
 [ApiController]
 [Route("api/auth")]
 [EnableRateLimiting("auth")]
-public class AuthController(IIdentityService identity, IWebHostEnvironment env) : ControllerBase
+public class AuthController(IIdentityService identity, IWebHostEnvironment env, IOptions<GitHubOptions> github) : ControllerBase
 {
 	public const string RefreshCookieName = "databoard_refresh";
 
@@ -35,6 +39,60 @@ public class AuthController(IIdentityService identity, IWebHostEnvironment env) 
 		SetRefreshCookie(session);
 		return ToResponse(session);
 	}
+
+	public sealed record ProvidersResponse(bool GitHub);
+
+	/// <summary>Which ways of signing in besides a password are set up, so the sign-in page offers only those.</summary>
+	[HttpGet("providers")]
+	[AllowAnonymous]
+	public ActionResult<ProvidersResponse> Providers() => new ProvidersResponse(github.Value.Enabled);
+
+	/// <summary>Sends the browser to GitHub. It comes back to <c>github/callback</c> and then to <see cref="GitHubComplete"/>.</summary>
+	[HttpGet("github")]
+	[AllowAnonymous]
+	public IActionResult GitHub([FromQuery] string? returnUrl)
+	{
+		if (!github.Value.Enabled) return NotFound();
+
+		var complete = "/api/auth/github/complete";
+		if (LocalPath(returnUrl) is { } path) complete += "?returnUrl=" + Uri.EscapeDataString(path);
+		return Challenge(new AuthenticationProperties { RedirectUri = complete }, GitHubSignIn.Scheme);
+	}
+
+	/// <summary>
+	/// The last step: turns what GitHub said into a DataBoard sign-in (the same refresh cookie a password sign-in sets) and
+	/// goes back to the app, which picks the session up through <c>refresh</c>. Whatever goes wrong ends at the sign-in page.
+	/// </summary>
+	[HttpGet("github/complete")]
+	[AllowAnonymous]
+	public async Task<IActionResult> GitHubComplete([FromQuery] string? returnUrl, CancellationToken ct)
+	{
+		var result = await HttpContext.AuthenticateAsync(GitHubSignIn.ExternalScheme);
+		await HttpContext.SignOutAsync(GitHubSignIn.ExternalScheme); // the answer is used once
+		if (!github.Value.Enabled || result.Principal is not { } who) return LocalRedirect("/login?error=github");
+
+		var key = who.FindFirstValue(ClaimTypes.NameIdentifier);
+		var email = who.FindFirstValue(GitHubSignIn.EmailClaim);
+		if (string.IsNullOrEmpty(key)) return LocalRedirect("/login?error=github");
+		if (string.IsNullOrEmpty(email)) return LocalRedirect("/login?error=github-email");
+
+		var name = who.FindFirstValue(GitHubSignIn.NameClaim) ?? who.FindFirstValue(GitHubSignIn.LoginClaim);
+		try
+		{
+			var session = await identity.SignInExternalAsync(new ExternalIdentity("GitHub", key, email, EmailVerified: true, name), ct);
+			SetRefreshCookie(session);
+		}
+		catch (Application.Common.UnauthorizedException)
+		{
+			return LocalRedirect("/login?error=github");
+		}
+		return LocalRedirect(LocalPath(returnUrl) ?? "/");
+	}
+
+	/// <summary>A path on this site and nothing else, so a sign-in link cannot be made to send people elsewhere.</summary>
+	private static string? LocalPath(string? url) =>
+		!string.IsNullOrEmpty(url) && url.Length < 500 && url[0] == '/' && !url.StartsWith("//", StringComparison.Ordinal)
+			&& !url.Contains('\\') && !url.Any(char.IsControl) ? url : null;
 
 	[HttpPost("refresh")]
 	[AllowAnonymous]

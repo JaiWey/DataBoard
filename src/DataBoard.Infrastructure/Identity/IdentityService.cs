@@ -88,6 +88,57 @@ internal sealed class IdentityService(
         return await IssueSessionAsync(user, ct);
     }
 
+    public async Task<AuthSession> SignInExternalAsync(ExternalIdentity identity, CancellationToken ct = default)
+    {
+        const string Refused = "Could not sign in with that account.";
+
+        var known = await users.FindByLoginAsync(identity.Provider, identity.ProviderKey);
+        if (known is not null)
+        {
+            if (await users.IsLockedOutAsync(known)) throw new UnauthorizedException(Refused);
+            return await IssueSessionAsync(known, ct);
+        }
+
+        // Someone new to this service: the email is all there is to go on, and only a verified one counts.
+        var email = (identity.Email ?? string.Empty).Trim();
+        if (!identity.EmailVerified || email.Length == 0)
+            throw new UnauthorizedException($"{identity.Provider} did not share a verified email address.");
+
+        var login = new UserLoginInfo(identity.Provider, identity.ProviderKey, identity.Provider);
+        var existing = await users.FindByEmailAsync(email);
+        if (existing is not null)
+        {
+            if (await users.IsLockedOutAsync(existing)) throw new UnauthorizedException(Refused);
+            if (!(await users.AddLoginAsync(existing, login)).Succeeded) throw new UnauthorizedException(Refused);
+
+            // Registering never checked the email, so anyone could have made this account with a password they know,
+            // in the hope that its real owner comes along. Whoever proved the email now owns it: the password stops
+            // working and every other sign-in ends.
+            if (!existing.EmailConfirmed)
+            {
+                existing.EmailConfirmed = true;
+                existing.PasswordHash = null;
+                existing.SecurityStamp = Guid.NewGuid().ToString("N");
+                if (!(await users.UpdateAsync(existing)).Succeeded) throw new UnauthorizedException(Refused);
+                await RevokeAllAsync(existing.Id, clock.UtcNow, ct);
+            }
+            return await IssueSessionAsync(existing, ct);
+        }
+
+        var name = (identity.DisplayName ?? string.Empty).Trim();
+        if (name.Length == 0) name = email.Split('@')[0];
+        if (name.Length > AppUser.MaxDisplayNameLength) name = name[..AppUser.MaxDisplayNameLength];
+
+        var user = new AppUser { UserName = email, Email = email, EmailConfirmed = true, DisplayName = name, CreatedUtc = clock.UtcNow };
+        if (!(await users.CreateAsync(user)).Succeeded) throw new UnauthorizedException(Refused);
+        if (!(await users.AddLoginAsync(user, login)).Succeeded)
+        {
+            await users.DeleteAsync(user);
+            throw new UnauthorizedException(Refused);
+        }
+        return await IssueSessionAsync(user, ct);
+    }
+
     public async Task<AuthSession> RefreshAsync(string refreshToken, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(refreshToken))

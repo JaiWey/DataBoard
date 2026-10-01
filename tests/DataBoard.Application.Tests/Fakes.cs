@@ -228,6 +228,8 @@ internal sealed class FakeIdentity : IIdentityService
         throw new NotSupportedException();
     public Task<AuthSession> LoginAsync(string email, string password, CancellationToken ct = default) =>
         throw new NotSupportedException();
+    public Task<AuthSession> SignInExternalAsync(ExternalIdentity identity, CancellationToken ct = default) =>
+        throw new NotSupportedException();
     public Task<AuthSession> RefreshAsync(string refreshToken, CancellationToken ct = default) =>
         throw new NotSupportedException();
     public Task LogoutAsync(string refreshToken, CancellationToken ct = default) =>

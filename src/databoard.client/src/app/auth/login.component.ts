@@ -5,12 +5,19 @@ import { MatCardModule } from '@angular/material/card';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
-import { Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { AuthService } from './auth.service';
+import { GitHubSignInComponent } from './github-sign-in.component';
+
+/** What the server says, by the code it puts in the address when a sign-in with GitHub ends here. */
+const GITHUB_ERRORS: Record<string, string> = {
+  github: 'Could not sign in with GitHub. Try again.',
+  'github-email': 'GitHub did not share a verified email address. Verify your primary email at GitHub, or use a password.',
+};
 
 @Component({
   selector: 'app-login',
-  imports: [ReactiveFormsModule, RouterLink, MatCardModule, MatFormFieldModule, MatInputModule, MatButtonModule],
+  imports: [ReactiveFormsModule, RouterLink, MatCardModule, MatFormFieldModule, MatInputModule, MatButtonModule, GitHubSignInComponent],
   template: `
     <mat-card class="auth">
       <mat-card-header><mat-card-title>Sign in</mat-card-title></mat-card-header>
@@ -29,6 +36,7 @@ import { AuthService } from './auth.service';
         @if (error(); as e) {
           <p class="fail" role="alert">{{ e }}</p>
         }
+        <app-github-sign-in />
         <p>No account? <a routerLink="/register">Register</a></p>
       </mat-card-content>
     </mat-card>
@@ -43,13 +51,14 @@ export class LoginComponent {
   private readonly auth = inject(AuthService);
   private readonly router = inject(Router);
   private readonly fb = inject(FormBuilder);
+  private readonly route = inject(ActivatedRoute);
 
   protected readonly form = this.fb.nonNullable.group({
     email: ['', [Validators.required, Validators.email]],
     password: ['', Validators.required],
   });
   protected readonly busy = signal(false);
-  protected readonly error = signal<string | null>(null);
+  protected readonly error = signal<string | null>(GITHUB_ERRORS[this.route.snapshot.queryParamMap.get('error') ?? ''] ?? null);
 
   protected submit(): void {
     if (this.form.invalid) return;

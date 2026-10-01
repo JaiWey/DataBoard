@@ -7,10 +7,11 @@ import { MatInputModule } from '@angular/material/input';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { AuthService } from './auth.service';
+import { GitHubSignInComponent } from './github-sign-in.component';
 
 @Component({
   selector: 'app-register',
-  imports: [ReactiveFormsModule, RouterLink, MatCardModule, MatFormFieldModule, MatInputModule, MatButtonModule],
+  imports: [ReactiveFormsModule, RouterLink, MatCardModule, MatFormFieldModule, MatInputModule, MatButtonModule, GitHubSignInComponent],
   template: `
     <mat-card class="auth">
       <mat-card-header><mat-card-title>Create account</mat-card-title></mat-card-header>
@@ -34,6 +35,7 @@ import { AuthService } from './auth.service';
         @for (message of errors(); track message) {
           <p class="fail" role="alert">{{ message }}</p>
         }
+        <app-github-sign-in />
         <p>Already registered? <a routerLink="/login">Sign in</a></p>
       </mat-card-content>
     </mat-card>
