@@ -186,6 +186,9 @@ internal sealed class IdentityService(
         return user is null ? null : ToInfo(user);
     }
 
+    public async Task<IReadOnlyList<UserInfo>> GetUsersAsync(IReadOnlyCollection<Guid> userIds, CancellationToken ct = default) =>
+        (await users.Users.AsNoTracking().Where(u => userIds.Contains(u.Id)).ToListAsync(ct)).Select(ToInfo).ToList();
+
     public async Task<Guid?> FindUserIdByEmailAsync(string email, CancellationToken ct = default)
     {
         var user = await users.FindByEmailAsync((email ?? string.Empty).Trim());

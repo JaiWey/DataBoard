@@ -20,6 +20,33 @@ public class OrganizationTests
     public void Create_rejects_too_long_name() =>
         Assert.Throws<ArgumentException>(() => Organization.Create(new string('a', Organization.MaxNameLength + 1), Now));
 
+    [Fact]
+    public void ChangeRole_sets_the_role_and_nothing_else()
+    {
+        var org = Guid.NewGuid();
+        var user = Guid.NewGuid();
+        var member = OrganizationMember.Create(org, user, OrganizationRole.Viewer, Now);
+
+        member.ChangeRole(OrganizationRole.Owner);
+
+        Assert.Equal(OrganizationRole.Owner, member.Role);
+        Assert.Equal((org, user, Now), (member.OrganizationId, member.UserId, member.JoinedUtc));
+        Assert.True(member.HasAtLeast(OrganizationRole.Owner));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(4)]
+    [InlineData(-1)]
+    public void ChangeRole_rejects_an_unknown_role_and_keeps_the_old_one(int role)
+    {
+        var member = OrganizationMember.Create(Guid.NewGuid(), Guid.NewGuid(), OrganizationRole.Editor, Now);
+
+        Assert.Throws<ArgumentException>(() => member.ChangeRole((OrganizationRole)role));
+
+        Assert.Equal(OrganizationRole.Editor, member.Role);
+    }
+
     [Theory]
     [InlineData(OrganizationRole.Owner, OrganizationRole.Owner, true)]
     [InlineData(OrganizationRole.Owner, OrganizationRole.Viewer, true)]

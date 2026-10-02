@@ -28,5 +28,12 @@ public sealed class OrganizationMember
         };
     }
 
+    public void ChangeRole(OrganizationRole role)
+    {
+        if (!Enum.IsDefined(role))
+            throw new ArgumentException("Unknown role.", nameof(role));
+        Role = role;
+    }
+
     public bool HasAtLeast(OrganizationRole required) => Role >= required;
 }

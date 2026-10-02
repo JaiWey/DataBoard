@@ -20,6 +20,17 @@ internal sealed class OrganizationRepository(AppDbContext db) : IOrganizationRep
             .AsNoTracking()
             .SingleOrDefaultAsync(m => m.OrganizationId == organizationId && m.UserId == userId, ct);
 
+    public async Task<IReadOnlyList<OrganizationMember>> ListMembersAsync(Guid organizationId, CancellationToken ct = default) =>
+        await db.OrganizationMembers.AsNoTracking().Where(m => m.OrganizationId == organizationId).ToListAsync(ct);
+
+    public Task<OrganizationMember?> GetMemberForUpdateAsync(Guid organizationId, Guid userId, CancellationToken ct = default) =>
+        db.OrganizationMembers.SingleOrDefaultAsync(m => m.OrganizationId == organizationId && m.UserId == userId, ct);
+
+    public Task<int> CountOwnersAsync(Guid organizationId, CancellationToken ct = default) =>
+        db.OrganizationMembers.CountAsync(m => m.OrganizationId == organizationId && m.Role == OrganizationRole.Owner, ct);
+
+    public void RemoveMember(OrganizationMember member) => db.OrganizationMembers.Remove(member);
+
     public async Task<IReadOnlyList<OrganizationSummary>> ListForUserAsync(Guid userId, CancellationToken ct = default) =>
         await db.OrganizationMembers
             .AsNoTracking()

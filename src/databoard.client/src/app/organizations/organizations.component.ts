@@ -33,6 +33,7 @@ interface Organization {
               <a mat-button [routerLink]="['/organizations', org.id]">Data sources</a>
               <a mat-button [routerLink]="['/organizations', org.id, 'datasets']">Datasets</a>
               <a mat-button [routerLink]="['/organizations', org.id, 'dashboards']">Dashboards</a>
+              <a mat-button [routerLink]="['/organizations', org.id, 'members']">Members</a>
             </mat-card-actions>
           </mat-card>
         }

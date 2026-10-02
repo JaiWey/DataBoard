@@ -22,6 +22,11 @@ export const routes: Routes = [
     loadComponent: () => import('./organizations/data-sources.component').then((m) => m.DataSourcesComponent),
   },
   {
+    path: 'organizations/:id/members',
+    canActivate: [authGuard],
+    loadComponent: () => import('./organizations/members.component').then((m) => m.MembersComponent),
+  },
+  {
     path: 'organizations/:id/datasets',
     canActivate: [authGuard],
     loadComponent: () => import('./organizations/datasets.component').then((m) => m.DatasetsComponent),

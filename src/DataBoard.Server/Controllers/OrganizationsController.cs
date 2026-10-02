@@ -22,6 +22,27 @@ public class OrganizationsController : ControllerBase
 		return Created($"api/organizations/{created.Id}", created);
 	}
 
+	[HttpGet("{organizationId:guid}/members")]
+	public async Task<ActionResult<IReadOnlyList<OrganizationMemberDto>>> ListMembers(
+		Guid organizationId, [FromServices] ListMembersHandler handler, CancellationToken ct) =>
+		Ok(await handler.HandleAsync(organizationId, ct));
+
+	[HttpPut("{organizationId:guid}/members/{userId:guid}")]
+	public async Task<IActionResult> ChangeMemberRole(
+		Guid organizationId, Guid userId, ChangeMemberRoleRequest body, [FromServices] ChangeMemberRoleHandler handler, CancellationToken ct)
+	{
+		await handler.HandleAsync(organizationId, userId, body, ct);
+		return NoContent();
+	}
+
+	[HttpDelete("{organizationId:guid}/members/{userId:guid}")]
+	public async Task<IActionResult> RemoveMember(
+		Guid organizationId, Guid userId, [FromServices] RemoveMemberHandler handler, CancellationToken ct)
+	{
+		await handler.HandleAsync(organizationId, userId, ct);
+		return NoContent();
+	}
+
 	[HttpPost("{organizationId:guid}/members")]
 	public async Task<IActionResult> AddMember(
 		Guid organizationId, AddMemberRequest body, [FromServices] AddMemberHandler handler, CancellationToken ct)

@@ -162,6 +162,17 @@ internal sealed class FakeOrganizationRepo : IOrganizationRepository
     public Task<OrganizationMember?> GetMemberAsync(Guid organizationId, Guid userId, CancellationToken ct = default) =>
         Task.FromResult(Members.SingleOrDefault(m => m.OrganizationId == organizationId && m.UserId == userId));
 
+    public Task<IReadOnlyList<OrganizationMember>> ListMembersAsync(Guid organizationId, CancellationToken ct = default) =>
+        Task.FromResult<IReadOnlyList<OrganizationMember>>(Members.Where(m => m.OrganizationId == organizationId).ToList());
+
+    public Task<OrganizationMember?> GetMemberForUpdateAsync(Guid organizationId, Guid userId, CancellationToken ct = default) =>
+        GetMemberAsync(organizationId, userId, ct);
+
+    public Task<int> CountOwnersAsync(Guid organizationId, CancellationToken ct = default) =>
+        Task.FromResult(Members.Count(m => m.OrganizationId == organizationId && m.Role == OrganizationRole.Owner));
+
+    public void RemoveMember(OrganizationMember member) => Members.Remove(member);
+
     public Task<IReadOnlyList<OrganizationSummary>> ListForUserAsync(Guid userId, CancellationToken ct = default) =>
         Task.FromResult<IReadOnlyList<OrganizationSummary>>(
             Members.Where(m => m.UserId == userId)
@@ -228,6 +239,11 @@ internal sealed class FakeIdentity : IIdentityService
         throw new NotSupportedException();
     public Task<AuthSession> LoginAsync(string email, string password, CancellationToken ct = default) =>
         throw new NotSupportedException();
+    /// <summary>The people the identity system knows, for the member list.</summary>
+    public List<UserInfo> People { get; } = [];
+
+    public Task<IReadOnlyList<UserInfo>> GetUsersAsync(IReadOnlyCollection<Guid> userIds, CancellationToken ct = default) =>
+        Task.FromResult<IReadOnlyList<UserInfo>>(People.Where(p => userIds.Contains(p.Id)).ToList());
     public Task<AuthSession> SignInExternalAsync(ExternalIdentity identity, CancellationToken ct = default) =>
         throw new NotSupportedException();
     public Task<AuthSession> RefreshAsync(string refreshToken, CancellationToken ct = default) =>

@@ -38,5 +38,8 @@ public interface IIdentityService
 
     Task<UserInfo?> GetUserAsync(Guid userId, CancellationToken ct = default);
 
+    /// <summary>Who these ids are. An id with no account (deleted) is left out.</summary>
+    Task<IReadOnlyList<UserInfo>> GetUsersAsync(IReadOnlyCollection<Guid> userIds, CancellationToken ct = default);
+
     Task<Guid?> FindUserIdByEmailAsync(string email, CancellationToken ct = default);
 }
