@@ -8,6 +8,7 @@ import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { AuthService } from './auth.service';
 import { GitHubSignInComponent } from './github-sign-in.component';
+import { returnQuery, safeReturnUrl } from './return-url';
 
 /** What the server says, by the code it puts in the address when a sign-in with GitHub ends here. */
 const GITHUB_ERRORS: Record<string, string> = {
@@ -36,8 +37,8 @@ const GITHUB_ERRORS: Record<string, string> = {
         @if (error(); as e) {
           <p class="fail" role="alert">{{ e }}</p>
         }
-        <app-github-sign-in />
-        <p>No account? <a routerLink="/register">Register</a></p>
+        <app-github-sign-in [returnUrl]="returnUrl" />
+        <p>No account? <a routerLink="/register" [queryParams]="returnQuery">Register</a></p>
       </mat-card-content>
     </mat-card>
   `,
@@ -57,6 +58,9 @@ export class LoginComponent {
     email: ['', [Validators.required, Validators.email]],
     password: ['', Validators.required],
   });
+  /** The page that sent the person here, if any: where to go once they are in. */
+  protected readonly returnUrl = safeReturnUrl(this.route.snapshot.queryParamMap.get('returnUrl'));
+  protected readonly returnQuery = returnQuery(this.returnUrl);
   protected readonly busy = signal(false);
   protected readonly error = signal<string | null>(GITHUB_ERRORS[this.route.snapshot.queryParamMap.get('error') ?? ''] ?? null);
 
@@ -67,7 +71,7 @@ export class LoginComponent {
 
     const { email, password } = this.form.getRawValue();
     this.auth.login(email, password).subscribe({
-      next: () => this.router.navigate(['/']),
+      next: () => this.router.navigateByUrl(this.returnUrl ?? '/'),
       error: (e: HttpErrorResponse) => {
         this.busy.set(false);
         this.error.set(e.status === 401 ? 'Invalid email or password.' : 'Sign in failed. Try again.');

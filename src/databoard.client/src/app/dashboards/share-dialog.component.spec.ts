@@ -8,7 +8,11 @@ const ORG = '11111111-1111-1111-1111-111111111111';
 const DASH = '44444444-4444-4444-4444-444444444444';
 const sharesUrl = `/api/organizations/${ORG}/dashboards/${DASH}/shares`;
 
-const share = (id: string, expiresUtc: string | null = '2099-01-01T00:00:00Z', expired = false) => ({ id, createdUtc: '2026-10-09T10:00:00Z', expiresUtc, expired });
+const PARTNER = '22222222-2222-2222-2222-222222222222';
+const mine = [{ id: ORG, name: 'Home', role: 'Owner' }, { id: PARTNER, name: 'Partner', role: 'Editor' }];
+
+const share = (id: string, expiresUtc: string | null = '2099-01-01T00:00:00Z', expired = false, organizationIds: string[] = []) =>
+  ({ id, createdUtc: '2026-10-09T10:00:00Z', expiresUtc, expired, organizationIds });
 
 describe('ShareDialogComponent', () => {
   let fixture: ComponentFixture<ShareDialogComponent>;
@@ -27,6 +31,7 @@ describe('ShareDialogComponent', () => {
     fixture = TestBed.createComponent(ShareDialogComponent);
     fixture.detectChanges();
     http.expectOne(sharesUrl).flush(existing);
+    http.expectOne('/api/organizations').flush(mine);
     fixture.detectChanges();
   };
 
@@ -70,7 +75,7 @@ describe('ShareDialogComponent', () => {
 
     button('create').click();
     const post = http.expectOne({ method: 'POST', url: sharesUrl });
-    expect(post.request.body).toEqual({ expiresInDays: 30 });
+    expect(post.request.body).toEqual({ expiresInDays: 30, organizationIds: [] });
     post.flush({ id: 's9', token: 'T0KEN', createdUtc: '', expiresUtc: '2026-11-08T00:00:00Z' });
     http.expectOne({ method: 'GET', url: sharesUrl }).flush([share('s9'), share('s1')]);
     fixture.detectChanges();
@@ -93,7 +98,7 @@ describe('ShareDialogComponent', () => {
     button('create').click();
 
     const post = http.expectOne({ method: 'POST', url: sharesUrl });
-    expect(post.request.body).toEqual({ neverExpires: true });
+    expect(post.request.body).toEqual({ neverExpires: true, organizationIds: [] });
     post.flush({ id: 'b', token: 'B', createdUtc: '', expiresUtc: null });
     http.expectOne({ method: 'GET', url: sharesUrl }).flush([]);
   });
@@ -169,5 +174,93 @@ describe('ShareDialogComponent', () => {
     http.expectOne({ method: 'GET', url: sharesUrl }).flush([]);
     fixture.detectChanges();
     expect(el().querySelector('input[aria-label="Share link"]')).toBeNull();
+  });
+
+  describe('limiting a link to organizations', () => {
+    const radio = (label: string) => el().querySelector(`input[aria-label="${label}"]`) as HTMLInputElement;
+    const org = (name: string) => el().querySelector(`input[aria-label="Members of ${name}"]`) as HTMLInputElement | null;
+    const pick = (label: string) => {
+      radio(label).click();
+      fixture.detectChanges();
+    };
+
+    it('offers anyone with the link first, with no organizations to choose from', () => {
+      open();
+
+      expect(radio('Anyone with the link').checked).toBe(true);
+      expect(radio('Only members of chosen organizations').checked).toBe(false);
+      expect(org('Home')).toBeNull();
+      expect(el().textContent).toContain('without signing in');
+    });
+
+    it('lists my organizations when limited, with the dashboard\'s own ticked, and changes what the warning says', () => {
+      open();
+
+      pick('Only members of chosen organizations');
+
+      expect(org('Home')!.checked).toBe(true);
+      expect(org('Partner')!.checked).toBe(false);
+      expect(el().querySelector('.warning')?.textContent).toContain('signed in and belong to one of the organizations');
+      expect(el().textContent).not.toContain('without signing in');
+    });
+
+    it('sends the ticked organizations, and nothing when it goes back to anyone', () => {
+      open();
+      pick('Only members of chosen organizations');
+      org('Partner')!.click();
+      fixture.detectChanges();
+
+      button('create').click();
+      const limited = http.expectOne({ method: 'POST', url: sharesUrl });
+      expect(limited.request.body).toEqual({ expiresInDays: 30, organizationIds: [ORG, PARTNER] });
+      limited.flush({ id: 'a', token: 'A', createdUtc: '', expiresUtc: null, organizationIds: [ORG, PARTNER] });
+      http.expectOne({ method: 'GET', url: sharesUrl }).flush([]);
+      fixture.detectChanges();
+
+      pick('Anyone with the link');
+      button('create').click();
+      const open2 = http.expectOne({ method: 'POST', url: sharesUrl });
+      expect(open2.request.body).toEqual({ expiresInDays: 30, organizationIds: [] });
+      open2.flush({ id: 'b', token: 'B', createdUtc: '', expiresUtc: null });
+      http.expectOne({ method: 'GET', url: sharesUrl }).flush([]);
+    });
+
+    it('will not make a limited link with no organization ticked', () => {
+      open();
+      pick('Only members of chosen organizations');
+
+      org('Home')!.click();
+      fixture.detectChanges();
+
+      expect(button('create').disabled).toBe(true);
+      org('Partner')!.click();
+      fixture.detectChanges();
+      expect(button('create').disabled).toBe(false);
+    });
+
+    it('says in the list who each link is for, naming only organizations the person is in', () => {
+      const stranger = '33333333-3333-3333-3333-333333333333';
+      open([share('s1'), share('s2', null, false, [PARTNER]), share('s3', null, false, [ORG, stranger])]);
+
+      const texts = Array.from(el().querySelectorAll('.shares .who-can')).map((e) => e.textContent?.trim());
+
+      expect(texts).toEqual([
+        'anyone with the link',
+        'signed-in members of Partner',
+        'signed-in members of Home, another organization',
+      ]);
+    });
+
+    it('shows why a limited link was refused', () => {
+      open();
+      pick('Only members of chosen organizations');
+
+      button('create').click();
+      http.expectOne({ method: 'POST', url: sharesUrl }).flush(
+        { errors: { OrganizationIds: ['A link can only be limited to organizations you belong to.'] } }, { status: 400, statusText: 'Bad Request' });
+      fixture.detectChanges();
+
+      expect(el().querySelector('[role=alert]')?.textContent).toContain('organizations you belong to');
+    });
   });
 });

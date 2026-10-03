@@ -171,6 +171,8 @@ export interface DashboardShare {
   createdUtc: string;
   expiresUtc: string | null;
   expired: boolean;
+  /** Who may open it: empty is anyone with the link, otherwise signed-in members of these organizations. */
+  organizationIds?: string[];
 }
 
 export interface DashboardShareCreated {
@@ -179,6 +181,7 @@ export interface DashboardShareCreated {
   token: string;
   createdUtc: string;
   expiresUtc: string | null;
+  organizationIds?: string[];
 }
 
 /** How long a new link lasts: a number of days, or explicitly forever. */
@@ -320,8 +323,9 @@ export class DashboardsService {
     return this.http.get<DashboardShare[]>(this.url(orgId, `/${id}/shares`));
   }
 
-  createShare(orgId: string, id: string, lifetime: ShareLifetime): Observable<DashboardShareCreated> {
-    return this.http.post<DashboardShareCreated>(this.url(orgId, `/${id}/shares`), lifetime);
+  /** `organizationIds` empty: anyone with the link. Otherwise only signed-in members of those organizations (ones you belong to). */
+  createShare(orgId: string, id: string, lifetime: ShareLifetime, organizationIds: string[] = []): Observable<DashboardShareCreated> {
+    return this.http.post<DashboardShareCreated>(this.url(orgId, `/${id}/shares`), { ...lifetime, organizationIds });
   }
 
   revokeShare(orgId: string, id: string, shareId: string): Observable<void> {

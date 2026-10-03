@@ -1,6 +1,6 @@
 import { Component, DestroyRef, OnInit, computed, inject, signal } from '@angular/core';
 import { FormBuilder, FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
 import { MatCardModule } from '@angular/material/card';
 import { MatFormFieldModule } from '@angular/material/form-field';
@@ -17,6 +17,7 @@ import { ImageWidgetComponent } from './image-widget.component';
 import { DashboardGridComponent } from './dashboard-grid.component';
 import { ago } from '../shared/relative-time';
 import { autoReload, clock, reloadLabel } from '../shared/auto-reload';
+import { returnQuery } from '../auth/return-url';
 import { parseFilterInput } from './dashboard.component';
 import { DashboardRun, DashboardWidget, FilterValues, SHARED_FILTER_OPERATORS, WidgetResult } from './dashboards.service';
 import { SharedChart, SharedDashboard, SharedDashboardsService } from './shared-dashboards.service';
@@ -27,7 +28,7 @@ import { SharedChart, SharedDashboard, SharedDashboardsService } from './shared-
  */
 @Component({
   selector: 'app-shared-dashboard',
-  imports: [ReactiveFormsModule, MatCardModule, MatButtonModule, MatFormFieldModule, MatInputModule, ChartViewComponent, DashboardGridComponent, ExportMenuComponent, BackgroundLayerComponent, ImageWidgetComponent, MarkdownComponent, DashboardTabBarComponent],
+  imports: [ReactiveFormsModule, RouterLink, MatCardModule, MatButtonModule, MatFormFieldModule, MatInputModule, ChartViewComponent, DashboardGridComponent, ExportMenuComponent, BackgroundLayerComponent, ImageWidgetComponent, MarkdownComponent, DashboardTabBarComponent],
   template: `
     <header class="bar">
       <svg viewBox="0 0 32 32" width="24" height="24" aria-hidden="true">
@@ -137,6 +138,9 @@ import { SharedChart, SharedDashboard, SharedDashboardsService } from './shared-
       @for (message of errors(); track message) {
         <p class="fail" role="alert">{{ message }}</p>
       }
+      @if (notAllowed()) {
+        <p class="no-print"><a class="other-account" [routerLink]="['/login']" [queryParams]="signInAgain">Sign in with another account</a></p>
+      }
     </main>
   `,
   styles: `
@@ -173,6 +177,10 @@ export class SharedDashboardComponent implements OnInit {
   protected readonly run = signal<DashboardRun | null>(null);
   protected readonly errors = signal<string[]>([]);
   protected readonly busy = signal(false);
+  /** Signed in, but not in one of the organizations the link is for. */
+  protected readonly notAllowed = signal(false);
+  /** Where signing in as somebody else comes back to. */
+  protected signInAgain: { returnUrl: string } | undefined;
   protected readonly loadedAt = signal('');
   protected readonly reloadText = reloadLabel;
   private readonly reloading = autoReload(() => this.dashboard()?.reloadSeconds, () => this.execute(true), () => this.busy());
@@ -208,13 +216,19 @@ export class SharedDashboardComponent implements OnInit {
 
   ngOnInit(): void {
     this.token = this.route.snapshot.paramMap.get('token') ?? '';
+    this.signInAgain = returnQuery(`/shared/${this.token}`);
     this.api.get(this.token).subscribe({
       next: (d) => {
         this.filterForm = this.fb.nonNullable.group(Object.fromEntries(d.filters.map((f) => [f.id, this.fb.nonNullable.control('')])));
         this.dashboard.set(d);
         this.execute();
       },
-      error: (e) => this.errors.set(problemMessages(e, 'Could not open this dashboard.')),
+      error: (e) => {
+        this.notAllowed.set(e?.status === 403);
+        // A 403 here is the link saying who it is for, which is worth showing as it is.
+        const reason = e?.status === 403 && typeof e.error?.detail === 'string' ? e.error.detail : null;
+        this.errors.set(reason ? [reason] : problemMessages(e, 'Could not open this dashboard.'));
+      },
     });
   }
 

@@ -148,11 +148,11 @@ public sealed class GetImageWidgetHandler(IDashboardRepository dashboards, IImag
 
 /// <summary>The picture of a picture widget, for a visitor with a valid link (and only on that link's dashboard).</summary>
 public sealed class GetSharedImageWidgetHandler(
-    IDashboardShareRepository shares, IDashboardRepository dashboards, IImageStore images, IClock clock)
+    IDashboardShareRepository shares, IDashboardRepository dashboards, IImageStore images, IClock clock, SharedLinkAccess access)
 {
     public async Task<BackgroundImage> HandleAsync(string? token, Guid widgetId, CancellationToken ct = default)
     {
-        var (_, dashboard) = await SharedLinks.ResolveAsync(token, shares, dashboards, clock, ct);
+        var (_, dashboard) = await SharedLinks.ResolveAsync(token, shares, dashboards, clock, access, ct);
         return GetImageWidgetHandler.Open(dashboard, widgetId, images);
     }
 }

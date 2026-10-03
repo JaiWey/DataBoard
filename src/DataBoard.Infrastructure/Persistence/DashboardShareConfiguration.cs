@@ -12,6 +12,7 @@ internal sealed class DashboardShareConfiguration : IEntityTypeConfiguration<Das
     {
         builder.ToTable("dashboard_shares");
         builder.HasKey(s => s.Id);
+        builder.Property(s => s.AllowedOrganizationIds).HasColumnType("uuid[]").IsRequired();
         builder.Property(s => s.TokenHash).IsRequired().HasMaxLength(DashboardShare.TokenHashLength).IsFixedLength();
 
         // A link is found by its token, on every visit.

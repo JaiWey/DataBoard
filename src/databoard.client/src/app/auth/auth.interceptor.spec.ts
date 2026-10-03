@@ -22,7 +22,7 @@ describe('authInterceptor', () => {
       providers: [
         provideHttpClient(withInterceptors([authInterceptor])),
         provideHttpClientTesting(),
-        provideRouter([]),
+        provideRouter([{ path: '**', children: [] }]),
       ],
     });
     http = TestBed.inject(HttpClient);
@@ -99,6 +99,30 @@ describe('authInterceptor', () => {
     expect(status).toBe(401);
     expect(navigate).toHaveBeenCalledWith(['/login']);
     expect(auth.isAuthenticated()).toBe(false);
+  });
+
+  it('remembers the page that needed the sign-in, so signing in comes back to it', async () => {
+    signIn();
+    await router.navigateByUrl('/shared/T0KEN');
+    const navigate = vi.spyOn(router, 'navigate').mockResolvedValue(true);
+
+    http.get('/api/shared/dashboards/T0KEN').subscribe({ error: () => undefined });
+    httpMock.expectOne('/api/shared/dashboards/T0KEN').flush(null, { status: 401, statusText: 'Unauthorized' });
+    httpMock.expectOne('/api/auth/refresh').flush(null, { status: 401, statusText: 'Unauthorized' });
+
+    expect(navigate).toHaveBeenCalledWith(['/login'], { queryParams: { returnUrl: '/shared/T0KEN' } });
+  });
+
+  it('does not remember the sign-in pages themselves', async () => {
+    signIn();
+    await router.navigateByUrl('/register');
+    const navigate = vi.spyOn(router, 'navigate').mockResolvedValue(true);
+
+    http.get('/api/organizations').subscribe({ error: () => undefined });
+    httpMock.expectOne('/api/organizations').flush(null, { status: 401, statusText: 'Unauthorized' });
+    httpMock.expectOne('/api/auth/refresh').flush(null, { status: 401, statusText: 'Unauthorized' });
+
+    expect(navigate).toHaveBeenCalledWith(['/login']);
   });
 
   it('passes non-401 errors straight through without refreshing', () => {

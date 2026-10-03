@@ -25,6 +25,39 @@ public class DashboardShareTests
         Assert.Equal(Now.AddDays(30), share.ExpiresUtc);
     }
 
+    private static DashboardShare Limited(params Guid[] organizations) =>
+        DashboardShare.Create(Guid.NewGuid(), Guid.NewGuid(), Hash, Guid.NewGuid(), Now, null, organizations);
+
+    [Fact]
+    public void Is_public_unless_organizations_are_given()
+    {
+        Assert.False(Create().IsRestricted);
+        Assert.Empty(Create().AllowedOrganizationIds);
+        Assert.False(Limited().IsRestricted);
+    }
+
+    [Fact]
+    public void Limited_to_organizations_it_keeps_each_once()
+    {
+        var a = Guid.NewGuid();
+        var b = Guid.NewGuid();
+
+        var share = Limited(a, b, a);
+
+        Assert.True(share.IsRestricted);
+        Assert.Equal([a, b], share.AllowedOrganizationIds);
+    }
+
+    [Fact]
+    public void An_empty_organization_or_too_many_are_refused()
+    {
+        Assert.Throws<ArgumentException>(() => Limited(Guid.NewGuid(), Guid.Empty));
+        Assert.Throws<ArgumentException>(() =>
+            Limited(Enumerable.Range(0, DashboardShare.MaxAllowedOrganizations + 1).Select(_ => Guid.NewGuid()).ToArray()));
+        Assert.Equal(DashboardShare.MaxAllowedOrganizations,
+            Limited(Enumerable.Range(0, DashboardShare.MaxAllowedOrganizations).Select(_ => Guid.NewGuid()).ToArray()).AllowedOrganizationIds.Length);
+    }
+
     [Fact]
     public void Works_until_it_expires_and_not_after()
     {

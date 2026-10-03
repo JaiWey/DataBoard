@@ -5,9 +5,10 @@ import { MatCardModule } from '@angular/material/card';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
-import { Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { AuthService } from './auth.service';
 import { GitHubSignInComponent } from './github-sign-in.component';
+import { returnQuery, safeReturnUrl } from './return-url';
 
 @Component({
   selector: 'app-register',
@@ -35,8 +36,8 @@ import { GitHubSignInComponent } from './github-sign-in.component';
         @for (message of errors(); track message) {
           <p class="fail" role="alert">{{ message }}</p>
         }
-        <app-github-sign-in />
-        <p>Already registered? <a routerLink="/login">Sign in</a></p>
+        <app-github-sign-in [returnUrl]="returnUrl" />
+        <p>Already registered? <a routerLink="/login" [queryParams]="returnQuery">Sign in</a></p>
       </mat-card-content>
     </mat-card>
   `,
@@ -50,6 +51,11 @@ export class RegisterComponent {
   private readonly auth = inject(AuthService);
   private readonly router = inject(Router);
   private readonly fb = inject(FormBuilder);
+  private readonly route = inject(ActivatedRoute);
+
+  /** The page that sent the person here, if any: where to go once they are in. */
+  protected readonly returnUrl = safeReturnUrl(this.route.snapshot.queryParamMap.get('returnUrl'));
+  protected readonly returnQuery = returnQuery(this.returnUrl);
 
   protected readonly form = this.fb.nonNullable.group({
     displayName: ['', [Validators.required, Validators.maxLength(100)]],
@@ -66,7 +72,7 @@ export class RegisterComponent {
 
     const { email, password, displayName } = this.form.getRawValue();
     this.auth.register(email, password, displayName).subscribe({
-      next: () => this.router.navigate(['/']),
+      next: () => this.router.navigateByUrl(this.returnUrl ?? '/'),
       error: (e: HttpErrorResponse) => {
         this.busy.set(false);
         this.errors.set(this.messagesFrom(e));

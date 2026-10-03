@@ -3,6 +3,7 @@ import { inject } from '@angular/core';
 import { Router } from '@angular/router';
 import { catchError, switchMap, throwError } from 'rxjs';
 import { AuthService } from './auth.service';
+import { returnQuery } from './return-url';
 
 const isAuthEndpoint = (url: string) => url.startsWith('/api/auth/');
 const isApi = (url: string) => url.startsWith('/api/');
@@ -28,7 +29,10 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
       return auth.refresh().pipe(
         switchMap((token) => {
           if (!token) {
-            router.navigate(['/login']);
+            // After signing in, come back to the page that needed it.
+            const back = returnQuery(router.url);
+            if (back) router.navigate(['/login'], { queryParams: back });
+            else router.navigate(['/login']);
             return throwError(() => error);
           }
           return next(withToken(req, token));

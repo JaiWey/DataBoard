@@ -177,6 +177,10 @@ namespace DataBoard.Infrastructure.Persistence.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.PrimitiveCollection<Guid[]>("AllowedOrganizationIds")
+                        .IsRequired()
+                        .HasColumnType("uuid[]");
+
                     b.Property<Guid>("CreatedByUserId")
                         .HasColumnType("uuid");
 

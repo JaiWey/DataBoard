@@ -175,11 +175,11 @@ public sealed class GetDashboardBackgroundHandler(IDashboardRepository dashboard
 
 /// <summary>The picture behind a dashboard, for a visitor with a valid link (and only for that link's dashboard).</summary>
 public sealed class GetSharedDashboardBackgroundHandler(
-    IDashboardShareRepository shares, IDashboardRepository dashboards, IImageStore images, IClock clock)
+    IDashboardShareRepository shares, IDashboardRepository dashboards, IImageStore images, IClock clock, SharedLinkAccess access)
 {
     public async Task<BackgroundImage> HandleAsync(string? token, CancellationToken ct = default)
     {
-        var (_, dashboard) = await SharedLinks.ResolveAsync(token, shares, dashboards, clock, ct);
+        var (_, dashboard) = await SharedLinks.ResolveAsync(token, shares, dashboards, clock, access, ct);
         return GetDashboardBackgroundHandler.Open(dashboard, images);
     }
 }

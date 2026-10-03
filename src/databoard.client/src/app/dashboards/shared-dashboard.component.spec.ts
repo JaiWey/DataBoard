@@ -349,4 +349,30 @@ describe('SharedDashboardComponent', () => {
 
       expect(el().querySelector('app-dashboard-tab-bar .bar')).toBeNull();
     });
-  });});
+  });
+
+  describe('a link limited to members of organizations', () => {
+    it('tells somebody who is signed in but not a member, and offers to sign in as somebody else', () => {
+      fixture = TestBed.createComponent(SharedDashboardComponent);
+      fixture.detectChanges();
+      http.expectOne(pageUrl).flush(
+        { detail: 'This dashboard is shared with members of specific organizations, and you are not in one of them.' },
+        { status: 403, statusText: 'Forbidden' });
+      fixture.detectChanges();
+
+      expect(el().querySelector('[role=alert]')?.textContent).toContain('members of specific organizations');
+      const link = el().querySelector('a.other-account') as HTMLAnchorElement;
+      expect(link.getAttribute('href')).toBe(`/login?returnUrl=%2Fshared%2F${TOKEN}`);
+      expect(el().textContent).not.toContain('Loading');
+    });
+
+    it('offers no such link for an ordinary wrong link', () => {
+      fixture = TestBed.createComponent(SharedDashboardComponent);
+      fixture.detectChanges();
+      http.expectOne(pageUrl).flush({ detail: 'This link is not valid or has expired.' }, { status: 404, statusText: 'Not Found' });
+      fixture.detectChanges();
+
+      expect(el().querySelector('a.other-account')).toBeNull();
+    });
+  });
+});

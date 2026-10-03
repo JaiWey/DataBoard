@@ -21,6 +21,7 @@ public static class DependencyInjection
         services.AddScoped<CreateOrganizationHandler>();
         services.AddScoped<ListMyOrganizationsHandler>();
         services.AddScoped<AddMemberHandler>();
+        services.AddScoped<SharedLinkAccess>();
         services.AddScoped<ListMembersHandler>();
         services.AddScoped<ChangeMemberRoleHandler>();
         services.AddScoped<RemoveMemberHandler>();

@@ -1,5 +1,6 @@
 import { DatePipe } from '@angular/common';
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MAT_DIALOG_DATA, MatDialogModule } from '@angular/material/dialog';
 import { problemMessages } from '../organizations/data-sources.service';
@@ -9,6 +10,11 @@ export interface ShareDialogData {
   orgId: string;
   dashboardId: string;
   dashboardName: string;
+}
+
+interface MyOrganization {
+  id: string;
+  name: string;
 }
 
 /** How long a new link can last. The default is the one in the middle: public for a month, then it stops by itself. */
@@ -34,10 +40,31 @@ export const shareUrl = (token: string): string => `${window.location.origin}/sh
   template: `
     <h2 mat-dialog-title>Share "{{ data.dashboardName }}"</h2>
     <mat-dialog-content>
-      <p class="warning">
-        Anyone with a link can see this dashboard's data without signing in. They cannot change anything, and they never
-        see the SQL.
-      </p>
+      @if (restricted()) {
+        <p class="warning">
+          Only people who are signed in and belong to one of the organizations below can open this link. They see the
+          dashboard's data, cannot change anything, and never see the SQL.
+        </p>
+      } @else {
+        <p class="warning">
+          Anyone with a link can see this dashboard's data without signing in. They cannot change anything, and they never
+          see the SQL.
+        </p>
+      }
+
+      <fieldset class="who">
+        <legend>Who can open the link</legend>
+        <label><input type="radio" name="who" aria-label="Anyone with the link" [checked]="!restricted()" (change)="restricted.set(false)" /> Anyone with the link</label>
+        <label><input type="radio" name="who" aria-label="Only members of chosen organizations" [checked]="restricted()" (change)="restricted.set(true)" /> Only signed-in members of chosen organizations</label>
+        @if (restricted()) {
+          <div class="orgs">
+            @for (org of organizations(); track org.id) {
+              <label><input type="checkbox" [attr.aria-label]="'Members of ' + org.name" [checked]="chosen().has(org.id)" (change)="toggle(org.id, $any($event.target).checked)" /> {{ org.name }}</label>
+            }
+            @if (organizations().length === 0) { <small>Loading your organizations…</small> }
+          </div>
+        }
+      </fieldset>
 
       <div class="make">
         <label>
@@ -48,7 +75,7 @@ export const shareUrl = (token: string): string => `${window.location.origin}/sh
             }
           </select>
         </label>
-        <button mat-flat-button type="button" class="create" [disabled]="busy()" (click)="create()">Create link</button>
+        <button mat-flat-button type="button" class="create" [disabled]="busy() || (restricted() && chosen().size === 0)" (click)="create()">Create link</button>
       </div>
 
       @if (created(); as link) {
@@ -77,6 +104,7 @@ export const shareUrl = (token: string): string => `${window.location.origin}/sh
               @if (share.expired) { <strong class="fail">expired {{ share.expiresUtc | date: 'medium' }}</strong> }
               @else if (share.expiresUtc) { works until {{ share.expiresUtc | date: 'medium' }} }
               @else { never expires }
+              · <span class="who-can">{{ whoFor(share) }}</span>
             </span>
             <button mat-button type="button" class="revoke" [disabled]="busy()" (click)="revoke(share)">Revoke</button>
           </li>
@@ -89,6 +117,9 @@ export const shareUrl = (token: string): string => `${window.location.origin}/sh
   `,
   styles: `
     .warning { margin: 0 0 1rem; color: var(--mat-sys-on-surface-variant); }
+    .who { border: 1px solid var(--mat-sys-outline-variant); border-radius: 8px; margin: 0 0 1rem; padding: 0.5rem 0.75rem; display: grid; gap: 0.3rem; }
+    .who legend { padding: 0 0.3rem; color: var(--mat-sys-on-surface-variant); font-size: 0.85rem; }
+    .orgs { display: grid; gap: 0.2rem; margin: 0.2rem 0 0.2rem 1.5rem; }
     .make { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.75rem; }
     .make label { display: flex; flex-direction: column; gap: 0.2rem; }
     .created { margin: 1rem 0; padding: 0.75rem; border-radius: 8px; background: var(--mat-sys-secondary-container); }
@@ -102,10 +133,17 @@ export const shareUrl = (token: string): string => `${window.location.origin}/sh
 export class ShareDialogComponent implements OnInit {
   protected readonly data = inject<ShareDialogData>(MAT_DIALOG_DATA);
   private readonly api = inject(DashboardsService);
+  private readonly http = inject(HttpClient);
 
   protected readonly lifetimes = SHARE_LIFETIMES;
   protected readonly lifetime = signal(DEFAULT_LIFETIME);
   protected readonly shares = signal<DashboardShare[]>([]);
+  /** Limited to members of chosen organizations, instead of anyone with the link. */
+  protected readonly restricted = signal(false);
+  /** The organizations the person belongs to: a link can only be limited to those. */
+  protected readonly organizations = signal<MyOrganization[]>([]);
+  protected readonly chosen = signal<ReadonlySet<string>>(new Set([this.data.orgId]));
+  private readonly names = computed(() => new Map(this.organizations().map((o) => [o.id, o.name])));
   protected readonly created = signal<string | null>(null);
   protected readonly copied = signal(false);
   protected readonly busy = signal(false);
@@ -114,6 +152,24 @@ export class ShareDialogComponent implements OnInit {
 
   ngOnInit(): void {
     this.load();
+    this.http.get<MyOrganization[]>('/api/organizations').subscribe({
+      next: (items) => this.organizations.set(items),
+      error: () => this.organizations.set([]),
+    });
+  }
+
+  protected toggle(id: string, on: boolean): void {
+    const next = new Set(this.chosen());
+    if (on) next.add(id);
+    else next.delete(id);
+    this.chosen.set(next);
+  }
+
+  /** "Anyone with the link", or the organizations by name (an organization you are not in is not named). */
+  protected whoFor(share: DashboardShare): string {
+    const ids = share.organizationIds ?? [];
+    if (ids.length === 0) return 'anyone with the link';
+    return 'signed-in members of ' + ids.map((id) => this.names().get(id) ?? 'another organization').join(', ');
   }
 
   private load(): void {
@@ -127,7 +183,8 @@ export class ShareDialogComponent implements OnInit {
     this.busy.set(true);
     this.errors.set([]);
     this.copied.set(false);
-    this.api.createShare(this.data.orgId, this.data.dashboardId, SHARE_LIFETIMES[this.lifetime()].value).subscribe({
+    const organizationIds = this.restricted() ? [...this.chosen()] : [];
+    this.api.createShare(this.data.orgId, this.data.dashboardId, SHARE_LIFETIMES[this.lifetime()].value, organizationIds).subscribe({
       next: (created) => {
         this.busy.set(false);
         this.createdId = created.id;

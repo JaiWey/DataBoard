@@ -48,4 +48,16 @@ describe('GitHubSignInComponent', () => {
 
     expect(el.querySelector('a')).toBeNull();
   });
+
+  it('carries the page to come back to in the link, written safely', () => {
+    const fixture = TestBed.createComponent(GitHubSignInComponent);
+    fixture.componentRef.setInput('returnUrl', '/shared/a b?x=1&y=2');
+    fixture.detectChanges();
+    http.expectOne('/api/auth/providers').flush({ gitHub: true });
+    fixture.detectChanges();
+
+    const href = (fixture.nativeElement as HTMLElement).querySelector('a.github')!.getAttribute('href');
+
+    expect(href).toBe('/api/auth/github?returnUrl=%2Fshared%2Fa%20b%3Fx%3D1%26y%3D2');
+  });
 });

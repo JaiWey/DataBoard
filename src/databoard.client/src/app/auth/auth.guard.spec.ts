@@ -24,6 +24,20 @@ describe('authGuard', () => {
     expect(TestBed.inject(Router).serializeUrl(result as UrlTree)).toBe('/login');
   });
 
+  it('remembers the page that was asked for, so signing in comes back to it', () => {
+    const result = TestBed.runInInjectionContext(() =>
+      authGuard({} as ActivatedRouteSnapshot, { url: '/organizations/1/dashboards' } as RouterStateSnapshot));
+
+    expect(TestBed.inject(Router).serializeUrl(result as UrlTree)).toBe('/login?returnUrl=%2Forganizations%2F1%2Fdashboards');
+  });
+
+  it('does not remember an address that could lead away', () => {
+    const result = TestBed.runInInjectionContext(() =>
+      authGuard({} as ActivatedRouteSnapshot, { url: '//evil.example' } as RouterStateSnapshot));
+
+    expect(TestBed.inject(Router).serializeUrl(result as UrlTree)).toBe('/login');
+  });
+
   it('allows navigation when signed in', () => {
     const auth = TestBed.inject(AuthService);
     auth.login('a@b.c', 'password-123456').subscribe();
