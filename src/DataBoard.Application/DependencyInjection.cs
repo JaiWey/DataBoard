@@ -22,6 +22,15 @@ public static class DependencyInjection
         services.AddScoped<ListMyOrganizationsHandler>();
         services.AddScoped<AddMemberHandler>();
         services.AddScoped<SharedLinkAccess>();
+        services.AddScoped<ShareWithOrganizationHandler>();
+        services.AddScoped<ListOrgSharesHandler>();
+        services.AddScoped<UnshareWithOrganizationHandler>();
+        services.AddScoped<ListSharedWithMeHandler>();
+        services.AddScoped<OrgSharedView>();
+        services.AddScoped<GetOrgSharedDashboardHandler>();
+        services.AddScoped<RunOrgSharedDashboardHandler>();
+        services.AddScoped<GetOrgSharedBackgroundHandler>();
+        services.AddScoped<GetOrgSharedImageWidgetHandler>();
         services.AddScoped<ListMembersHandler>();
         services.AddScoped<ChangeMemberRoleHandler>();
         services.AddScoped<RemoveMemberHandler>();

@@ -38,6 +38,7 @@ public static class DependencyInjection
         services.AddScoped<IFolderRepository, FolderRepository>();
         services.AddScoped<IDashboardRepository, DashboardRepository>();
         services.AddScoped<IDashboardShareRepository, DashboardShareRepository>();
+        services.AddScoped<IDashboardOrgShareRepository, DashboardOrgShareRepository>();
         services.AddScoped<IApiTokenRepository, ApiTokenRepository>();
         services.AddScoped<IChartRepository, ChartRepository>();
 

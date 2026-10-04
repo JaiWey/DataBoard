@@ -3,8 +3,9 @@ import { HttpClient } from '@angular/common/http';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MAT_DIALOG_DATA, MatDialogModule } from '@angular/material/dialog';
+import { Observable } from 'rxjs';
 import { problemMessages } from '../organizations/data-sources.service';
-import { DashboardShare, DashboardsService, ShareLifetime } from './dashboards.service';
+import { DashboardShare, DashboardsService, OrgShare, ShareLifetime } from './dashboards.service';
 
 export interface ShareDialogData {
   orgId: string;
@@ -92,6 +93,30 @@ export const shareUrl = (token: string): string => `${window.location.origin}/sh
         <p class="fail" role="alert">{{ message }}</p>
       }
 
+      <h3>Other organizations</h3>
+      <p class="hint">
+        Show this dashboard, read-only and live, to every member of an organization you belong to. They find it under
+        "Shared with us" on their Dashboards page and never see its queries.
+      </p>
+      <div class="orgs-shared">
+        @for (org of otherOrganizations(); track org.id) {
+          <label>
+            <input type="checkbox" class="org-share" [attr.aria-label]="'Show to ' + org.name" [checked]="isSharedWith(org.id)"
+                   [disabled]="busy()" (change)="setSharedWith(org, $any($event.target))" />
+            {{ org.name }}
+          </label>
+        }
+        @for (share of othersShares(); track share.organizationId) {
+          <span class="unknown">
+            Another organization
+            <button mat-button type="button" class="stop-sharing" [disabled]="busy()" (click)="stopSharing(share.organizationId)">Stop</button>
+          </span>
+        }
+        @if (otherOrganizations().length === 0 && othersShares().length === 0) {
+          <small class="none"><em>You are not in any other organization.</em></small>
+        }
+      </div>
+
       <h3>Links</h3>
       @if (shares().length === 0) {
         <p class="none"><em>No links yet.</em></p>
@@ -120,6 +145,9 @@ export const shareUrl = (token: string): string => `${window.location.origin}/sh
     .who { border: 1px solid var(--mat-sys-outline-variant); border-radius: 8px; margin: 0 0 1rem; padding: 0.5rem 0.75rem; display: grid; gap: 0.3rem; }
     .who legend { padding: 0 0.3rem; color: var(--mat-sys-on-surface-variant); font-size: 0.85rem; }
     .orgs { display: grid; gap: 0.2rem; margin: 0.2rem 0 0.2rem 1.5rem; }
+    .hint { margin: 0 0 0.5rem; color: var(--mat-sys-on-surface-variant); font-size: 0.9rem; }
+    .orgs-shared { display: grid; gap: 0.2rem; }
+    .unknown { display: flex; align-items: center; gap: 0.5rem; color: var(--mat-sys-on-surface-variant); }
     .make { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.75rem; }
     .make label { display: flex; flex-direction: column; gap: 0.2rem; }
     .created { margin: 1rem 0; padding: 0.75rem; border-radius: 8px; background: var(--mat-sys-secondary-container); }
@@ -138,11 +166,17 @@ export class ShareDialogComponent implements OnInit {
   protected readonly lifetimes = SHARE_LIFETIMES;
   protected readonly lifetime = signal(DEFAULT_LIFETIME);
   protected readonly shares = signal<DashboardShare[]>([]);
+  /** The organizations the dashboard is shown to. */
+  protected readonly orgShares = signal<OrgShare[]>([]);
   /** Limited to members of chosen organizations, instead of anyone with the link. */
   protected readonly restricted = signal(false);
   /** The organizations the person belongs to: a link can only be limited to those. */
   protected readonly organizations = signal<MyOrganization[]>([]);
   protected readonly chosen = signal<ReadonlySet<string>>(new Set([this.data.orgId]));
+  /** The organizations a dashboard could be shown to: the ones the person is in, apart from the dashboard's own. */
+  protected readonly otherOrganizations = computed(() => this.organizations().filter((o) => o.id !== this.data.orgId));
+  /** Shares with organizations the person is not in (someone else made them): they can be stopped, not named. */
+  protected readonly othersShares = computed(() => this.orgShares().filter((s) => !this.organizations().some((o) => o.id === s.organizationId)));
   private readonly names = computed(() => new Map(this.organizations().map((o) => [o.id, o.name])));
   protected readonly created = signal<string | null>(null);
   protected readonly copied = signal(false);
@@ -152,9 +186,57 @@ export class ShareDialogComponent implements OnInit {
 
   ngOnInit(): void {
     this.load();
+    this.loadOrgShares();
     this.http.get<MyOrganization[]>('/api/organizations').subscribe({
       next: (items) => this.organizations.set(items),
       error: () => this.organizations.set([]),
+    });
+  }
+
+  private loadOrgShares(): void {
+    this.api.listOrgShares(this.data.orgId, this.data.dashboardId).subscribe({
+      next: (items) => this.orgShares.set(items),
+      error: (e) => this.errors.set(problemMessages(e, 'Could not load who it is shared with.')),
+    });
+  }
+
+  protected isSharedWith(organizationId: string): boolean {
+    return this.orgShares().some((s) => s.organizationId === organizationId);
+  }
+
+  /** Ticking shows the dashboard to that organization at once; unticking takes it away at once. */
+  protected setSharedWith(org: MyOrganization, box: HTMLInputElement): void {
+    const on = box.checked;
+    this.busy.set(true);
+    this.errors.set([]);
+    const call: Observable<unknown> = on
+      ? this.api.shareWithOrg(this.data.orgId, this.data.dashboardId, org.id)
+      : this.api.unshareWithOrg(this.data.orgId, this.data.dashboardId, org.id);
+    call.subscribe({
+      next: () => {
+        this.busy.set(false);
+        this.loadOrgShares();
+      },
+      error: (e) => {
+        this.busy.set(false);
+        box.checked = !on; // nothing changed, so put the box back by hand
+        this.errors.set(problemMessages(e, on ? 'Could not share the dashboard.' : 'Could not stop sharing.'));
+      },
+    });
+  }
+
+  protected stopSharing(organizationId: string): void {
+    this.busy.set(true);
+    this.errors.set([]);
+    this.api.unshareWithOrg(this.data.orgId, this.data.dashboardId, organizationId).subscribe({
+      next: () => {
+        this.busy.set(false);
+        this.loadOrgShares();
+      },
+      error: (e) => {
+        this.busy.set(false);
+        this.errors.set(problemMessages(e, 'Could not stop sharing.'));
+      },
     });
   }
 

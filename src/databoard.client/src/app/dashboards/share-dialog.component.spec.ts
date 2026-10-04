@@ -7,6 +7,7 @@ import { ShareDialogComponent, shareUrl } from './share-dialog.component';
 const ORG = '11111111-1111-1111-1111-111111111111';
 const DASH = '44444444-4444-4444-4444-444444444444';
 const sharesUrl = `/api/organizations/${ORG}/dashboards/${DASH}/shares`;
+const orgSharesUrl = `/api/organizations/${ORG}/dashboards/${DASH}/organization-shares`;
 
 const PARTNER = '22222222-2222-2222-2222-222222222222';
 const mine = [{ id: ORG, name: 'Home', role: 'Owner' }, { id: PARTNER, name: 'Partner', role: 'Editor' }];
@@ -27,10 +28,11 @@ describe('ShareDialogComponent', () => {
     fixture.detectChanges();
   };
 
-  const open = (existing = [share('s1')]) => {
+  const open = (existing = [share('s1')], sharedWith: unknown[] = []) => {
     fixture = TestBed.createComponent(ShareDialogComponent);
     fixture.detectChanges();
     http.expectOne(sharesUrl).flush(existing);
+    http.expectOne(orgSharesUrl).flush(sharedWith);
     http.expectOne('/api/organizations').flush(mine);
     fixture.detectChanges();
   };
@@ -261,6 +263,69 @@ describe('ShareDialogComponent', () => {
       fixture.detectChanges();
 
       expect(el().querySelector('[role=alert]')?.textContent).toContain('organizations you belong to');
+    });
+  });
+
+  describe('showing the dashboard to other organizations', () => {
+    const box = (name: string) => el().querySelector(`input[aria-label="Show to ${name}"]`) as HTMLInputElement | null;
+    const orgSharesUrl2 = `/api/organizations/${ORG}/dashboards/${DASH}/organization-shares`;
+
+    it('offers the organizations the person is in, apart from the dashboard\'s own, ticked where it is already shared', () => {
+      open([], [{ organizationId: PARTNER, organizationName: 'Partner', sharedUtc: '2026-10-10T00:00:00Z' }]);
+
+      expect(box('Home')).toBeNull();
+      expect(box('Partner')!.checked).toBe(true);
+      expect(el().textContent).toContain('Shared with us');
+    });
+
+    it('shares with an organization the moment its box is ticked, then asks again to show the result', () => {
+      open([], []);
+      expect(box('Partner')!.checked).toBe(false);
+
+      box('Partner')!.click();
+
+      const post = http.expectOne({ method: 'POST', url: orgSharesUrl2 });
+      expect(post.request.body).toEqual({ organizationId: PARTNER });
+      post.flush({ organizationId: PARTNER, organizationName: 'Partner', sharedUtc: '' });
+      http.expectOne({ method: 'GET', url: orgSharesUrl2 }).flush([{ organizationId: PARTNER, organizationName: 'Partner', sharedUtc: '' }]);
+      fixture.detectChanges();
+      expect(box('Partner')!.checked).toBe(true);
+    });
+
+    it('stops sharing the moment the box is unticked', () => {
+      open([], [{ organizationId: PARTNER, organizationName: 'Partner', sharedUtc: '' }]);
+
+      box('Partner')!.click();
+
+      http.expectOne({ method: 'DELETE', url: `${orgSharesUrl2}/${PARTNER}` }).flush(null, { status: 204, statusText: 'No Content' });
+      http.expectOne({ method: 'GET', url: orgSharesUrl2 }).flush([]);
+      fixture.detectChanges();
+      expect(box('Partner')!.checked).toBe(false);
+    });
+
+    it('puts the box back and says why when it could not be done', () => {
+      open([], []);
+
+      box('Partner')!.click();
+      http.expectOne({ method: 'POST', url: orgSharesUrl2 }).flush(
+        { errors: { OrganizationId: ['A dashboard can only be shared with organizations you belong to.'] } }, { status: 400, statusText: 'Bad Request' });
+      fixture.detectChanges();
+
+      expect(box('Partner')!.checked).toBe(false);
+      expect(el().querySelector('[role=alert]')?.textContent).toContain('organizations you belong to');
+    });
+
+    it('lists a share with an organization the person is not in without a name, and lets it be stopped', () => {
+      const stranger = '33333333-3333-3333-3333-333333333333';
+      open([], [{ organizationId: stranger, organizationName: null, sharedUtc: '' }]);
+
+      expect(el().querySelector('.unknown')?.textContent).toContain('Another organization');
+      (el().querySelector('button.stop-sharing') as HTMLButtonElement).click();
+
+      http.expectOne({ method: 'DELETE', url: `${orgSharesUrl2}/${stranger}` }).flush(null, { status: 204, statusText: 'No Content' });
+      http.expectOne({ method: 'GET', url: orgSharesUrl2 }).flush([]);
+      fixture.detectChanges();
+      expect(el().querySelector('.unknown')).toBeNull();
     });
   });
 });

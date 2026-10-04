@@ -37,11 +37,12 @@ describe('DashboardsComponent', () => {
   const toggle = (label: string) =>
     Array.from(el().querySelectorAll('mat-button-toggle button')).find((b) => b.textContent?.trim() === label) as HTMLButtonElement;
 
-  const start = (role: 'Viewer' | 'Editor' | 'Owner', dashboards: unknown[], charts: unknown[] = [], dashboardFolders: unknown[] = [], chartFolders: unknown[] = []) => {
+  const start = (role: 'Viewer' | 'Editor' | 'Owner', dashboards: unknown[], charts: unknown[] = [], dashboardFolders: unknown[] = [], chartFolders: unknown[] = [], sharedWithUs: unknown[] = []) => {
     fixture = TestBed.createComponent(DashboardsComponent);
     fixture.detectChanges();
     http.expectOne('/api/organizations').flush([{ id: ORG, name: 'Acme', role }]);
     http.expectOne(`/api/organizations/${ORG}/datasets`).flush(datasets);
+    http.expectOne(`/api/organizations/${ORG}/shared-dashboards`).flush(sharedWithUs);
     http.expectOne(`/api/organizations/${ORG}/folders?kind=Dashboard`).flush(dashboardFolders);
     http.expectOne(`/api/organizations/${ORG}/folders?kind=Chart`).flush(chartFolders);
     http.expectOne({ method: 'GET', url: `/api/organizations/${ORG}/dashboards` }).flush(dashboards);
@@ -458,4 +459,35 @@ describe('DashboardsComponent', () => {
 
     expect(Array.from(el().querySelectorAll('.list .row .name')).map((n) => n.textContent?.trim())).toEqual(['Copy of Sales', 'Sales']);
     expect(el().querySelector('mat-card-title')?.textContent).toContain('Copy of Sales');
-  });});
+  });
+
+  describe('shared with us', () => {
+    const shared = (id: string, name: string, owner: string, widgets = 2) =>
+      ({ dashboardId: id, organizationId: 'f0000000-0000-0000-0000-000000000001', organizationName: owner, name, description: null, widgetCount: widgets, updatedUtc: '2026-10-10T00:00:00Z' });
+    const links = () => Array.from(el().querySelectorAll('.shared-with-me a')) as HTMLAnchorElement[];
+
+    it('lists what other organizations show, with who from, and opens it on its own page', () => {
+      start('Viewer', [], [], [], [], [shared('s1', 'Partner KPIs', 'Partner Co', 1), shared('s2', 'Costs', 'Partner Co')]);
+
+      expect(links().map((a) => a.textContent?.trim())).toEqual(['Partner KPIs', 'Costs']);
+      expect(el().querySelector('.shared-with-me')!.textContent).toContain('from Partner Co · 1 chart');
+      expect(el().querySelector('.shared-with-me')!.textContent).toContain('2 charts');
+      expect(links()[0].getAttribute('href')).toBe(`/organizations/${ORG}/shared/f0000000-0000-0000-0000-000000000001/s1`);
+    });
+
+    it('shows nothing when nothing is shared, and not in the Charts view', () => {
+      start('Editor', []);
+      expect(el().querySelector('.shared-with-me')).toBeNull();
+    });
+
+    it('is only in the dashboards view', () => {
+      start('Editor', [], [], [], [], [shared('s1', 'Partner KPIs', 'Partner Co')]);
+      expect(el().querySelector('.shared-with-me')).not.toBeNull();
+
+      toggle('Charts').click();
+      fixture.detectChanges();
+
+      expect(el().querySelector('.shared-with-me')).toBeNull();
+    });
+  });
+});

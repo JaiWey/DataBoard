@@ -41,7 +41,8 @@ public sealed record SharedDashboardDto(
     DateTime? ExpiresUtc,
     DashboardBackgroundDto? Background = null,
     IReadOnlyList<DashboardTab>? Tabs = null,
-    int? ReloadSeconds = null);
+    int? ReloadSeconds = null,
+    string? SharedBy = null);
 
 internal static class ShareTokens
 {
@@ -171,6 +172,19 @@ public sealed class GetSharedDashboardHandler(
     public async Task<SharedDashboardDto> HandleAsync(string? token, CancellationToken ct = default)
     {
         var (share, dashboard) = await SharedLinks.ResolveAsync(token, shares, dashboards, clock, access, ct);
+        return await SharedPages.BuildAsync(charts, share.OrganizationId, dashboard, share.ExpiresUtc, sharedBy: null, ct);
+    }
+}
+
+/// <summary>
+/// The read-only page of a dashboard for somebody who is not one of its editors: through a link, or because another
+/// organization shares it. Names no query, dataset or column.
+/// </summary>
+internal static class SharedPages
+{
+    public static async Task<SharedDashboardDto> BuildAsync(
+        IChartRepository charts, Guid organizationId, Dashboard dashboard, DateTime? expiresUtc, string? sharedBy, CancellationToken ct)
+    {
         var definition = DashboardJson.Deserialize(dashboard.DefinitionJson);
 
         var shown = new List<SharedChartDto>();
@@ -191,7 +205,7 @@ public sealed class GetSharedDashboardHandler(
                 continue;
             }
 
-            var chart = await charts.GetAsync(share.OrganizationId, widget.ChartId, ct);
+            var chart = await charts.GetAsync(organizationId, widget.ChartId, ct);
             if (chart is null) continue; // a deleted chart simply is not there for the public
 
             var chartDefinition = ChartDefinition.FromJson(chart.DefinitionJson);
@@ -205,10 +219,11 @@ public sealed class GetSharedDashboardHandler(
             widgets,
             definition.Filters.Select(f => new SharedFilterDto(f.Id, f.Label, f.Operator)).ToList(),
             shown,
-            share.ExpiresUtc,
+            expiresUtc,
             dashboard.ToBackgroundDto(),
             definition.Tabs,
-            definition.ReloadSeconds);
+            definition.ReloadSeconds,
+            sharedBy);
     }
 }
 

@@ -171,6 +171,41 @@ namespace DataBoard.Infrastructure.Persistence.Migrations
                     b.ToTable("dashboards", (string)null);
                 });
 
+            modelBuilder.Entity("DataBoard.Domain.Dashboards.DashboardOrgShare", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("DashboardId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("SharedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("TargetOrganizationId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId");
+
+                    b.HasIndex("SharedByUserId");
+
+                    b.HasIndex("TargetOrganizationId");
+
+                    b.HasIndex("DashboardId", "TargetOrganizationId")
+                        .IsUnique();
+
+                    b.ToTable("dashboard_org_shares", (string)null);
+                });
+
             modelBuilder.Entity("DataBoard.Domain.Dashboards.DashboardShare", b =>
                 {
                     b.Property<Guid>("Id")
@@ -737,6 +772,33 @@ namespace DataBoard.Infrastructure.Persistence.Migrations
                     b.HasOne("DataBoard.Domain.Organizations.Organization", null)
                         .WithMany()
                         .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("DataBoard.Domain.Dashboards.DashboardOrgShare", b =>
+                {
+                    b.HasOne("DataBoard.Domain.Dashboards.Dashboard", null)
+                        .WithMany()
+                        .HasForeignKey("DashboardId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("DataBoard.Domain.Organizations.Organization", null)
+                        .WithMany()
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("DataBoard.Infrastructure.Identity.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("SharedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("DataBoard.Domain.Organizations.Organization", null)
+                        .WithMany()
+                        .HasForeignKey("TargetOrganizationId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });

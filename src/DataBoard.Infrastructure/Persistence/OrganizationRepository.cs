@@ -26,6 +26,9 @@ internal sealed class OrganizationRepository(AppDbContext db) : IOrganizationRep
     public Task<OrganizationMember?> GetMemberForUpdateAsync(Guid organizationId, Guid userId, CancellationToken ct = default) =>
         db.OrganizationMembers.SingleOrDefaultAsync(m => m.OrganizationId == organizationId && m.UserId == userId, ct);
 
+    public async Task<IReadOnlyDictionary<Guid, string>> GetNamesAsync(IReadOnlyCollection<Guid> organizationIds, CancellationToken ct = default) =>
+        await db.Organizations.AsNoTracking().Where(o => organizationIds.Contains(o.Id)).ToDictionaryAsync(o => o.Id, o => o.Name, ct);
+
     public Task<int> CountOwnersAsync(Guid organizationId, CancellationToken ct = default) =>
         db.OrganizationMembers.CountAsync(m => m.OrganizationId == organizationId && m.Role == OrganizationRole.Owner, ct);
 

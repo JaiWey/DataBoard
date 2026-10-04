@@ -27,6 +27,12 @@ export const routes: Routes = [
     loadComponent: () => import('./organizations/members.component').then((m) => m.MembersComponent),
   },
   {
+    // A dashboard another organization shows to this one: the same read-only page a public link opens.
+    path: 'organizations/:id/shared/:sourceId/:dashboardId',
+    canActivate: [authGuard],
+    loadComponent: () => import('./dashboards/shared-dashboard.component').then((m) => m.SharedDashboardComponent),
+  },
+  {
     path: 'organizations/:id/datasets',
     canActivate: [authGuard],
     loadComponent: () => import('./organizations/datasets.component').then((m) => m.DatasetsComponent),

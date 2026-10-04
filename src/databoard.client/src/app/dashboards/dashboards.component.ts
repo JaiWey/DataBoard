@@ -15,7 +15,7 @@ import { FolderTreeComponent } from '../shared/folder-tree/folder-tree.component
 import { ChartCardComponent } from './chart-card.component';
 import { DashboardComponent } from './dashboard.component';
 import { NewDashboardDialogComponent, NewDashboardDialogData } from './new-dashboard-dialog.component';
-import { DASHBOARD_PACKAGE_FORMAT, Dashboard, DashboardPackage, DashboardSummary, DashboardsService, MAX_PACKAGE_BYTES } from './dashboards.service';
+import { DASHBOARD_PACKAGE_FORMAT, Dashboard, DashboardPackage, DashboardSummary, DashboardsService, MAX_PACKAGE_BYTES, SharedWithMe } from './dashboards.service';
 
 interface Organization {
   id: string;
@@ -71,6 +71,19 @@ type Mode = 'dashboards' | 'charts';
                              (createFolder)="dashboardTree.newFolder($event)" (renameFolder)="dashboardTree.renameFolder($event)"
                              (deleteFolder)="dashboardTree.deleteFolder($event)" (addItem)="openNewDialog($event.folderId)"
                              (move)="dashboardTree.moveItem($event.item, $event.targetId)" (moveTo)="dashboardTree.chooseDestination($event)" />
+            @if (sharedWithMe().length > 0) {
+              <section class="shared-with-me" aria-label="Shared with us">
+                <h3>Shared with us</h3>
+                <ul>
+                  @for (s of sharedWithMe(); track s.dashboardId) {
+                    <li>
+                      <a [routerLink]="['/organizations', orgId, 'shared', s.organizationId, s.dashboardId]">{{ s.name }}</a>
+                      <small>from {{ s.organizationName }} · {{ s.widgetCount }} {{ s.widgetCount === 1 ? 'chart' : 'charts' }}</small>
+                    </li>
+                  }
+                </ul>
+              </section>
+            }
           } @else {
             @for (message of chartTree.errors(); track message) {
               <p class="fail" role="alert">{{ message }}</p>
@@ -121,6 +134,11 @@ type Mode = 'dashboards' | 'charts';
     .list mat-card-content { flex: 1; min-height: 0; display: flex; flex-direction: column; }
     .list app-folder-tree { flex: 1; }
     .fail { color: var(--mat-sys-error); margin: 0 0 0.5rem; }
+    .shared-with-me { margin-top: 0.75rem; padding-top: 0.5rem; border-top: 1px solid var(--mat-sys-outline-variant); max-height: 35%; overflow: auto; }
+    .shared-with-me h3 { margin: 0 0 0.25rem; font: var(--mat-sys-title-small); }
+    .shared-with-me ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.35rem; }
+    .shared-with-me li { display: flex; flex-direction: column; }
+    .shared-with-me small { color: var(--mat-sys-on-surface-variant); }
     .notice { margin: 0 0 0.5rem; padding: 0.5rem 0.75rem; border-radius: 0.5rem; background: var(--mat-sys-secondary-container); }
     .hidden { display: none; }
     .workspace { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
@@ -192,6 +210,8 @@ export class DashboardsComponent implements OnInit {
   );
 
   protected readonly dashboards = signal<DashboardSummary[]>([]);
+  /** Dashboards other organizations show to this one. */
+  protected readonly sharedWithMe = signal<SharedWithMe[]>([]);
   protected readonly loaded = signal(false);
   protected readonly selectedId = signal<string | null>(null);
   /** Zero or one entries, so the detail is rebuilt (filters and results reset) whenever another dashboard is picked. */
@@ -220,6 +240,10 @@ export class DashboardsComponent implements OnInit {
     });
     this.datasetsApi.list(this.orgId).subscribe({
       next: (items) => this.datasetNames.set(Object.fromEntries(items.map((d) => [d.id, d.name]))),
+    });
+    this.api.listSharedWithMe(this.orgId).subscribe({
+      next: (items) => this.sharedWithMe.set(items),
+      error: () => this.sharedWithMe.set([]), // an extra list: not being able to read it leaves the rest of the page alone
     });
     this.dashboardTree.load();
     this.chartTree.load();

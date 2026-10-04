@@ -168,6 +168,9 @@ internal sealed class FakeOrganizationRepo : IOrganizationRepository
     public Task<OrganizationMember?> GetMemberForUpdateAsync(Guid organizationId, Guid userId, CancellationToken ct = default) =>
         GetMemberAsync(organizationId, userId, ct);
 
+    public Task<IReadOnlyDictionary<Guid, string>> GetNamesAsync(IReadOnlyCollection<Guid> organizationIds, CancellationToken ct = default) =>
+        Task.FromResult<IReadOnlyDictionary<Guid, string>>(Organizations.Where(o => organizationIds.Contains(o.Id)).ToDictionary(o => o.Id, o => o.Name));
+
     public Task<int> CountOwnersAsync(Guid organizationId, CancellationToken ct = default) =>
         Task.FromResult(Members.Count(m => m.OrganizationId == organizationId && m.Role == OrganizationRole.Owner));
 

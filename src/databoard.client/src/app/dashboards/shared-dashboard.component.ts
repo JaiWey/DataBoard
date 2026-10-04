@@ -20,7 +20,7 @@ import { autoReload, clock, reloadLabel } from '../shared/auto-reload';
 import { returnQuery } from '../auth/return-url';
 import { parseFilterInput } from './dashboard.component';
 import { DashboardRun, DashboardWidget, FilterValues, SHARED_FILTER_OPERATORS, WidgetResult } from './dashboards.service';
-import { SharedChart, SharedDashboard, SharedDashboardsService } from './shared-dashboards.service';
+import { SharedChart, SharedDashboard, SharedDashboardsService, orgSharedAddress } from './shared-dashboards.service';
 
 /**
  * A dashboard opened from a public link: no account, read-only. The token in the address is the only credential.
@@ -38,7 +38,10 @@ import { SharedChart, SharedDashboard, SharedDashboardsService } from './shared-
         <rect x="20" y="13" width="4" height="11" rx="1" fill="#fff" />
       </svg>
       <span class="brand">DataBoard</span>
-      <span class="note no-print">Shared view</span>
+      @if (orgId) {
+        <a class="back no-print" [routerLink]="['/organizations', orgId, 'dashboards']">Back to dashboards</a>
+      }
+      <span class="note no-print">@if (dashboard()?.sharedBy; as owner) { Shared by {{ owner }} } @else { Shared view }</span>
     </header>
 
     <main class="page">
@@ -149,6 +152,7 @@ import { SharedChart, SharedDashboard, SharedDashboardsService } from './shared-
     .bar { display: flex; align-items: center; gap: 0.5rem; padding: 0.6rem 1.5rem; background: #05111f; color: #fff; }
     .brand { font: var(--mat-sys-title-medium); }
     .bar .note { margin-left: auto; opacity: 0.7; font-size: 0.85rem; }
+    .bar .back { margin-left: 1rem; color: #fff; opacity: 0.85; font-size: 0.9rem; }
     .page { padding: 1.25rem 1.5rem 2rem; max-width: 96rem; margin: 0 auto; }
     .title { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
     h1 { font: var(--mat-sys-headline-small); margin: 0; }
@@ -202,6 +206,9 @@ export class SharedDashboardComponent implements OnInit {
     return names;
   });
 
+  /** The organization looking, when the dashboard is one another organization shares (not a public link). */
+  protected orgId = '';
+  /** Where the dashboard is read from: a link's token, or the address of a dashboard shared by another organization. */
   private token = '';
 
   /** Gets the picture behind the dashboard; the layer calls it again whenever the version changes. */
@@ -215,8 +222,17 @@ export class SharedDashboardComponent implements OnInit {
   }
 
   ngOnInit(): void {
-    this.token = this.route.snapshot.paramMap.get('token') ?? '';
-    this.signInAgain = returnQuery(`/shared/${this.token}`);
+    const params = this.route.snapshot.paramMap;
+    const sourceId = params.get('sourceId');
+    const dashboardId = params.get('dashboardId');
+    if (sourceId && dashboardId) {
+      this.orgId = params.get('id') ?? '';
+      this.token = orgSharedAddress(this.orgId, sourceId, dashboardId);
+      this.signInAgain = returnQuery(`/organizations/${this.orgId}/shared/${sourceId}/${dashboardId}`);
+    } else {
+      this.token = params.get('token') ?? '';
+      this.signInAgain = returnQuery(`/shared/${this.token}`);
+    }
     this.api.get(this.token).subscribe({
       next: (d) => {
         this.filterForm = this.fb.nonNullable.group(Object.fromEntries(d.filters.map((f) => [f.id, this.fb.nonNullable.control('')])));

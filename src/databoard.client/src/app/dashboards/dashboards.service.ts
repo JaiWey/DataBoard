@@ -175,6 +175,25 @@ export interface DashboardShare {
   organizationIds?: string[];
 }
 
+/** An organization a dashboard is shown to. The name is missing when you are not in that organization. */
+export interface OrgShare {
+  organizationId: string;
+  organizationName: string | null;
+  sharedUtc: string;
+}
+
+/** A dashboard another organization shows to this one. */
+export interface SharedWithMe {
+  dashboardId: string;
+  /** The organization that owns it. */
+  organizationId: string;
+  organizationName: string;
+  name: string;
+  description: string | null;
+  widgetCount: number;
+  updatedUtc: string;
+}
+
 export interface DashboardShareCreated {
   id: string;
   /** The secret part of the link. Shown once: the server keeps only a hash. */
@@ -326,6 +345,24 @@ export class DashboardsService {
   /** `organizationIds` empty: anyone with the link. Otherwise only signed-in members of those organizations (ones you belong to). */
   createShare(orgId: string, id: string, lifetime: ShareLifetime, organizationIds: string[] = []): Observable<DashboardShareCreated> {
     return this.http.post<DashboardShareCreated>(this.url(orgId, `/${id}/shares`), { ...lifetime, organizationIds });
+  }
+
+  listOrgShares(orgId: string, id: string): Observable<OrgShare[]> {
+    return this.http.get<OrgShare[]>(this.url(orgId, `/${id}/organization-shares`));
+  }
+
+  /** Shows the dashboard, read-only and live, to every member of another organization you belong to. */
+  shareWithOrg(orgId: string, id: string, organizationId: string): Observable<OrgShare> {
+    return this.http.post<OrgShare>(this.url(orgId, `/${id}/organization-shares`), { organizationId });
+  }
+
+  unshareWithOrg(orgId: string, id: string, organizationId: string): Observable<void> {
+    return this.http.delete<void>(this.url(orgId, `/${id}/organization-shares/${organizationId}`));
+  }
+
+  /** What other organizations show to this one. */
+  listSharedWithMe(orgId: string): Observable<SharedWithMe[]> {
+    return this.http.get<SharedWithMe[]>(`/api/organizations/${orgId}/shared-dashboards`);
   }
 
   revokeShare(orgId: string, id: string, shareId: string): Observable<void> {

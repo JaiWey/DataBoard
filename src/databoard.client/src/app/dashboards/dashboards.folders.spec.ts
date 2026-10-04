@@ -40,6 +40,7 @@ describe('DashboardsComponent folders', () => {
     fixture.detectChanges();
     http.expectOne('/api/organizations').flush([{ id: ORG, name: 'Acme', role }]);
     http.expectOne(`/api/organizations/${ORG}/datasets`).flush(datasets);
+    http.expectOne(`/api/organizations/${ORG}/shared-dashboards`).flush([]);
     http.expectOne(`${FOLDERS}?kind=Dashboard`).flush([folder('dsales', 'Sales dashboards'), folder('darchive', 'Archive')]);
     http.expectOne(`${FOLDERS}?kind=Chart`).flush([folder('csales', 'Sales charts'), folder('cops', 'Ops')]);
     http.expectOne({ method: 'GET', url: `/api/organizations/${ORG}/dashboards` }).flush([summary('d1', 'Weekly', 'dsales'), summary('d2', 'Overview')]);

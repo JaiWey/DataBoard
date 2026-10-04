@@ -30,15 +30,21 @@ export interface SharedDashboard {
   /** Missing or empty: one page. */
   tabs?: DashboardTab[] | null;
   reloadSeconds?: number | null;
+  /** The organization that owns it, when another organization shares it (not for a link). */
+  sharedBy?: string | null;
 }
 
-/** The public side of a dashboard link: no account, the token in the address is the credential. */
+/**
+ * The read-only view of a dashboard: through a public link (the token in the address is the credential), or because
+ * another organization shares it with yours (you are signed in as one of its members). Both are the same page, so every
+ * call takes where the dashboard is: a token, or the address of a shared dashboard (see `orgSharedAddress`).
+ */
 @Injectable({ providedIn: 'root' })
 export class SharedDashboardsService {
   private readonly http = inject(HttpClient);
 
-  private url(token: string, suffix = ''): string {
-    return `/api/shared/dashboards/${encodeURIComponent(token)}${suffix}`;
+  private url(where: string, suffix = ''): string {
+    return where.startsWith('/api/') ? where + suffix : `/api/shared/dashboards/${encodeURIComponent(where)}${suffix}`;
   }
 
   get(token: string): Observable<SharedDashboard> {
@@ -59,3 +65,7 @@ export class SharedDashboardsService {
     return this.http.post<DashboardRun>(this.url(token, '/run'), { filters });
   }
 }
+
+/** Where a dashboard that another organization shares with `viewingOrg` can be read from. */
+export const orgSharedAddress = (viewingOrg: string, sourceOrg: string, dashboardId: string): string =>
+  `/api/organizations/${viewingOrg}/shared-dashboards/${sourceOrg}/${dashboardId}`;
