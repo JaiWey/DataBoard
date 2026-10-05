@@ -10,15 +10,14 @@ namespace DataBoard.Application.Dashboards;
 /// Puts a dashboard on a refresh schedule, or takes it off. It limits how many dashboards of an organization can be on
 /// one, because each refresh asks the customers' databases for every chart on it.
 /// </summary>
-public sealed class SetDashboardRefreshHandler(IDashboardRepository dashboards, IUnitOfWork unitOfWork, IClock clock, OrganizationAccess access)
+public sealed class SetDashboardRefreshHandler(IDashboardRepository dashboards, IUnitOfWork unitOfWork, IClock clock, OrganizationAccess access, DashboardVisibility visibility)
 {
     public const int MaxScheduledPerOrganization = 20;
 
     public async Task<DashboardDto> HandleAsync(Guid organizationId, Guid dashboardId, SetDashboardRefreshRequest request, CancellationToken ct = default)
     {
-        await access.RequireRoleAsync(organizationId, OrganizationRole.Editor, ct);
-        var dashboard = await dashboards.GetAsync(organizationId, dashboardId, ct)
-            ?? throw new NotFoundException("Dashboard not found.");
+        var member = await access.RequireRoleAsync(organizationId, OrganizationRole.Editor, ct);
+        var dashboard = await visibility.GetAsync(dashboards, organizationId, dashboardId, member, ct);
 
         if (request.IntervalMinutes is not null && dashboard.RefreshIntervalMinutes is null
             && await dashboards.CountScheduledAsync(organizationId, ct) >= MaxScheduledPerOrganization)

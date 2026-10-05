@@ -149,4 +149,37 @@ describe('DashboardsComponent folders', () => {
     expect(el().querySelector('.list .more')).toBeNull();
     expect(el().querySelector('.list button[aria-label="New folder"]')).toBeNull();
   });
+
+  describe('who can see a folder', () => {
+    it('opens the access dialog for the folder, and reads the tree and the list again after something was saved', () => {
+      start();
+      const open = dialog(true);
+
+      (fixture.componentInstance as unknown as { editFolderAccess(f: { id: string; name: string }): void }).editFolderAccess({ id: 'dsales', name: 'Sales dashboards' });
+
+      const [, config] = open.mock.calls[0] as unknown as [unknown, { data: unknown }];
+      expect(config.data).toEqual({ orgId: ORG, kind: 'folder', id: 'dsales', name: 'Sales dashboards' });
+      http.expectOne(`${FOLDERS}?kind=Dashboard`).flush([]);
+      http.expectOne({ method: 'GET', url: `/api/organizations/${ORG}/dashboards` }).flush([]);
+    });
+
+    it('reads nothing again when the dialog is closed without saving', () => {
+      start();
+      dialog(undefined);
+
+      (fixture.componentInstance as unknown as { editFolderAccess(f: { id: string; name: string }): void }).editFolderAccess({ id: 'dsales', name: 'Sales dashboards' });
+
+      http.expectNone(`${FOLDERS}?kind=Dashboard`);
+    });
+
+    it('lets editors manage access on the dashboard folders (the menu itself is only for editors)', () => {
+      start('Editor');
+      expect(trees()[0].canManageAccess()).toBe(true);
+
+      toggle('Charts').click();
+      fixture.detectChanges();
+
+      expect(trees()[0].canManageAccess()).toBe(false); // charts have no limits
+    });
+  });
 });

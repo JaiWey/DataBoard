@@ -26,13 +26,13 @@ public sealed record SharedWithMeDto(
 /// </summary>
 public sealed class ShareWithOrganizationHandler(
     IDashboardOrgShareRepository shares, IDashboardRepository dashboards, IOrganizationRepository organizations,
-    IUnitOfWork unitOfWork, IClock clock, OrganizationAccess access)
+    IUnitOfWork unitOfWork, IClock clock, OrganizationAccess access, DashboardVisibility visibility)
 {
     public async Task<OrgShareDto> HandleAsync(Guid organizationId, Guid dashboardId, ShareWithOrganizationRequest? request, CancellationToken ct = default)
     {
-        await access.RequireRoleAsync(organizationId, OrganizationRole.Editor, ct);
+        var member = await access.RequireRoleAsync(organizationId, OrganizationRole.Editor, ct);
         var userId = access.RequireUserId();
-        _ = await dashboards.GetAsync(organizationId, dashboardId, ct) ?? throw new NotFoundException("Dashboard not found.");
+        _ = await visibility.GetAsync(dashboards, organizationId, dashboardId, member, ct);
 
         var target = request?.OrganizationId ?? Guid.Empty;
         if (target == Guid.Empty) throw new ValidationException("OrganizationId", "Choose an organization to share with.");
@@ -55,13 +55,13 @@ public sealed class ShareWithOrganizationHandler(
 }
 
 public sealed class ListOrgSharesHandler(
-    IDashboardOrgShareRepository shares, IDashboardRepository dashboards, IOrganizationRepository organizations, OrganizationAccess access)
+    IDashboardOrgShareRepository shares, IDashboardRepository dashboards, IOrganizationRepository organizations, OrganizationAccess access, DashboardVisibility visibility)
 {
     public async Task<IReadOnlyList<OrgShareDto>> HandleAsync(Guid organizationId, Guid dashboardId, CancellationToken ct = default)
     {
-        await access.RequireRoleAsync(organizationId, OrganizationRole.Editor, ct);
+        var member = await access.RequireRoleAsync(organizationId, OrganizationRole.Editor, ct);
         var userId = access.RequireUserId();
-        _ = await dashboards.GetAsync(organizationId, dashboardId, ct) ?? throw new NotFoundException("Dashboard not found.");
+        _ = await visibility.GetAsync(dashboards, organizationId, dashboardId, member, ct);
 
         var items = await shares.ListForDashboardAsync(organizationId, dashboardId, ct);
         var mine = (await organizations.ListForUserAsync(userId, ct)).ToDictionary(o => o.Id, o => o.Name);
@@ -70,11 +70,13 @@ public sealed class ListOrgSharesHandler(
 }
 
 /// <summary>Stops showing the dashboard to an organization. Any Editor of the dashboard's organization may, whoever made the share.</summary>
-public sealed class UnshareWithOrganizationHandler(IDashboardOrgShareRepository shares, IUnitOfWork unitOfWork, OrganizationAccess access)
+public sealed class UnshareWithOrganizationHandler(
+    IDashboardOrgShareRepository shares, IDashboardRepository dashboards, IUnitOfWork unitOfWork, OrganizationAccess access, DashboardVisibility visibility)
 {
     public async Task HandleAsync(Guid organizationId, Guid dashboardId, Guid targetOrganizationId, CancellationToken ct = default)
     {
-        await access.RequireRoleAsync(organizationId, OrganizationRole.Editor, ct);
+        var member = await access.RequireRoleAsync(organizationId, OrganizationRole.Editor, ct);
+        _ = await visibility.GetAsync(dashboards, organizationId, dashboardId, member, ct);
         var share = await shares.GetAsync(dashboardId, targetOrganizationId, ct);
         if (share is null || share.OrganizationId != organizationId) throw new NotFoundException("That dashboard is not shared with that organization.");
 

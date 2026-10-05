@@ -15,6 +15,9 @@ internal sealed class FolderConfiguration : IEntityTypeConfiguration<Folder>
         builder.Property(f => f.Name).IsRequired().HasMaxLength(Folder.MaxNameLength);
         builder.Property(f => f.Kind).HasConversion<string>().HasMaxLength(20).HasDefaultValue(FolderKind.Dataset).HasSentinel(FolderKind.Dataset);
 
+        builder.Property(f => f.AccessMinRole).HasColumnName("access_min_role");
+        builder.Property(f => f.AccessMemberIds).HasColumnName("access_member_ids").HasColumnType("uuid[]").IsRequired();
+
         // Names are unique among siblings of the same kind (the handlers compare ignoring case; the index catches two
         // requests at once). A null parent never equals another null in a unique index, so the top level gets its own index.
         builder.HasIndex(f => new { f.OrganizationId, f.Kind, f.ParentId, f.Name }).IsUnique()

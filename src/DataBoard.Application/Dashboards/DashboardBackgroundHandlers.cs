@@ -70,14 +70,14 @@ internal static class BackgroundMapping
 /// Sets the picture behind a dashboard, or (with no new picture) how the current one is shown. Editors and Owners.
 /// </summary>
 public sealed class SetDashboardBackgroundHandler(
-    IDashboardRepository dashboards, IImageStore images, IUnitOfWork unitOfWork, OrganizationAccess access)
+    IDashboardRepository dashboards, IImageStore images, IUnitOfWork unitOfWork, OrganizationAccess access, DashboardVisibility visibility)
 {
     /// <param name="image">The new picture, or null to keep the current one and only change how it is shown.</param>
     public async Task<DashboardDto> HandleAsync(
         Guid organizationId, Guid dashboardId, Stream? image, string? fit, int? opacity, CancellationToken ct = default)
     {
-        await access.RequireRoleAsync(organizationId, OrganizationRole.Editor, ct);
-        var dashboard = await dashboards.GetAsync(organizationId, dashboardId, ct) ?? throw new NotFoundException("Dashboard not found.");
+        var member = await access.RequireRoleAsync(organizationId, OrganizationRole.Editor, ct);
+        var dashboard = await visibility.GetAsync(dashboards, organizationId, dashboardId, member, ct);
 
         var previous = dashboard.BackgroundImageKey;
         string key;
@@ -140,12 +140,12 @@ internal static class ImageUpload
 }
 
 public sealed class RemoveDashboardBackgroundHandler(
-    IDashboardRepository dashboards, IImageStore images, IUnitOfWork unitOfWork, OrganizationAccess access)
+    IDashboardRepository dashboards, IImageStore images, IUnitOfWork unitOfWork, OrganizationAccess access, DashboardVisibility visibility)
 {
     public async Task<DashboardDto> HandleAsync(Guid organizationId, Guid dashboardId, CancellationToken ct = default)
     {
-        await access.RequireRoleAsync(organizationId, OrganizationRole.Editor, ct);
-        var dashboard = await dashboards.GetAsync(organizationId, dashboardId, ct) ?? throw new NotFoundException("Dashboard not found.");
+        var member = await access.RequireRoleAsync(organizationId, OrganizationRole.Editor, ct);
+        var dashboard = await visibility.GetAsync(dashboards, organizationId, dashboardId, member, ct);
 
         var key = dashboard.BackgroundImageKey;
         dashboard.ClearBackground();
@@ -156,12 +156,12 @@ public sealed class RemoveDashboardBackgroundHandler(
 }
 
 /// <summary>The picture behind a dashboard, for any member of its organization.</summary>
-public sealed class GetDashboardBackgroundHandler(IDashboardRepository dashboards, IImageStore images, OrganizationAccess access)
+public sealed class GetDashboardBackgroundHandler(IDashboardRepository dashboards, IImageStore images, OrganizationAccess access, DashboardVisibility visibility)
 {
     public async Task<BackgroundImage> HandleAsync(Guid organizationId, Guid dashboardId, CancellationToken ct = default)
     {
-        await access.RequireRoleAsync(organizationId, OrganizationRole.Viewer, ct);
-        var dashboard = await dashboards.GetAsync(organizationId, dashboardId, ct) ?? throw new NotFoundException("Dashboard not found.");
+        var member = await access.RequireRoleAsync(organizationId, OrganizationRole.Viewer, ct);
+        var dashboard = await visibility.GetAsync(dashboards, organizationId, dashboardId, member, ct);
         return Open(dashboard, images);
     }
 

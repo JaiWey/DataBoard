@@ -14,6 +14,7 @@ import { TreeEntry } from '../shared/folder-tree/folder-tree';
 import { FolderTreeComponent } from '../shared/folder-tree/folder-tree.component';
 import { ChartCardComponent } from './chart-card.component';
 import { DashboardComponent } from './dashboard.component';
+import { AccessDialogComponent, AccessDialogData } from './access-dialog.component';
 import { NewDashboardDialogComponent, NewDashboardDialogData } from './new-dashboard-dialog.component';
 import { DASHBOARD_PACKAGE_FORMAT, Dashboard, DashboardPackage, DashboardSummary, DashboardsService, MAX_PACKAGE_BYTES, SharedWithMe } from './dashboards.service';
 
@@ -66,6 +67,7 @@ type Mode = 'dashboards' | 'charts';
             <app-folder-tree [folders]="dashboardTree.folders()" [entries]="dashboardEntries()" [activeId]="selectedId()" [canEdit]="canEdit()"
                              [selectedFolderId]="dashboardTree.selectedFolderId()" [storageKey]="'databoard.dashboardFolders.' + orgId"
                              filterLabel="Filter dashboards" treeLabel="Dashboards" emptyText="No dashboards yet."
+                             [canManageAccess]="canEdit()" (accessFolder)="editFolderAccess($event)"
                              [addActions]="[{ id: 'new', label: 'New dashboard here' }]"
                              (open)="select($event.id)" (selectFolder)="dashboardTree.selectedFolderId.set($event)"
                              (createFolder)="dashboardTree.newFolder($event)" (renameFolder)="dashboardTree.renameFolder($event)"
@@ -198,7 +200,7 @@ export class DashboardsComponent implements OnInit {
   });
   protected readonly dashboardEntries = computed<TreeEntry[]>(() =>
     this.dashboards().map((d) => ({
-      id: d.id, name: d.name, folderId: d.folderId ?? null,
+      id: d.id, name: d.name, folderId: d.folderId ?? null, restricted: d.restricted === true,
       subline: `${d.widgetCount} ${d.widgetCount === 1 ? 'chart' : 'charts'}`,
     })),
   );
@@ -292,12 +294,28 @@ export class DashboardsComponent implements OnInit {
   }
 
   /** A saved dashboard keeps its list entry (name, chart count and charts) current. */
+  /** Opens who can see a folder (and everything in it); afterwards the tree and the list are read again, since what is visible may differ. */
+  protected editFolderAccess(folder: { id: string; name: string }): void {
+    this.dialog
+      .open<AccessDialogComponent, AccessDialogData, boolean>(AccessDialogComponent, {
+        data: { orgId: this.orgId, kind: 'folder', id: folder.id, name: folder.name },
+        width: '34rem',
+        maxWidth: '95vw',
+      })
+      .afterClosed()
+      .subscribe((saved) => {
+        if (!saved) return;
+        this.dashboardTree.load();
+        this.reload();
+      });
+  }
+
   protected onChanged(saved: Dashboard): void {
     this.dashboards.update((items) =>
       items.map((d) =>
         d.id === saved.id
           ? {
-              ...d, name: saved.name,
+              ...d, name: saved.name, restricted: saved.restricted === true,
               // Pictures and text are on the dashboard but are not charts.
               widgetCount: saved.definition.widgets.filter((w) => !w.kind || w.kind === 'Chart').length,
               chartIds: saved.definition.widgets.filter((w) => !w.kind || w.kind === 'Chart').map((w) => w.chartId),

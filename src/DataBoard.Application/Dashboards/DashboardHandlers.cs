@@ -31,7 +31,7 @@ internal static class DashboardMapping
     public static DashboardDto ToDto(this Dashboard d) =>
         new(d.Id, d.Name, d.Description, DashboardJson.Deserialize(d.DefinitionJson), d.CreatedUtc, d.UpdatedUtc,
             new DashboardRefreshDto(d.RefreshIntervalMinutes, d.NextRefreshUtc, d.LastRefreshUtc, d.LastRefreshFailures, d.LastRefreshMessage),
-            d.FolderId, d.ToBackgroundDto());
+            d.FolderId, d.ToBackgroundDto(), !d.Access.IsOpen);
 }
 
 /// <summary>
@@ -256,17 +256,19 @@ internal static class DashboardValidator
 }
 
 public sealed class CreateDashboardHandler(
-    IDashboardRepository dashboards, IChartRepository charts, IFolderRepository folders, IUnitOfWork unitOfWork, IClock clock, OrganizationAccess access)
+    IDashboardRepository dashboards, IChartRepository charts, IFolderRepository folders, IUnitOfWork unitOfWork, IClock clock, OrganizationAccess access,
+    DashboardVisibility visibility)
 {
     public async Task<DashboardDto> HandleAsync(Guid organizationId, SaveDashboardRequest request, CancellationToken ct = default)
     {
-        await access.RequireRoleAsync(organizationId, OrganizationRole.Editor, ct);
+        var member = await access.RequireRoleAsync(organizationId, OrganizationRole.Editor, ct);
         var userId = access.RequireUserId();
 
         if (await dashboards.NameExistsAsync(organizationId, request.Name?.Trim() ?? string.Empty, null, ct))
             throw new ConflictException("A dashboard with that name already exists.");
 
         await FolderRules.RequireFolderAsync(folders, organizationId, FolderKind.Dashboard, request.FolderId, "FolderId", ct);
+        await visibility.RequireFolderAsync(member, organizationId, request.FolderId, "FolderId", ct);
         var definition = await DashboardValidator.NormalizeAsync(request.Definition, charts, organizationId, new Dictionary<Guid, DashboardWidget>(), ct);
         var dashboard = DatasetQuery.Guard(() => Dashboard.Create(
             organizationId, request.Name!, request.Description, DashboardJson.Serialize(definition), userId, clock.UtcNow, request.FolderId));
@@ -277,40 +279,38 @@ public sealed class CreateDashboardHandler(
     }
 }
 
-public sealed class ListDashboardsHandler(IDashboardRepository dashboards, OrganizationAccess access)
+public sealed class ListDashboardsHandler(IDashboardRepository dashboards, OrganizationAccess access, DashboardVisibility visibility)
 {
     public async Task<IReadOnlyList<DashboardSummaryDto>> HandleAsync(Guid organizationId, CancellationToken ct = default)
     {
-        await access.RequireRoleAsync(organizationId, OrganizationRole.Viewer, ct);
-        var items = await dashboards.ListByOrganizationAsync(organizationId, ct);
+        var member = await access.RequireRoleAsync(organizationId, OrganizationRole.Viewer, ct);
+        var items = await visibility.FilterAsync(member, await dashboards.ListByOrganizationAsync(organizationId, ct), ct);
         return items
             .Select(d => new DashboardSummaryDto(
                 d.Id, d.Name, d.Description, DashboardJson.Deserialize(d.DefinitionJson).Widgets.Count(w => w.Kind == WidgetKind.Chart), d.UpdatedUtc,
-                DashboardJson.Deserialize(d.DefinitionJson).Widgets.Where(w => w.Kind == WidgetKind.Chart).Select(w => w.ChartId).ToList(), d.FolderId))
+                DashboardJson.Deserialize(d.DefinitionJson).Widgets.Where(w => w.Kind == WidgetKind.Chart).Select(w => w.ChartId).ToList(), d.FolderId, !d.Access.IsOpen))
             .ToList();
     }
 }
 
-public sealed class GetDashboardHandler(IDashboardRepository dashboards, OrganizationAccess access)
+public sealed class GetDashboardHandler(IDashboardRepository dashboards, OrganizationAccess access, DashboardVisibility visibility)
 {
     public async Task<DashboardDto> HandleAsync(Guid organizationId, Guid dashboardId, CancellationToken ct = default)
     {
-        await access.RequireRoleAsync(organizationId, OrganizationRole.Viewer, ct);
-        var dashboard = await dashboards.GetAsync(organizationId, dashboardId, ct)
-            ?? throw new NotFoundException("Dashboard not found.");
+        var member = await access.RequireRoleAsync(organizationId, OrganizationRole.Viewer, ct);
+        var dashboard = await visibility.GetAsync(dashboards, organizationId, dashboardId, member, ct);
         return dashboard.ToDto();
     }
 }
 
 public sealed class UpdateDashboardHandler(
-    IDashboardRepository dashboards, IChartRepository charts, IImageStore images, IUnitOfWork unitOfWork, IClock clock, OrganizationAccess access)
+    IDashboardRepository dashboards, IChartRepository charts, IImageStore images, IUnitOfWork unitOfWork, IClock clock, OrganizationAccess access, DashboardVisibility visibility)
 {
     public async Task<DashboardDto> HandleAsync(Guid organizationId, Guid dashboardId, SaveDashboardRequest request, CancellationToken ct = default)
     {
-        await access.RequireRoleAsync(organizationId, OrganizationRole.Editor, ct);
+        var member = await access.RequireRoleAsync(organizationId, OrganizationRole.Editor, ct);
 
-        var dashboard = await dashboards.GetAsync(organizationId, dashboardId, ct)
-            ?? throw new NotFoundException("Dashboard not found.");
+        var dashboard = await visibility.GetAsync(dashboards, organizationId, dashboardId, member, ct);
         if (await dashboards.NameExistsAsync(organizationId, request.Name?.Trim() ?? string.Empty, dashboard.Id, ct))
             throw new ConflictException("A dashboard with that name already exists.");
 
@@ -333,14 +333,13 @@ public sealed class UpdateDashboardHandler(
     }
 }
 
-public sealed class DeleteDashboardHandler(IDashboardRepository dashboards, IImageStore images, IUnitOfWork unitOfWork, OrganizationAccess access)
+public sealed class DeleteDashboardHandler(IDashboardRepository dashboards, IImageStore images, IUnitOfWork unitOfWork, OrganizationAccess access, DashboardVisibility visibility)
 {
     public async Task HandleAsync(Guid organizationId, Guid dashboardId, CancellationToken ct = default)
     {
-        await access.RequireRoleAsync(organizationId, OrganizationRole.Editor, ct);
+        var member = await access.RequireRoleAsync(organizationId, OrganizationRole.Editor, ct);
 
-        var dashboard = await dashboards.GetAsync(organizationId, dashboardId, ct)
-            ?? throw new NotFoundException("Dashboard not found.");
+        var dashboard = await visibility.GetAsync(dashboards, organizationId, dashboardId, member, ct);
         var background = dashboard.BackgroundImageKey;
         var pictures = DashboardJson.Deserialize(dashboard.DefinitionJson).Widgets.Select(w => w.ImageKey).Where(k => k is not null).ToList();
         dashboards.Remove(dashboard);
@@ -355,16 +354,15 @@ public sealed class DeleteDashboardHandler(IDashboardRepository dashboards, IIma
 /// rules apply to each widget (planner, validated SQL, read-only execution). One broken widget does not fail the page.
 /// </summary>
 public sealed class RunDashboardHandler(
-    IDashboardRepository dashboards, IChartRepository charts, IDatasetRepository datasets, RunChartQueryHandler runner, OrganizationAccess access)
+    IDashboardRepository dashboards, IChartRepository charts, IDatasetRepository datasets, RunChartQueryHandler runner, OrganizationAccess access, DashboardVisibility visibility)
 {
     public async Task<DashboardRunResult> HandleAsync(
         Guid organizationId, Guid dashboardId, RunDashboardRequest? request, CancellationToken ct = default)
     {
         // Anyone may look; asking the databases again (instead of reusing stored results) is for people who change the dashboard.
         var refresh = request?.Refresh == true;
-        await access.RequireRoleAsync(organizationId, refresh ? OrganizationRole.Editor : OrganizationRole.Viewer, ct);
-        var dashboard = await dashboards.GetAsync(organizationId, dashboardId, ct)
-            ?? throw new NotFoundException("Dashboard not found.");
+        var member = await access.RequireRoleAsync(organizationId, refresh ? OrganizationRole.Editor : OrganizationRole.Viewer, ct);
+        var dashboard = await visibility.GetAsync(dashboards, organizationId, dashboardId, member, ct);
         // A dashboard on a schedule keeps what a refresh fetches for as long as the schedule would, so the next viewer gets it too.
         TimeSpan? keepFor = dashboard.RefreshIntervalMinutes is { } minutes ? ScheduledKeepTime(minutes) : null;
         return await RunWidgetsAsync(

@@ -95,6 +95,8 @@ export interface DashboardDefinition {
 }
 
 export interface DashboardSummary {
+  /** Who may see it is limited. */
+  restricted?: boolean;
   id: string;
   name: string;
   description: string | null;
@@ -149,6 +151,8 @@ export interface Dashboard {
   folderId?: string | null;
   /** Null or missing when there is no picture. */
   background?: DashboardBackground | null;
+  /** Who may see it is limited. */
+  restricted?: boolean;
 }
 
 export interface WidgetResult {
@@ -173,6 +177,19 @@ export interface DashboardShare {
   expired: boolean;
   /** Who may open it: empty is anyone with the link, otherwise signed-in members of these organizations. */
   organizationIds?: string[];
+}
+
+/** Who may see a dashboard or a dashboard folder. No role and no people means everyone in the organization. */
+export interface AccessRule {
+  minRole: 'Viewer' | 'Editor' | 'Owner' | null;
+  memberIds: string[];
+  /** Folders above it that are limited too: somebody has to be let in by those as well. */
+  inherited: { folderId: string; folderName: string; minRole: 'Viewer' | 'Editor' | 'Owner' | null; people: number }[];
+}
+
+export interface AccessChange {
+  minRole: 'Viewer' | 'Editor' | 'Owner' | null;
+  memberIds: string[];
 }
 
 /** An organization a dashboard is shown to. The name is missing when you are not in that organization. */
@@ -345,6 +362,22 @@ export class DashboardsService {
   /** `organizationIds` empty: anyone with the link. Otherwise only signed-in members of those organizations (ones you belong to). */
   createShare(orgId: string, id: string, lifetime: ShareLifetime, organizationIds: string[] = []): Observable<DashboardShareCreated> {
     return this.http.post<DashboardShareCreated>(this.url(orgId, `/${id}/shares`), { ...lifetime, organizationIds });
+  }
+
+  getAccess(orgId: string, id: string): Observable<AccessRule> {
+    return this.http.get<AccessRule>(this.url(orgId, `/${id}/access`));
+  }
+
+  setAccess(orgId: string, id: string, rule: AccessChange): Observable<AccessRule> {
+    return this.http.put<AccessRule>(this.url(orgId, `/${id}/access`), rule);
+  }
+
+  getFolderAccess(orgId: string, folderId: string): Observable<AccessRule> {
+    return this.http.get<AccessRule>(`/api/organizations/${orgId}/folders/${folderId}/access`);
+  }
+
+  setFolderAccess(orgId: string, folderId: string, rule: AccessChange): Observable<AccessRule> {
+    return this.http.put<AccessRule>(`/api/organizations/${orgId}/folders/${folderId}/access`, rule);
   }
 
   listOrgShares(orgId: string, id: string): Observable<OrgShare[]> {

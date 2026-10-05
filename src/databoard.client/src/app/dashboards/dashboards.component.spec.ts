@@ -490,4 +490,15 @@ describe('DashboardsComponent', () => {
       expect(el().querySelector('.shared-with-me')).toBeNull();
     });
   });
+
+  describe('who can see what', () => {
+    const limited = (id: string, name: string) => ({ ...summary(id, name), restricted: true });
+
+    it('marks a limited dashboard with a lock in the list', () => {
+      start('Editor', [limited('d1', 'Staff plan'), summary('d2', 'For all')]);
+
+      const rows = Array.from(el().querySelectorAll('.row'));
+      expect(rows.filter((r) => r.querySelector('svg.lock')).map((r) => r.textContent)).toEqual([expect.stringContaining('Staff plan')]);
+    });
+  });
 });

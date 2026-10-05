@@ -58,7 +58,7 @@ public sealed record SaveDashboardRequest(string Name, string? Description, Dash
 /// <param name="ChartIds">The charts on the dashboard, so a chart can show which dashboards use it.</param>
 public sealed record DashboardSummaryDto(
     Guid Id, string Name, string? Description, int WidgetCount, DateTime UpdatedUtc, IReadOnlyList<Guid>? ChartIds = null,
-    Guid? FolderId = null);
+    Guid? FolderId = null, bool Restricted = false);
 
 /// <summary>
 /// The refresh schedule of a dashboard and how the last refresh went. Every member sees it (it says how old their data
@@ -71,7 +71,7 @@ public sealed record DashboardRefreshDto(
 
 public sealed record DashboardDto(
     Guid Id, string Name, string? Description, DashboardDefinition Definition, DateTime CreatedUtc, DateTime UpdatedUtc,
-    DashboardRefreshDto? Refresh = null, Guid? FolderId = null, DashboardBackgroundDto? Background = null);
+    DashboardRefreshDto? Refresh = null, Guid? FolderId = null, DashboardBackgroundDto? Background = null, bool Restricted = false);
 
 /// <param name="IntervalMinutes">5 to 1440, or null to stop refreshing on a schedule.</param>
 public sealed record SetDashboardRefreshRequest(int? IntervalMinutes);

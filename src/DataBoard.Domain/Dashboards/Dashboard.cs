@@ -1,4 +1,5 @@
 using DataBoard.Domain.Common;
+using DataBoard.Domain.Organizations;
 
 namespace DataBoard.Domain.Dashboards;
 
@@ -121,6 +122,22 @@ public sealed class Dashboard : BaseEntity
         var dashboard = new Dashboard { OrganizationId = organizationId, CreatedByUserId = createdByUserId, CreatedUtc = nowUtc, FolderId = folderId };
         dashboard.Update(name, description, definitionJson, nowUtc);
         return dashboard;
+    }
+
+    // ---- who may see it ----
+
+    /// <summary>Null, together with an empty <see cref="AccessMemberIds"/>, means everyone in the organization.</summary>
+    public OrganizationRole? AccessMinRole { get; private set; }
+    public Guid[] AccessMemberIds { get; private set; } = [];
+
+    public AccessRule Access => new(AccessMinRole, AccessMemberIds);
+
+    /// <summary>Who may see it. Changing this is not an edit of what it holds, so it does not count as an update.</summary>
+    public void SetAccess(AccessRule rule)
+    {
+        var checkedRule = AccessRule.Create(rule.MinRole, rule.MemberIds);
+        AccessMinRole = checkedRule.MinRole;
+        AccessMemberIds = [.. checkedRule.MemberIds];
     }
 
     /// <summary>Filing a dashboard is organization, not a change to the dashboard, so it does not count as an update.</summary>

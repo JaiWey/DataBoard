@@ -11,6 +11,8 @@ export interface Folder {
   parentId: string | null;
   name: string;
   kind?: FolderKind;
+  /** Who may see it is limited (dashboard folders). */
+  restricted?: boolean;
 }
 
 @Injectable({ providedIn: 'root' })

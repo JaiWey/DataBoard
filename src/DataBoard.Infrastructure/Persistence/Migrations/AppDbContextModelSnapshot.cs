@@ -85,6 +85,15 @@ namespace DataBoard.Infrastructure.Persistence.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.PrimitiveCollection<Guid[]>("AccessMemberIds")
+                        .IsRequired()
+                        .HasColumnType("uuid[]")
+                        .HasColumnName("access_member_ids");
+
+                    b.Property<int?>("AccessMinRole")
+                        .HasColumnType("integer")
+                        .HasColumnName("access_min_role");
+
                     b.Property<string>("BackgroundFit")
                         .IsRequired()
                         .ValueGeneratedOnAdd()
@@ -362,6 +371,15 @@ namespace DataBoard.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
+
+                    b.PrimitiveCollection<Guid[]>("AccessMemberIds")
+                        .IsRequired()
+                        .HasColumnType("uuid[]")
+                        .HasColumnName("access_member_ids");
+
+                    b.Property<int?>("AccessMinRole")
+                        .HasColumnType("integer")
+                        .HasColumnName("access_min_role");
 
                     b.Property<Guid>("CreatedByUserId")
                         .HasColumnType("uuid");

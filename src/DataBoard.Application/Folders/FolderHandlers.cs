@@ -36,12 +36,13 @@ public sealed record UpdateFolderRequest(string Name, Guid? ParentId);
 /// <summary>Where to file a dataset, chart or dashboard; null is the top level.</summary>
 public sealed record MoveToFolderRequest(Guid? FolderId);
 
-public sealed record FolderDto(Guid Id, Guid? ParentId, string Name, FolderKind Kind = FolderKind.Dataset);
+/// <param name="Restricted">Who may see it is limited (a dashboard folder with an access rule of its own).</param>
+public sealed record FolderDto(Guid Id, Guid? ParentId, string Name, FolderKind Kind = FolderKind.Dataset, bool Restricted = false);
 
 
 internal static class FolderRules
 {
-    public static FolderDto ToDto(this Folder f) => new(f.Id, f.ParentId, f.Name, f.Kind);
+    public static FolderDto ToDto(this Folder f) => new(f.Id, f.ParentId, f.Name, f.Kind, !f.Access.IsOpen);
 
     /// <summary>The folder must exist in the organization and be of the right kind (null, the top level, always fits).</summary>
     public static async Task RequireFolderAsync(
@@ -74,22 +75,24 @@ internal static class FolderRules
     }
 }
 
-public sealed class ListFoldersHandler(IFolderRepository folders, OrganizationAccess access)
+public sealed class ListFoldersHandler(IFolderRepository folders, OrganizationAccess access, DashboardVisibility visibility)
 {
     public async Task<IReadOnlyList<FolderDto>> HandleAsync(Guid organizationId, FolderKind kind = FolderKind.Dataset, CancellationToken ct = default)
     {
-        await access.RequireRoleAsync(organizationId, OrganizationRole.Viewer, ct);
+        var member = await access.RequireRoleAsync(organizationId, OrganizationRole.Viewer, ct);
         var items = await folders.ListByOrganizationAsync(organizationId, kind, ct);
+        // A dashboard folder somebody may not see (or one inside such a folder) is not in their tree.
+        if (kind == FolderKind.Dashboard) items = await visibility.FilterFoldersAsync(member, items, ct);
         return items.Select(f => f.ToDto()).ToList();
     }
 }
 
 public sealed class CreateFolderHandler(
-    IFolderRepository folders, IUnitOfWork unitOfWork, IClock clock, OrganizationAccess access)
+    IFolderRepository folders, IUnitOfWork unitOfWork, IClock clock, OrganizationAccess access, DashboardVisibility visibility)
 {
     public async Task<FolderDto> HandleAsync(Guid organizationId, CreateFolderRequest request, CancellationToken ct = default)
     {
-        await access.RequireRoleAsync(organizationId, OrganizationRole.Editor, ct);
+        var member = await access.RequireRoleAsync(organizationId, OrganizationRole.Editor, ct);
         var userId = access.RequireUserId();
         if (!Enum.IsDefined(request.Kind))
             throw new ValidationException("Kind", "Unknown folder kind.");
@@ -99,6 +102,7 @@ public sealed class CreateFolderHandler(
         {
             if (!all.ContainsKey(parentId))
                 throw new ValidationException("ParentId", "That folder does not exist.");
+            if (request.Kind == FolderKind.Dashboard) await visibility.RequireFolderAsync(member, organizationId, parentId, "ParentId", ct);
             if (FolderRules.DepthOf(all, parentId) >= Folder.MaxDepth)
                 throw new ValidationException("ParentId", $"Folders can be nested at most {Folder.MaxDepth} levels deep.");
         }
@@ -115,14 +119,20 @@ public sealed class CreateFolderHandler(
 
 /// <summary>Renames a folder, moves it, or both. A folder stays among folders of its own kind.</summary>
 public sealed class UpdateFolderHandler(
-    IFolderRepository folders, IUnitOfWork unitOfWork, IClock clock, OrganizationAccess access)
+    IFolderRepository folders, IUnitOfWork unitOfWork, IClock clock, OrganizationAccess access, DashboardVisibility visibility)
 {
     public async Task<FolderDto> HandleAsync(Guid organizationId, Guid folderId, UpdateFolderRequest request, CancellationToken ct = default)
     {
-        await access.RequireRoleAsync(organizationId, OrganizationRole.Editor, ct);
+        var member = await access.RequireRoleAsync(organizationId, OrganizationRole.Editor, ct);
 
         var folder = await folders.GetAsync(organizationId, folderId, ct)
             ?? throw new NotFoundException("Folder not found.");
+        if (folder.Kind == FolderKind.Dashboard)
+        {
+            // A folder somebody may not see is not theirs to rename or move, and neither is a place they may not see to move it into.
+            if (!await visibility.CanSeeAsync(member, folder, ct)) throw new NotFoundException("Folder not found.");
+            if (request.ParentId != folder.ParentId) await visibility.RequireFolderAsync(member, organizationId, request.ParentId, "ParentId", ct);
+        }
 
         if (request.ParentId != folder.ParentId)
         {
@@ -163,14 +173,16 @@ public sealed class UpdateFolderHandler(
 }
 
 /// <summary>Only an empty folder can be deleted, so nothing is ever lost by accident.</summary>
-public sealed class DeleteFolderHandler(IFolderRepository folders, IUnitOfWork unitOfWork, OrganizationAccess access)
+public sealed class DeleteFolderHandler(IFolderRepository folders, IUnitOfWork unitOfWork, OrganizationAccess access, DashboardVisibility visibility)
 {
     public async Task HandleAsync(Guid organizationId, Guid folderId, CancellationToken ct = default)
     {
-        await access.RequireRoleAsync(organizationId, OrganizationRole.Editor, ct);
+        var member = await access.RequireRoleAsync(organizationId, OrganizationRole.Editor, ct);
 
         var folder = await folders.GetAsync(organizationId, folderId, ct)
             ?? throw new NotFoundException("Folder not found.");
+        if (folder.Kind == FolderKind.Dashboard && !await visibility.CanSeeAsync(member, folder, ct))
+            throw new NotFoundException("Folder not found.");
         if (await folders.HasContentsAsync(folder.Kind, folderId, ct))
             throw new ConflictException("This folder is not empty. Move or delete what is inside first.");
 
@@ -214,15 +226,15 @@ public sealed class MoveChartHandler(
 }
 
 public sealed class MoveDashboardHandler(
-    IDashboardRepository dashboards, IFolderRepository folders, IUnitOfWork unitOfWork, OrganizationAccess access)
+    IDashboardRepository dashboards, IFolderRepository folders, IUnitOfWork unitOfWork, OrganizationAccess access, DashboardVisibility visibility)
 {
     public async Task<DashboardDto> HandleAsync(Guid organizationId, Guid dashboardId, MoveToFolderRequest request, CancellationToken ct = default)
     {
-        await access.RequireRoleAsync(organizationId, OrganizationRole.Editor, ct);
+        var member = await access.RequireRoleAsync(organizationId, OrganizationRole.Editor, ct);
 
-        var dashboard = await dashboards.GetAsync(organizationId, dashboardId, ct)
-            ?? throw new NotFoundException("Dashboard not found.");
+        var dashboard = await visibility.GetAsync(dashboards, organizationId, dashboardId, member, ct);
         await FolderRules.RequireFolderAsync(folders, organizationId, FolderKind.Dashboard, request.FolderId, "FolderId", ct);
+        await visibility.RequireFolderAsync(member, organizationId, request.FolderId, "FolderId", ct);
 
         dashboard.MoveTo(request.FolderId);
         await unitOfWork.SaveChangesAsync(ct);

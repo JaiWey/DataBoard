@@ -573,6 +573,50 @@ describe('DashboardComponent', () => {
       expect(buttonByText('Share')).toBeUndefined();
     });
 
+    it('lets editors, and only editors, say who can see the dashboard, and says when it is limited', () => {
+      load('Viewer');
+      http.expectOne(runUrl).flush({ widgets: [] });
+      expect(buttonByText('Access')).toBeUndefined();
+      expect(el().querySelector('button.access')).toBeNull();
+    });
+
+    it('opens the access dialog for the dashboard that is shown, and reads it again once something was saved', () => {
+      load('Editor');
+      http.expectOne(runUrl).flush({ widgets: [] });
+      const open = vi.spyOn(TestBed.inject(MatDialog), 'open').mockReturnValue({ afterClosed: () => of(true) } as never);
+
+      buttonByText('Access').click();
+
+      const [, config] = open.mock.calls[0] as unknown as [unknown, { data: unknown }];
+      expect(config.data).toEqual({ orgId: ORG, kind: 'dashboard', id: DASH, name: 'Sales overview' });
+      http.expectOne(dashboardUrl).flush({ ...dashboard(), restricted: true });
+      fixture.detectChanges();
+      expect(el().querySelector('button.access')?.textContent?.trim()).toBe('Access (limited)');
+    });
+
+    it('does nothing when the access dialog is closed without saving', () => {
+      load('Editor');
+      http.expectOne(runUrl).flush({ widgets: [] });
+      vi.spyOn(TestBed.inject(MatDialog), 'open').mockReturnValue({ afterClosed: () => of(undefined) } as never);
+
+      buttonByText('Access').click();
+
+      http.expectNone(dashboardUrl);
+    });
+
+    it('lets the page know the dashboard is gone when it is no longer visible to the person who limited it', () => {
+      load('Editor');
+      http.expectOne(runUrl).flush({ widgets: [] });
+      vi.spyOn(TestBed.inject(MatDialog), 'open').mockReturnValue({ afterClosed: () => of(true) } as never);
+      const gone: string[] = [];
+      fixture.componentInstance.deleted.subscribe((id) => gone.push(id));
+
+      buttonByText('Access').click();
+      http.expectOne(dashboardUrl).flush({}, { status: 404, statusText: 'Not Found' });
+
+      expect(gone).toEqual([DASH]);
+    });
+
     it('opens the sharing dialog for the dashboard that is shown', () => {
       load('Editor');
       http.expectOne(runUrl).flush({ widgets: [] });

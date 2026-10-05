@@ -27,6 +27,9 @@ internal sealed class DashboardConfiguration : IEntityTypeConfiguration<Dashboar
         builder.Property(d => d.BackgroundFit).HasColumnName("background_fit").HasMaxLength(10).HasDefaultValue("cover");
         builder.Property(d => d.BackgroundOpacity).HasColumnName("background_opacity").HasDefaultValue(100);
 
+        builder.Property(d => d.AccessMinRole).HasColumnName("access_min_role");
+        builder.Property(d => d.AccessMemberIds).HasColumnName("access_member_ids").HasColumnType("uuid[]").IsRequired();
+
         builder.HasIndex(d => new { d.OrganizationId, d.Name }).IsUnique();
         // The scheduler asks "what is due?" every few seconds; only dashboards with a schedule are in this index.
         builder.HasIndex(d => d.NextRefreshUtc).HasFilter("refresh_interval_minutes IS NOT NULL");

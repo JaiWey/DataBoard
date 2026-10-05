@@ -102,14 +102,14 @@ internal static class SharedLinks
 
 public sealed class CreateShareHandler(
     IDashboardShareRepository shares, IDashboardRepository dashboards, IOrganizationRepository organizations,
-    IUnitOfWork unitOfWork, IClock clock, OrganizationAccess access)
+    IUnitOfWork unitOfWork, IClock clock, OrganizationAccess access, DashboardVisibility visibility)
 {
     public async Task<ShareCreatedDto> HandleAsync(
         Guid organizationId, Guid dashboardId, CreateShareRequest? request, CancellationToken ct = default)
     {
-        await access.RequireRoleAsync(organizationId, OrganizationRole.Editor, ct);
+        var member = await access.RequireRoleAsync(organizationId, OrganizationRole.Editor, ct);
         var userId = access.RequireUserId();
-        _ = await dashboards.GetAsync(organizationId, dashboardId, ct) ?? throw new NotFoundException("Dashboard not found.");
+        _ = await visibility.GetAsync(dashboards, organizationId, dashboardId, member, ct);
 
         var now = clock.UtcNow;
         DateTime? expires = null;
@@ -140,12 +140,12 @@ public sealed class CreateShareHandler(
     }
 }
 
-public sealed class ListSharesHandler(IDashboardShareRepository shares, IDashboardRepository dashboards, IClock clock, OrganizationAccess access)
+public sealed class ListSharesHandler(IDashboardShareRepository shares, IDashboardRepository dashboards, IClock clock, OrganizationAccess access, DashboardVisibility visibility)
 {
     public async Task<IReadOnlyList<ShareDto>> HandleAsync(Guid organizationId, Guid dashboardId, CancellationToken ct = default)
     {
-        await access.RequireRoleAsync(organizationId, OrganizationRole.Editor, ct);
-        _ = await dashboards.GetAsync(organizationId, dashboardId, ct) ?? throw new NotFoundException("Dashboard not found.");
+        var member = await access.RequireRoleAsync(organizationId, OrganizationRole.Editor, ct);
+        _ = await visibility.GetAsync(dashboards, organizationId, dashboardId, member, ct);
 
         var now = clock.UtcNow;
         return (await shares.ListAsync(organizationId, dashboardId, ct))
@@ -154,11 +154,13 @@ public sealed class ListSharesHandler(IDashboardShareRepository shares, IDashboa
     }
 }
 
-public sealed class RevokeShareHandler(IDashboardShareRepository shares, IUnitOfWork unitOfWork, OrganizationAccess access)
+public sealed class RevokeShareHandler(
+    IDashboardShareRepository shares, IDashboardRepository dashboards, IUnitOfWork unitOfWork, OrganizationAccess access, DashboardVisibility visibility)
 {
     public async Task HandleAsync(Guid organizationId, Guid dashboardId, Guid shareId, CancellationToken ct = default)
     {
-        await access.RequireRoleAsync(organizationId, OrganizationRole.Editor, ct);
+        var member = await access.RequireRoleAsync(organizationId, OrganizationRole.Editor, ct);
+        _ = await visibility.GetAsync(dashboards, organizationId, dashboardId, member, ct);
         var share = await shares.GetAsync(organizationId, dashboardId, shareId, ct) ?? throw new NotFoundException("Link not found.");
         shares.Remove(share);
         await unitOfWork.SaveChangesAsync(ct);

@@ -275,4 +275,45 @@ describe('FolderTreeComponent', () => {
       expect(moves).toEqual([]);
     });
   });
+
+  describe('when something is limited to some people', () => {
+    const locks = () => Array.from(el().querySelectorAll('.row')).filter((r) => r.querySelector('svg.lock')).map((r) => r.textContent?.replace(/\s+/g, ' ').trim());
+
+    it('puts a lock on a limited folder and on a limited item, and on nothing else', () => {
+      create(true, {
+        folders: [{ ...folder('sales', 'Sales'), restricted: true }, folder('archive', 'Archive')],
+        datasets: [{ ...dataset('plan', 'Plan'), restricted: true }, dataset('zebra', 'Zebra')],
+      });
+
+      expect(locks().length).toBe(2);
+      expect(locks()[0]).toContain('Sales');
+      expect(locks()[1]).toContain('Plan');
+      expect(el().querySelector('svg.lock')!.getAttribute('aria-label')).toContain('only some people');
+    });
+
+    it('offers "Who can see it…" on a folder only where the page allows it, and reports which folder', () => {
+      create();
+      row('Sales').querySelector<HTMLButtonElement>('.more')!.click();
+      fixture.detectChanges();
+      expect(Array.from(document.querySelectorAll('.mat-mdc-menu-item')).map((b) => b.textContent?.trim())).not.toContain('Who can see it…');
+      document.body.click();
+
+      fixture = TestBed.createComponent(FolderTreeComponent);
+      fixture.componentRef.setInput('folders', folders);
+      fixture.componentRef.setInput('entries', datasets);
+      fixture.componentRef.setInput('canEdit', true);
+      fixture.componentRef.setInput('canManageAccess', true);
+      fixture.detectChanges();
+      const asked: Folder[] = [];
+      fixture.componentInstance.accessFolder.subscribe((f) => asked.push(f));
+
+      row('Sales').querySelector<HTMLButtonElement>('.more')!.click();
+      fixture.detectChanges();
+      const entries = Array.from(document.querySelectorAll<HTMLButtonElement>('.mat-mdc-menu-item'));
+      entries.find((b) => b.textContent?.trim() === 'Who can see it…')!.click();
+
+      expect(asked.map((f) => f.id)).toEqual(['sales']);
+      expect(entries.map((b) => b.textContent?.trim()).filter((t) => t === 'Who can see it…').length).toBe(1);
+    });
+  });
 });

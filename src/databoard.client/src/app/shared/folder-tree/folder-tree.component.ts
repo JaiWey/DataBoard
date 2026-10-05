@@ -60,13 +60,20 @@ export interface AddRequest {
               <svg class="chevron" [class.open]="row.expanded" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
               <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5h4.6l2 2h8.4A1.5 1.5 0 0 1 21 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z" [attr.fill]="row.expanded ? 'none' : 'currentColor'" fill-opacity="0.25" stroke="currentColor" stroke-width="1.6"/></svg>
               <span class="name">{{ row.name }}</span>
+              @if (row.folder.restricted) {
+                <svg class="lock" viewBox="0 0 24 24" width="14" height="14" role="img" aria-label="Limited: only some people can see it"><title>Limited: only some people can see it</title><rect x="5" y="11" width="14" height="9" rx="2" fill="currentColor"/><path d="M8 11V8a4 4 0 0 1 8 0v3" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+              }
               <span class="count">{{ row.childCount }}</span>
             </button>
           } @else {
             <button type="button" class="main item" (click)="open.emit(row.entry)">
               <span class="spacer"></span>
               <span class="text">
-                <span class="name">{{ row.name }}</span>
+                <span class="name">{{ row.name }}
+                  @if (row.entry.restricted) {
+                    <svg class="lock" viewBox="0 0 24 24" width="13" height="13" role="img" aria-label="Limited: only some people can see it"><title>Limited: only some people can see it</title><rect x="5" y="11" width="14" height="9" rx="2" fill="currentColor"/><path d="M8 11V8a4 4 0 0 1 8 0v3" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+                  }
+                </span>
                 @if (row.entry.subline) {
                   <span class="sub">{{ row.entry.subline }}</span>
                 }
@@ -89,6 +96,9 @@ export interface AddRequest {
             <button mat-menu-item type="button" (click)="addItem.emit({ action: action.id, folderId: row.id })">{{ action.label }}</button>
           }
           <button mat-menu-item type="button" (click)="renameFolder.emit(row.folder)">Rename</button>
+          @if (canManageAccess()) {
+            <button mat-menu-item type="button" class="access" (click)="accessFolder.emit(row.folder)">Who can see it…</button>
+          }
         }
         <button mat-menu-item type="button" (click)="moveTo.emit({ kind: row.kind, id: row.id })">Move to…</button>
         @if (row.kind === 'folder') {
@@ -122,6 +132,7 @@ export interface AddRequest {
     .chevron { transition: transform 0.12s; flex: none; }
     .chevron.open { transform: rotate(90deg); }
     .spacer { width: 16px; flex: none; }
+    .lock { color: var(--mat-sys-on-surface-variant); margin-left: 0.25rem; vertical-align: -1px; }
     svg { flex: none; }
   `,
 })
@@ -139,6 +150,8 @@ export class FolderTreeComponent {
   /** Which entry is showing (a dataset's tab, the selected chart...); its folders open so it can be seen. */
   readonly activeId = input<string | null>(null);
   readonly canEdit = input(false);
+  /** Folders can be limited to some people: their menu offers "Who can see it…". */
+  readonly canManageAccess = input(false);
   /** The folder a new item would go in. */
   readonly selectedFolderId = input<string | null>(null);
   /** Where the open folders are remembered (per organization); empty means they are not. */
@@ -150,6 +163,8 @@ export class FolderTreeComponent {
   readonly createFolder = output<string | null>();
   readonly renameFolder = output<Folder>();
   readonly deleteFolder = output<Folder>();
+  /** "Who can see it…" was chosen for a folder; the page opens the dialog. */
+  readonly accessFolder = output<Folder>();
   readonly addItem = output<AddRequest>();
   /** A row was dropped on a folder (or the top level). */
   readonly move = output<MoveRequest>();

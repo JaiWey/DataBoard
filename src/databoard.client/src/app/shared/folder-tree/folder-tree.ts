@@ -8,6 +8,8 @@ export interface TreeEntry {
   subline?: string;
   /** The folder it is in; null or missing is the top level. */
   folderId?: string | null;
+  /** Who may see it is limited: shown with a lock. */
+  restricted?: boolean;
 }
 
 /** Folders can be nested this many levels deep (a top level folder is level 1). Mirrors the server's limit. */

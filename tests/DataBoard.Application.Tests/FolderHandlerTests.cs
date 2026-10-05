@@ -1,3 +1,4 @@
+using DataBoard.Application.Dashboards;
 using DataBoard.Domain.Folders;
 using DataBoard.Application.Folders;
 using DataBoard.Application.Common;
@@ -23,9 +24,9 @@ public class FolderHandlerTests
     private void Join(OrganizationRole role, Guid? org = null) =>
         _orgs.Members.Add(OrganizationMember.Create(org ?? _org, _user.UserId!.Value, role, DateTime.UtcNow));
 
-    private CreateFolderHandler Create() => new(_folders, _uow, new FixedClock(), Access());
-    private UpdateFolderHandler Update() => new(_folders, _uow, new FixedClock(), Access());
-    private DeleteFolderHandler Delete() => new(_folders, _uow, Access());
+    private CreateFolderHandler Create() => new(_folders, _uow, new FixedClock(), Access(), new DashboardVisibility(_folders));
+    private UpdateFolderHandler Update() => new(_folders, _uow, new FixedClock(), Access(), new DashboardVisibility(_folders));
+    private DeleteFolderHandler Delete() => new(_folders, _uow, Access(), new DashboardVisibility(_folders));
     private MoveDatasetHandler MoveDataset() => new(_datasets, _folders, _uow, Access());
 
     private async Task<FolderDto> MakeFolder(string name, Guid? parent = null) =>
@@ -62,7 +63,7 @@ public class FolderHandlerTests
         Join(OrganizationRole.Viewer);
 
         await Assert.ThrowsAsync<ForbiddenException>(() => MakeFolder("Sales"));
-        Assert.Empty(await new ListFoldersHandler(_folders, Access()).HandleAsync(_org));
+        Assert.Empty(await new ListFoldersHandler(_folders, Access(), new DashboardVisibility(_folders)).HandleAsync(_org));
 
         _user.UserId = Guid.NewGuid();
         await Assert.ThrowsAsync<NotFoundException>(() => MakeFolder("Sales"));
@@ -269,7 +270,7 @@ public class FolderHandlerTests
         await Create().HandleAsync(_org, new CreateFolderRequest("Sales", null, FolderKind.Dashboard));
         await Assert.ThrowsAsync<ConflictException>(() => Create().HandleAsync(_org, new CreateFolderRequest("sales", null, FolderKind.Chart)));
 
-        var list = new ListFoldersHandler(_folders, Access());
+        var list = new ListFoldersHandler(_folders, Access(), new DashboardVisibility(_folders));
         Assert.Equal(FolderKind.Chart, Assert.Single(await list.HandleAsync(_org, FolderKind.Chart)).Kind);
         Assert.Single(await list.HandleAsync(_org, FolderKind.Dashboard));
         Assert.Single(await list.HandleAsync(_org, FolderKind.Dataset));

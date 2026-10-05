@@ -89,12 +89,12 @@ internal static class DashboardNames
 
 /// <summary>Writes a dashboard out as a <see cref="DashboardPackage"/>. Editors and Owners.</summary>
 public sealed class ExportDashboardHandler(
-    IDashboardRepository dashboards, IChartRepository charts, IImageStore images, OrganizationAccess access)
+    IDashboardRepository dashboards, IChartRepository charts, IImageStore images, OrganizationAccess access, DashboardVisibility visibility)
 {
     public async Task<DashboardPackage> HandleAsync(Guid organizationId, Guid dashboardId, CancellationToken ct = default)
     {
-        await access.RequireRoleAsync(organizationId, OrganizationRole.Editor, ct);
-        var dashboard = await dashboards.GetAsync(organizationId, dashboardId, ct) ?? throw new NotFoundException("Dashboard not found.");
+        var member = await access.RequireRoleAsync(organizationId, OrganizationRole.Editor, ct);
+        var dashboard = await visibility.GetAsync(dashboards, organizationId, dashboardId, member, ct);
         var definition = DashboardJson.Deserialize(dashboard.DefinitionJson);
 
         var chartNames = (await charts.ListByOrganizationAsync(organizationId, ct)).ToDictionary(c => c.Id, c => c.Name);
@@ -164,11 +164,11 @@ public sealed class ExportDashboardHandler(
 /// </summary>
 public sealed class ImportDashboardHandler(
     IDashboardRepository dashboards, IChartRepository charts, IFolderRepository folders, IImageStore images,
-    IUnitOfWork unitOfWork, IClock clock, OrganizationAccess access)
+    IUnitOfWork unitOfWork, IClock clock, OrganizationAccess access, DashboardVisibility visibility)
 {
     public async Task<ImportDashboardResult> HandleAsync(Guid organizationId, ImportDashboardRequest request, CancellationToken ct = default)
     {
-        await access.RequireRoleAsync(organizationId, OrganizationRole.Editor, ct);
+        var member = await access.RequireRoleAsync(organizationId, OrganizationRole.Editor, ct);
         var userId = access.RequireUserId();
         var package = request.Package ?? throw new ValidationException("Package", "Choose a dashboard file to import.");
         if (package.Format != DashboardPackages.Format)
@@ -176,6 +176,7 @@ public sealed class ImportDashboardHandler(
         if (package.Version != DashboardPackages.CurrentVersion)
             throw new ValidationException("Package", $"This file is version {package.Version}; this DataBoard reads version {DashboardPackages.CurrentVersion}.");
         await FolderRules.RequireFolderAsync(folders, organizationId, FolderKind.Dashboard, request.FolderId, "FolderId", ct);
+        await visibility.RequireFolderAsync(member, organizationId, request.FolderId, "FolderId", ct);
 
         var wantedName = string.IsNullOrWhiteSpace(request.Name) ? package.Name : request.Name;
         if (string.IsNullOrWhiteSpace(wantedName)) throw new ValidationException("Name", "The dashboard needs a name.");
@@ -310,13 +311,13 @@ public sealed class ImportDashboardHandler(
 /// background. The copy starts with no share links and no refresh schedule, and is filed in the same folder. Editors and Owners.
 /// </summary>
 public sealed class DuplicateDashboardHandler(
-    IDashboardRepository dashboards, IImageStore images, IUnitOfWork unitOfWork, IClock clock, OrganizationAccess access)
+    IDashboardRepository dashboards, IImageStore images, IUnitOfWork unitOfWork, IClock clock, OrganizationAccess access, DashboardVisibility visibility)
 {
     public async Task<DashboardDto> HandleAsync(Guid organizationId, Guid dashboardId, DuplicateDashboardRequest? request, CancellationToken ct = default)
     {
-        await access.RequireRoleAsync(organizationId, OrganizationRole.Editor, ct);
+        var member = await access.RequireRoleAsync(organizationId, OrganizationRole.Editor, ct);
         var userId = access.RequireUserId();
-        var source = await dashboards.GetAsync(organizationId, dashboardId, ct) ?? throw new NotFoundException("Dashboard not found.");
+        var source = await visibility.GetAsync(dashboards, organizationId, dashboardId, member, ct);
         var definition = DashboardJson.Deserialize(source.DefinitionJson);
 
         var copies = new List<string>(); // pictures copied so far, which are thrown away if saving fails
@@ -362,6 +363,7 @@ public sealed class DuplicateDashboardHandler(
             {
                 var d = Dashboard.Create(organizationId, name, source.Description, DashboardJson.Serialize(copied), userId, clock.UtcNow, source.FolderId);
                 if (backgroundKey is not null) d.SetBackground(backgroundKey, source.BackgroundFit, source.BackgroundOpacity);
+                d.SetAccess(source.Access); // a copy of a limited dashboard is limited the same way
                 return d;
             });
 

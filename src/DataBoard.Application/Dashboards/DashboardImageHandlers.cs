@@ -42,7 +42,7 @@ internal static class ImageWidgets
 /// the picture; its fit, description and link can be changed afterwards with the rest of the dashboard. Editors and Owners.
 /// </summary>
 public sealed class AddImageWidgetHandler(
-    IDashboardRepository dashboards, IImageStore images, IUnitOfWork unitOfWork, IClock clock, OrganizationAccess access)
+    IDashboardRepository dashboards, IImageStore images, IUnitOfWork unitOfWork, IClock clock, OrganizationAccess access, DashboardVisibility visibility)
 {
     public const int DefaultWidth = 4;
     public const int DefaultHeight = 4;
@@ -50,8 +50,8 @@ public sealed class AddImageWidgetHandler(
     public async Task<DashboardDto> HandleAsync(
         Guid organizationId, Guid dashboardId, Stream image, ImageWidgetOptions? options, Guid? tabId = null, CancellationToken ct = default)
     {
-        await access.RequireRoleAsync(organizationId, OrganizationRole.Editor, ct);
-        var dashboard = await dashboards.GetAsync(organizationId, dashboardId, ct) ?? throw new NotFoundException("Dashboard not found.");
+        var member = await access.RequireRoleAsync(organizationId, OrganizationRole.Editor, ct);
+        var dashboard = await visibility.GetAsync(dashboards, organizationId, dashboardId, member, ct);
 
         var definition = DashboardJson.Deserialize(dashboard.DefinitionJson);
         if (definition.Widgets.Count >= DashboardValidator.MaxWidgets)
@@ -93,12 +93,12 @@ public sealed class AddImageWidgetHandler(
 
 /// <summary>Puts another picture in a picture widget. Its place, fit, description and link stay.</summary>
 public sealed class ReplaceImageWidgetHandler(
-    IDashboardRepository dashboards, IImageStore images, IUnitOfWork unitOfWork, IClock clock, OrganizationAccess access)
+    IDashboardRepository dashboards, IImageStore images, IUnitOfWork unitOfWork, IClock clock, OrganizationAccess access, DashboardVisibility visibility)
 {
     public async Task<DashboardDto> HandleAsync(Guid organizationId, Guid dashboardId, Guid widgetId, Stream image, CancellationToken ct = default)
     {
-        await access.RequireRoleAsync(organizationId, OrganizationRole.Editor, ct);
-        var dashboard = await dashboards.GetAsync(organizationId, dashboardId, ct) ?? throw new NotFoundException("Dashboard not found.");
+        var member = await access.RequireRoleAsync(organizationId, OrganizationRole.Editor, ct);
+        var dashboard = await visibility.GetAsync(dashboards, organizationId, dashboardId, member, ct);
 
         var definition = DashboardJson.Deserialize(dashboard.DefinitionJson);
         var current = ImageWidgets.Find(definition, widgetId);
@@ -129,12 +129,12 @@ public sealed class ReplaceImageWidgetHandler(
 }
 
 /// <summary>The picture of a picture widget, for any member of the organization.</summary>
-public sealed class GetImageWidgetHandler(IDashboardRepository dashboards, IImageStore images, OrganizationAccess access)
+public sealed class GetImageWidgetHandler(IDashboardRepository dashboards, IImageStore images, OrganizationAccess access, DashboardVisibility visibility)
 {
     public async Task<BackgroundImage> HandleAsync(Guid organizationId, Guid dashboardId, Guid widgetId, CancellationToken ct = default)
     {
-        await access.RequireRoleAsync(organizationId, OrganizationRole.Viewer, ct);
-        var dashboard = await dashboards.GetAsync(organizationId, dashboardId, ct) ?? throw new NotFoundException("Dashboard not found.");
+        var member = await access.RequireRoleAsync(organizationId, OrganizationRole.Viewer, ct);
+        var dashboard = await visibility.GetAsync(dashboards, organizationId, dashboardId, member, ct);
         return Open(dashboard, widgetId, images);
     }
 

@@ -24,6 +24,7 @@ import { ImageWidgetComponent } from './image-widget.component';
 import { ImageWidgetDialogComponent, ImageWidgetDialogData } from './image-widget-dialog.component';
 import { TextWidgetDialogComponent, TextWidgetDialogData } from './text-widget-dialog.component';
 import { DashboardGridComponent } from './dashboard-grid.component';
+import { AccessDialogComponent, AccessDialogData } from './access-dialog.component';
 import { ShareDialogComponent, ShareDialogData } from './share-dialog.component';
 import { REFRESH_CHOICES, ago, intervalLabel } from '../shared/relative-time';
 import { autoReload, clock, reloadChoices, reloadLabel } from '../shared/auto-reload';
@@ -76,6 +77,7 @@ export function parseFilterInput(operator: SharedFilterOperator, text: string): 
               }
               <button mat-button type="button" class="refresh" [disabled]="busy()" (click)="refresh()">Refresh data</button>
               <button mat-stroked-button type="button" class="share" (click)="share(d)">Share</button>
+              <button mat-stroked-button type="button" class="access" (click)="editAccess(d)">{{ d.restricted ? 'Access (limited)' : 'Access' }}</button>
               <button mat-stroked-button type="button" class="duplicate" [disabled]="busy()" (click)="duplicate(d)">Duplicate</button>
               <button mat-stroked-button type="button" class="export" [disabled]="busy()" (click)="exportFile(d)">Export</button>
               <button mat-stroked-button type="button" (click)="addCharts(d)">Add chart</button>
@@ -463,6 +465,28 @@ export class DashboardComponent implements OnInit {
   }
 
   /** Public links: make one (and copy it) or revoke the ones that exist. */
+  /** Who may see this dashboard. Afterwards it is read again, so the lock and the page agree with what was saved. */
+  protected editAccess(d: Dashboard): void {
+    this.dialog
+      .open<AccessDialogComponent, AccessDialogData, boolean>(AccessDialogComponent, {
+        data: { orgId: this.orgId(), kind: 'dashboard', id: d.id, name: d.name },
+        width: '34rem',
+        maxWidth: '95vw',
+      })
+      .afterClosed()
+      .subscribe((saved) => {
+        if (!saved) return;
+        this.api.get(this.orgId(), d.id).subscribe({
+          next: (fresh) => {
+            this.show(fresh);
+            this.changed.emit(fresh);
+          },
+          // Limited to people who no longer include this one: the dashboard is gone from their view.
+          error: () => this.deleted.emit(d.id),
+        });
+      });
+  }
+
   protected share(d: Dashboard): void {
     this.dialog.open<ShareDialogComponent, ShareDialogData>(ShareDialogComponent, {
       data: { orgId: this.orgId(), dashboardId: d.id, dashboardName: d.name },
