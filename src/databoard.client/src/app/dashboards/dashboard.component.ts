@@ -852,7 +852,7 @@ export class DashboardComponent implements OnInit {
       this.busy.set(true);
       this.errors.set([]);
     }
-    this.api.run(this.orgId(), d.id, values, refresh).subscribe({
+    this.api.run(this.orgId(), d.id, values, refresh, quiet).subscribe({
       next: (r) => {
         this.run.set(r);
         this.loadedAt.set(clock());

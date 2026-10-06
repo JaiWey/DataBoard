@@ -4,6 +4,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
 import { ECHARTS_LOADER } from '../charts/chart.component';
 import { SharedDashboardComponent } from './shared-dashboard.component';
+import { QUIET_REQUEST } from '../shared/loading.service';
 
 const TOKEN = 'T0KEN_with-dash_and_underscore_0123456789';
 const pageUrl = `/api/shared/dashboards/${TOKEN}`;
@@ -209,6 +210,7 @@ describe('SharedDashboardComponent', () => {
       vi.advanceTimersByTime(30_000);
       const again = http.expectOne(runUrl);
       fixture.detectChanges();
+      expect(again.request.context.get(QUIET_REQUEST)).toBe(true); // the page's own timer shows no loading bar
 
       expect(again.request.body).toEqual({ filters: { [F_REGION]: ['Auckland'] } });
       expect((el().querySelector('button.apply') as HTMLButtonElement).disabled).toBe(false);

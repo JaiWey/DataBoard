@@ -1,6 +1,7 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
+import { quietly } from '../shared/loading.service';
 import { ChartResult } from '../organizations/datasets.service';
 
 export type SharedFilterOperator = 'Eq' | 'NotEq' | 'In' | 'Contains' | 'StartsWith' | 'Gte' | 'Lte' | 'Between';
@@ -288,8 +289,9 @@ export class DashboardsService {
   }
 
   /** `refresh` asks the databases again instead of reusing stored results (editors and owners only). */
-  run(orgId: string, id: string, filters: FilterValues, refresh = false): Observable<DashboardRun> {
-    return this.http.post<DashboardRun>(this.url(orgId, `/${id}/run`), refresh ? { filters, refresh } : { filters });
+  /** `quiet`: a reload the person did not ask for (the page's own timer), which shows no loading bar. */
+  run(orgId: string, id: string, filters: FilterValues, refresh = false, quiet = false): Observable<DashboardRun> {
+    return this.http.post<DashboardRun>(this.url(orgId, `/${id}/run`), refresh ? { filters, refresh } : { filters }, quiet ? { context: quietly() } : {});
   }
 
   /** Puts a picture behind the dashboard, or (with no file) changes how the current one is shown. Editors and owners. */

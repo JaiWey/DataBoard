@@ -307,7 +307,7 @@ export class SharedDashboardComponent implements OnInit {
       this.errors.set([]);
     }
     this.request?.unsubscribe(); // a newer answer is the one that counts
-    this.request = this.api.run(this.token, values).subscribe({
+    this.request = this.api.run(this.token, values, quiet).subscribe({
       next: (r) => {
         this.run.set(r);
         this.loadedAt.set(clock());

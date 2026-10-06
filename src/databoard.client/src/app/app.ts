@@ -6,6 +6,8 @@ import { NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } fro
 import { filter } from 'rxjs';
 import { AuthService } from './auth/auth.service';
 import { OrgContext } from './organizations/org-context.service';
+import { LoadingBarComponent } from './shared/loading-bar.component';
+import { quietly } from './shared/loading.service';
 
 interface HealthResponse {
   status: string;
@@ -16,7 +18,7 @@ const ORG_IN_URL = /^\/organizations\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a
 
 @Component({
   selector: 'app-root',
-  imports: [RouterOutlet, RouterLink, RouterLinkActive, MatToolbarModule, MatButtonModule],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, MatToolbarModule, MatButtonModule, LoadingBarComponent],
   styleUrl: './app.css',
   templateUrl: './app.html',
 })
@@ -61,7 +63,7 @@ export class App implements OnInit {
   }
 
   checkHealth() {
-    this.http.get<HealthResponse>('/api/health').subscribe({
+    this.http.get<HealthResponse>('/api/health', { context: quietly() }).subscribe({
       next: (result) => {
         this.health.set(result);
         this.error.set(null);

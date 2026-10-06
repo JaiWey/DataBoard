@@ -2,6 +2,7 @@ import { HttpClientTestingModule, HttpTestingController } from '@angular/common/
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { App } from './app';
+import { LoadingService, QUIET_REQUEST, SHOW_AFTER_MS } from './shared/loading.service';
 
 describe('App', () => {
   let fixture: ComponentFixture<App>;
@@ -31,6 +32,35 @@ describe('App', () => {
 
     const text = (fixture.nativeElement as HTMLElement).querySelector('#api-status')?.textContent;
     expect(text).toContain('Healthy');
+  });
+
+  it('has the loading bar, which shows only when something has been waiting a while', () => {
+    vi.useFakeTimers();
+    try {
+      fixture.detectChanges();
+      httpMock.expectOne('/api/health').flush({ status: 'Healthy', timeUtc: '' });
+      const loading = TestBed.inject(LoadingService);
+      const root = fixture.nativeElement as HTMLElement;
+      expect(root.querySelector('app-loading-bar')).not.toBeNull();
+      expect(root.querySelector('mat-progress-bar')).toBeNull();
+
+      loading.start();
+      vi.advanceTimersByTime(SHOW_AFTER_MS);
+      fixture.detectChanges();
+      expect(root.querySelector('mat-progress-bar')).not.toBeNull();
+      loading.stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not show a loading bar for its own status check', () => {
+    fixture.detectChanges();
+
+    const request = httpMock.expectOne('/api/health');
+
+    expect(request.request.context.get(QUIET_REQUEST)).toBe(true);
+    request.flush({ status: 'Healthy', timeUtc: '' });
   });
 
   it('should show an error when the API is unreachable', () => {

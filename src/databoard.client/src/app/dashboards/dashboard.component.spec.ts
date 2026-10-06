@@ -7,6 +7,7 @@ import { of } from 'rxjs';
 import { ECHARTS_LOADER } from '../charts/chart.component';
 import { DashboardComponent, parseFilterInput } from './dashboard.component';
 import { answerConfirm } from '../shared/confirm.testing';
+import { QUIET_REQUEST } from '../shared/loading.service';
 
 const ORG = '11111111-1111-1111-1111-111111111111';
 const DASH = '44444444-4444-4444-4444-444444444444';
@@ -456,6 +457,15 @@ describe('DashboardComponent', () => {
       expect(select().selectedOptions[0].textContent?.trim()).toBe('Never');
     });
 
+    it('loads the charts the first time with the loading bar, since the person asked for them', () => {
+      load('Editor', reloading(30));
+
+      const first = http.expectOne(runUrl);
+
+      expect(first.request.context.get(QUIET_REQUEST)).toBe(false);
+      first.flush({ widgets: [] });
+    });
+
     it('asks for the charts again on the interval, quietly: nothing is disabled and the old charts stay until the answer', () => {
       vi.useFakeTimers();
       load('Editor', reloading(30));
@@ -466,6 +476,7 @@ describe('DashboardComponent', () => {
       const again = http.expectOne(runUrl);
       fixture.detectChanges();
       expect(buttonByText('Refresh data').disabled).toBe(false);
+      expect(again.request.context.get(QUIET_REQUEST)).toBe(true); // a reload nobody asked for shows no loading bar
 
       again.flush({ widgets: [] });
       vi.advanceTimersByTime(30_000);

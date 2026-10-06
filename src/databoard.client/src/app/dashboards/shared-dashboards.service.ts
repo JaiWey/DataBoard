@@ -1,6 +1,7 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
+import { quietly } from '../shared/loading.service';
 import { ChartStyle, ChartType } from '../charts/charts.service';
 import { DashboardBackground, DashboardRun, DashboardTab, DashboardWidget, FilterValues, SharedFilterOperator } from './dashboards.service';
 
@@ -61,8 +62,9 @@ export class SharedDashboardsService {
     return this.http.get(this.url(token, `/images/${widgetId}`), { params: { v: version }, responseType: 'blob' });
   }
 
-  run(token: string, filters: FilterValues): Observable<DashboardRun> {
-    return this.http.post<DashboardRun>(this.url(token, '/run'), { filters });
+  /** `quiet`: a reload the page does by itself, which shows no loading bar. */
+  run(token: string, filters: FilterValues, quiet = false): Observable<DashboardRun> {
+    return this.http.post<DashboardRun>(this.url(token, '/run'), { filters }, quiet ? { context: quietly() } : {});
   }
 }
 
