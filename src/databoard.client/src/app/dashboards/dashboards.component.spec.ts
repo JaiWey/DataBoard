@@ -6,6 +6,7 @@ import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/route
 import { of } from 'rxjs';
 import { ECHARTS_LOADER } from '../charts/chart.component';
 import { DashboardsComponent } from './dashboards.component';
+import { answerConfirm } from '../shared/confirm.testing';
 
 const ORG = '11111111-1111-1111-1111-111111111111';
 const DATASET = '33333333-3333-3333-3333-333333333333';
@@ -205,7 +206,7 @@ describe('DashboardsComponent', () => {
     item(0).click();
     fixture.detectChanges();
     answerDashboard('d1', 'Sales');
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    answerConfirm(true);
 
     button('Delete dashboard').click();
     http.expectOne({ method: 'DELETE', url: `/api/organizations/${ORG}/dashboards/d1` }).flush(null, { status: 204, statusText: 'No Content' });
@@ -308,13 +309,13 @@ describe('DashboardsComponent', () => {
     item(0).click();
     fixture.detectChanges();
     answerChart('c1');
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    const confirmSpy = answerConfirm(false);
 
     button('Delete chart').click();
-    expect(confirmSpy.mock.calls[0][0]).toContain('Sales');
+    expect(confirmSpy.messages[0]).toContain('Sales');
     http.expectNone({ method: 'DELETE', url: `/api/organizations/${ORG}/charts/c1` });
 
-    confirmSpy.mockReturnValue(true);
+    confirmSpy.answer(true);
     button('Delete chart').click();
     http.expectOne({ method: 'DELETE', url: `/api/organizations/${ORG}/charts/c1` }).flush(null, { status: 204, statusText: 'No Content' });
     http.expectOne({ method: 'GET', url: `/api/organizations/${ORG}/charts` }).flush([]);

@@ -6,6 +6,7 @@ import { MAT_DIALOG_DATA, MatDialogModule } from '@angular/material/dialog';
 import { Observable } from 'rxjs';
 import { problemMessages } from '../organizations/data-sources.service';
 import { DashboardShare, DashboardsService, OrgShare, ShareLifetime } from './dashboards.service';
+import { ConfirmService } from '../shared/confirm.service';
 
 export interface ShareDialogData {
   orgId: string;
@@ -161,6 +162,7 @@ export const shareUrl = (token: string): string => `${window.location.origin}/sh
 export class ShareDialogComponent implements OnInit {
   protected readonly data = inject<ShareDialogData>(MAT_DIALOG_DATA);
   private readonly api = inject(DashboardsService);
+  private readonly confirms = inject(ConfirmService);
   private readonly http = inject(HttpClient);
 
   protected readonly lifetimes = SHARE_LIFETIMES;
@@ -289,7 +291,19 @@ export class ShareDialogComponent implements OnInit {
   }
 
   protected revoke(share: DashboardShare): void {
-    if (!confirm('Revoke this link? Anyone who has it will lose access straight away.')) return;
+    this.confirms
+      .ask({
+        title: 'Revoke link',
+        message: 'Revoke this link? Anyone who has it will lose access straight away.',
+        confirmLabel: 'Revoke',
+        danger: true,
+      })
+      .subscribe((yes) => {
+        if (yes) this.revokeConfirmed(share);
+      });
+  }
+
+  private revokeConfirmed(share: DashboardShare): void {
     this.busy.set(true);
     this.errors.set([]);
     this.api.revokeShare(this.data.orgId, this.data.dashboardId, share.id).subscribe({

@@ -7,6 +7,7 @@ import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { problemMessages } from '../organizations/data-sources.service';
 import { ApiToken, ApiTokenCreated, ApiTokensService, TokenLifetime, TokenScope } from './api-tokens.service';
+import { ConfirmService } from '../shared/confirm.service';
 
 /** How long a new token can last. The default is the one in the middle: three months, then it stops by itself. */
 export const TOKEN_LIFETIMES: { label: string; value: TokenLifetime }[] = [
@@ -131,6 +132,7 @@ export const mcpUrl = (): string => `${window.location.origin}/mcp`;
 })
 export class ApiTokensComponent implements OnInit {
   private readonly api = inject(ApiTokensService);
+  private readonly confirms = inject(ConfirmService);
   private readonly fb = inject(FormBuilder);
 
   protected readonly scopes = TOKEN_SCOPES;
@@ -195,7 +197,19 @@ export class ApiTokensComponent implements OnInit {
   }
 
   protected revoke(token: ApiToken): void {
-    if (!confirm(`Revoke "${token.name}"? Anything using it will lose access straight away.`)) return;
+    this.confirms
+      .ask({
+        title: 'Revoke token',
+        message: `Revoke "${token.name}"? Anything using it will lose access straight away.`,
+        confirmLabel: 'Revoke',
+        danger: true,
+      })
+      .subscribe((yes) => {
+        if (yes) this.revokeConfirmed(token);
+      });
+  }
+
+  private revokeConfirmed(token: ApiToken): void {
     this.busy.set(true);
     this.errors.set([]);
     this.api.revoke(token.id).subscribe({

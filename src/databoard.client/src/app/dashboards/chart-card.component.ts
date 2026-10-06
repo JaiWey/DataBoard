@@ -9,6 +9,7 @@ import { CHART_TYPES, Chart, ChartsService } from '../charts/charts.service';
 import { problemMessages } from '../organizations/data-sources.service';
 import { ChartResult } from '../organizations/datasets.service';
 import { DashboardSummary } from './dashboards.service';
+import { ConfirmService } from '../shared/confirm.service';
 
 /** A saved chart on the right of the dashboards page: how it looks, where it is used, and Edit and Delete. */
 @Component({
@@ -61,6 +62,7 @@ import { DashboardSummary } from './dashboards.service';
 })
 export class ChartCardComponent implements OnInit {
   private readonly api = inject(ChartsService);
+  private readonly confirms = inject(ConfirmService);
 
   readonly chart = input.required<Chart>();
   readonly orgId = input.required<string>();
@@ -95,10 +97,14 @@ export class ChartCardComponent implements OnInit {
     const chart = this.chart();
     const used = this.usedIn();
     const warning = used.length > 0 ? ` It will also be removed from: ${used.join(', ')}.` : '';
-    if (!confirm(`Delete the chart "${chart.name}"?${warning}`)) return;
-    this.api.remove(this.orgId(), chart.id).subscribe({
-      next: () => this.deleted.emit(chart.id),
-      error: (e) => this.errors.set(problemMessages(e, 'Could not delete the chart.')),
-    });
+    this.confirms
+      .ask({ title: 'Delete chart', message: `Delete the chart "${chart.name}"?${warning}`, confirmLabel: 'Delete', danger: true })
+      .subscribe((yes) => {
+        if (!yes) return;
+        this.api.remove(this.orgId(), chart.id).subscribe({
+          next: () => this.deleted.emit(chart.id),
+          error: (e) => this.errors.set(problemMessages(e, 'Could not delete the chart.')),
+        });
+      });
   }
 }

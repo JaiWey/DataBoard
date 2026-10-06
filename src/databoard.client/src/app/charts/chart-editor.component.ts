@@ -37,6 +37,7 @@ import { ChartStylePanelComponent } from './chart-style-panel.component';
 import { ChartViewComponent } from './chart-view.component';
 import { ChartTypePickerComponent } from './chart-type-picker.component';
 import { ChartType, ChartsService, PALETTE_NAMES } from './charts.service';
+import { ConfirmService } from '../shared/confirm.service';
 
 type Zone = 'dimensions' | 'metrics' | 'filters';
 
@@ -332,6 +333,7 @@ interface Organization {
 })
 export class ChartEditorComponent implements OnInit {
   private readonly route = inject(ActivatedRoute);
+  private readonly confirms = inject(ConfirmService);
   private readonly router = inject(Router);
   private readonly http = inject(HttpClient);
   private readonly datasetsApi = inject(DatasetsService);
@@ -628,7 +630,24 @@ export class ChartEditorComponent implements OnInit {
   }
 
   protected back(): void {
-    if (this.dirty() && !confirm('This chart has unsaved changes. Leave without saving?')) return;
+    if (!this.dirty()) {
+      this.leave();
+      return;
+    }
+    this.confirms
+      .ask({
+        title: 'Unsaved changes',
+        message: 'This chart has unsaved changes. Leave without saving?',
+        confirmLabel: 'Leave',
+        cancelLabel: 'Keep editing',
+        danger: true,
+      })
+      .subscribe((yes) => {
+        if (yes) this.leave();
+      });
+  }
+
+  private leave(): void {
     const id = this.chartId();
     void this.router.navigate(['/organizations', this.orgId, 'dashboards'], { queryParams: id ? { view: 'charts', chart: id } : { view: 'charts' } });
   }

@@ -6,6 +6,7 @@ import { provideRouter } from '@angular/router';
 import { of } from 'rxjs';
 import { ECHARTS_LOADER } from '../charts/chart.component';
 import { DashboardComponent, parseFilterInput } from './dashboard.component';
+import { answerConfirm } from '../shared/confirm.testing';
 
 const ORG = '11111111-1111-1111-1111-111111111111';
 const DASH = '44444444-4444-4444-4444-444444444444';
@@ -884,12 +885,12 @@ describe('DashboardComponent', () => {
     http.expectOne(runUrl).flush({ widgets: [] });
     const deleted: string[] = [];
     fixture.componentInstance.deleted.subscribe((id) => deleted.push(id));
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    const confirmSpy = answerConfirm(false);
 
     buttonByText('Delete dashboard').click();
     http.expectNone({ method: 'DELETE', url: dashboardUrl });
 
-    confirmSpy.mockReturnValue(true);
+    confirmSpy.answer(true);
     buttonByText('Delete dashboard').click();
     http.expectOne({ method: 'DELETE', url: dashboardUrl }).flush(null, { status: 204, statusText: 'No Content' });
 
@@ -1320,13 +1321,13 @@ describe('DashboardComponent', () => {
     it('removes a tab after asking, sending its widgets to the first tab; two tabs left over one become a single page', () => {
       open('Owner');
       clickTab('Costs');
-      vi.spyOn(window, 'confirm').mockReturnValue(true);
+      const confirmStub = answerConfirm(true);
 
       (el().querySelector('.tab.active .more') as HTMLButtonElement).click();
       fixture.detectChanges();
       (Array.from(document.querySelectorAll<HTMLButtonElement>('.mat-mdc-menu-item')).find((b) => b.textContent?.trim() === 'Remove') as HTMLButtonElement).click();
 
-      expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('1 widget on it moves to the first tab'));
+      expect(confirmStub.messages[0]).toContain('1 widget on it moves to the first tab');
       const request = lastSave();
       expect(request.request.body.definition.tabs).toEqual([]);
       expect(request.request.body.definition.widgets.every((w: { tabId: unknown }) => w.tabId === null)).toBe(true);
@@ -1339,7 +1340,7 @@ describe('DashboardComponent', () => {
       const three = tabbed({ tabs: [{ id: T1, name: 'Overview' }, { id: T2, name: 'Costs' }, { id: 'a1000000-0000-0000-0000-000000000003', name: 'People' }] });
       open('Owner', three);
       clickTab('Costs');
-      vi.spyOn(window, 'confirm').mockReturnValue(true);
+      answerConfirm(true);
 
       (el().querySelector('.tab.active .more') as HTMLButtonElement).click();
       fixture.detectChanges();
@@ -1353,7 +1354,7 @@ describe('DashboardComponent', () => {
 
     it('does nothing when the removal is not confirmed', () => {
       open('Owner');
-      vi.spyOn(window, 'confirm').mockReturnValue(false);
+      answerConfirm(false);
 
       (el().querySelector('.tab.active .more') as HTMLButtonElement).click();
       fixture.detectChanges();

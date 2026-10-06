@@ -7,6 +7,7 @@ import { of } from 'rxjs';
 import { fakeMonaco } from '../sql-editor/fake-monaco.testing';
 import { MONACO_LOADER } from '../sql-editor/sql-editor.component';
 import { DatasetsComponent } from './datasets.component';
+import { answerConfirm } from '../shared/confirm.testing';
 
 const ORG = '11111111-1111-1111-1111-111111111111';
 
@@ -618,13 +619,13 @@ describe('DatasetsComponent', () => {
     await settle();
     monaco.editors[0].type('SELECT 2');
     await settle();
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    const confirmSpy = answerConfirm(false);
 
     (el().querySelector('button[aria-label="Close Orders"]') as HTMLButtonElement).click();
     fixture.detectChanges();
     expect(tabNames()).toEqual(['Orders']);
 
-    confirmSpy.mockReturnValue(true);
+    confirmSpy.answer(true);
     (el().querySelector('button[aria-label="Close Orders"]') as HTMLButtonElement).click();
     fixture.detectChanges();
     expect(tabNames()).toEqual([]);
@@ -648,7 +649,7 @@ describe('DatasetsComponent', () => {
 
   it('asks before deleting and reloads the list afterwards', () => {
     load('Owner', [dataset('SELECT 1')]);
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    answerConfirm(true);
 
     (Array.from(el().querySelectorAll('button')).find((b) => b.textContent === 'Delete') as HTMLButtonElement).click();
     http.expectOne(`/api/organizations/${ORG}/datasets/${dataset(null).id}`).flush(null, { status: 204, statusText: 'No Content' });
@@ -660,7 +661,7 @@ describe('DatasetsComponent', () => {
 
   it('does nothing when the delete is cancelled', () => {
     load('Owner', [dataset('SELECT 1')]);
-    vi.spyOn(window, 'confirm').mockReturnValue(false);
+    answerConfirm(false);
 
     (Array.from(el().querySelectorAll('button')).find((b) => b.textContent === 'Delete') as HTMLButtonElement).click();
 

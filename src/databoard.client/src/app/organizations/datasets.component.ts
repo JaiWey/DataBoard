@@ -13,6 +13,7 @@ import { FolderTreeComponent } from '../shared/folder-tree/folder-tree.component
 import { NewDatasetTabComponent } from './new-dataset-tab.component';
 import { NewTableViewTabComponent } from './new-table-view-tab.component';
 import { Dataset, DatasetsService } from './datasets.service';
+import { ConfirmService } from '../shared/confirm.service';
 
 const NEW_PREFIX = 'new:';
 const NEW_VIEW_PREFIX = 'new:view:';
@@ -109,6 +110,7 @@ interface Organization {
 export class DatasetsComponent implements OnInit {
   protected readonly NEW_VIEW_PREFIX = NEW_VIEW_PREFIX;
   private readonly route = inject(ActivatedRoute);
+  private readonly confirms = inject(ConfirmService);
   private readonly http = inject(HttpClient);
   private readonly api = inject(DatasetsService);
 
@@ -175,8 +177,21 @@ export class DatasetsComponent implements OnInit {
   }
 
   protected close(id: string): void {
-    if (this.dirtyIds().has(id) && !confirm('This dataset has unsaved changes. Close it anyway?')) return;
-    this.drop(id);
+    if (!this.dirtyIds().has(id)) {
+      this.drop(id);
+      return;
+    }
+    this.confirms
+      .ask({
+        title: 'Unsaved changes',
+        message: 'This dataset has unsaved changes. Close it anyway?',
+        confirmLabel: 'Close',
+        cancelLabel: 'Keep open',
+        danger: true,
+      })
+      .subscribe((yes) => {
+        if (yes) this.drop(id);
+      });
   }
 
   protected setDirty(id: string, dirty: boolean): void {

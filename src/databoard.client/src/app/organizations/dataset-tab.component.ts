@@ -9,6 +9,7 @@ import { CACHE_CHOICES, cacheLabel } from '../shared/relative-time';
 import { DatasetParameter, parametersMissingDefaults, sameParameters } from './dataset-parameters';
 import { ParametersPanelComponent } from './parameters-panel.component';
 import { Dataset, DatasetsService, TableViewDefinition, emptyTableView } from './datasets.service';
+import { ConfirmService } from '../shared/confirm.service';
 
 /** One open dataset: its SQL editor and the preview/explore panels. Each tab keeps its own state while hidden. */
 @Component({
@@ -120,6 +121,7 @@ import { Dataset, DatasetsService, TableViewDefinition, emptyTableView } from '.
 })
 export class DatasetTabComponent {
   private readonly api = inject(DatasetsService);
+  private readonly confirms = inject(ConfirmService);
   private readonly sourcesApi = inject(DataSourcesService);
 
   readonly dataset = input.required<Dataset>();
@@ -259,7 +261,14 @@ export class DatasetTabComponent {
 
   protected remove(): void {
     const dataset = this.dataset();
-    if (!confirm(`Delete the dataset "${dataset.name}"?`)) return;
+    this.confirms
+      .ask({ title: 'Delete dataset', message: `Delete the dataset "${dataset.name}"?`, confirmLabel: 'Delete', danger: true })
+      .subscribe((yes) => {
+        if (yes) this.removeConfirmed(dataset);
+      });
+  }
+
+  private removeConfirmed(dataset: Dataset): void {
     this.api.remove(this.orgId(), dataset.id).subscribe({
       next: () => this.deleted.emit(dataset.id),
       error: (e) => this.errors.set(problemMessages(e, 'Could not delete the dataset.')),

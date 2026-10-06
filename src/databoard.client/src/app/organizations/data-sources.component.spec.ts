@@ -5,6 +5,7 @@ import { MatDialog } from '@angular/material/dialog';
 import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
 import { of } from 'rxjs';
 import { DataSourcesComponent } from './data-sources.component';
+import { answerConfirm } from '../shared/confirm.testing';
 
 const ORG = '11111111-1111-1111-1111-111111111111';
 const SOURCE = {
@@ -280,11 +281,12 @@ describe('DataSourcesComponent', () => {
     it('asks before deleting, then removes the data source from the list', () => {
       load('Owner', [SOURCE, CSV]);
       select(1);
-      const ask = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true);
+      const ask = answerConfirm(true);
+      ask.answers(false); // no the first time, then yes
 
       button('Delete').click();
       http.expectNone(`/api/organizations/${ORG}/data-sources/${CSV.id}`);
-      expect(ask).toHaveBeenCalledTimes(1);
+      expect(ask.ask).toHaveBeenCalledTimes(1);
 
       button('Delete').click();
       http.expectOne({ method: 'DELETE', url: `/api/organizations/${ORG}/data-sources/${CSV.id}` }).flush(null, { status: 204, statusText: 'No Content' });
@@ -292,13 +294,13 @@ describe('DataSourcesComponent', () => {
 
       expect(listItems().map((b) => b.querySelector('[matListItemTitle]')?.textContent?.trim())).toEqual(['Sales']);
       expect(el().querySelector('.detail')?.textContent).toContain('Select a data source');
-      ask.mockRestore();
+      ask.ask.mockRestore();
     });
 
     it('keeps the data source and says why when it cannot be deleted', () => {
       load('Owner', [CSV]);
       select();
-      vi.spyOn(window, 'confirm').mockReturnValue(true);
+      answerConfirm(true);
 
       button('Delete').click();
       http.expectOne({ method: 'DELETE', url: `/api/organizations/${ORG}/data-sources/${CSV.id}` })

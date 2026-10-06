@@ -19,6 +19,7 @@ import {
   QueryPreview,
   problemMessages,
 } from './data-sources.service';
+import { ConfirmService } from '../shared/confirm.service';
 
 interface Organization {
   id: string;
@@ -216,6 +217,7 @@ type Panel = 'schema' | 'query';
 })
 export class DataSourcesComponent implements OnInit {
   private readonly route = inject(ActivatedRoute);
+  private readonly confirms = inject(ConfirmService);
   private readonly http = inject(HttpClient);
   private readonly api = inject(DataSourcesService);
   private readonly fb = inject(FormBuilder);
@@ -371,8 +373,19 @@ export class DataSourcesComponent implements OnInit {
 
   /** Removes a data source with everything built on it, after asking. */
   protected remove(source: DataSource): void {
-    if (!confirm(`Delete the data source "${source.name}"? Its datasets and the charts built on them are deleted too.`)) return;
+    this.confirms
+      .ask({
+        title: 'Delete data source',
+        message: `Delete the data source "${source.name}"? Its datasets and the charts built on them are deleted too.`,
+        confirmLabel: 'Delete',
+        danger: true,
+      })
+      .subscribe((yes) => {
+        if (yes) this.removeConfirmed(source);
+      });
+  }
 
+  private removeConfirmed(source: DataSource): void {
     this.busy.set(true);
     this.panelError.set([]);
     this.api.delete(this.orgId, source.id).subscribe({

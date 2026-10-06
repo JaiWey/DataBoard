@@ -5,6 +5,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, Router, convertToParamMap, provideRouter } from '@angular/router';
 import { AuthService } from '../auth/auth.service';
 import { MembersComponent } from './members.component';
+import { answerConfirm, ConfirmStub } from '../shared/confirm.testing';
 
 const ORG = '11111111-1111-1111-1111-111111111111';
 const ME = 'a0000000-0000-0000-0000-000000000001';
@@ -20,7 +21,7 @@ const everyone = () => [member(ME, 'Me', 'Owner'), member(BEA, 'Bea', 'Editor'),
 describe('MembersComponent', () => {
   let fixture: ComponentFixture<MembersComponent>;
   let http: HttpTestingController;
-  let confirmSpy: ReturnType<typeof vi.spyOn>;
+  let confirmSpy: ConfirmStub;
 
   const el = () => fixture.nativeElement as HTMLElement;
   const rows = () => Array.from(el().querySelectorAll('tbody tr'));
@@ -44,7 +45,7 @@ describe('MembersComponent', () => {
   };
 
   beforeEach(() => {
-    confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    confirmSpy = answerConfirm(true);
     TestBed.configureTestingModule({
       providers: [
         provideHttpClient(),
@@ -59,7 +60,7 @@ describe('MembersComponent', () => {
 
   afterEach(() => {
     http.verify();
-    confirmSpy.mockRestore();
+    confirmSpy.ask.mockRestore();
   });
 
   it('lists everyone with their name, email, role and when they joined, and marks who you are', () => {
@@ -153,12 +154,12 @@ describe('MembersComponent', () => {
 
   it('asks before an owner gives up their own ownership, and does nothing if they say no', () => {
     open('Owner', [member(ME, 'Me', 'Owner'), member(BEA, 'Bea', 'Owner')]);
-    confirmSpy.mockReturnValue(false);
+    confirmSpy.answer(false);
     const s = select('Me')!;
     s.value = 'Viewer';
     s.dispatchEvent(new Event('change'));
 
-    expect(confirmSpy).toHaveBeenCalledTimes(1);
+    expect(confirmSpy.ask).toHaveBeenCalledTimes(1);
     http.expectNone({ method: 'PUT', url: `${base}/${ME}` });
     expect(s.value).toBe('Owner');
   });
@@ -168,8 +169,8 @@ describe('MembersComponent', () => {
 
     button('Bea', 'remove')!.click();
 
-    expect(confirmSpy.mock.calls[0][0]).toContain('Bea');
-    expect(confirmSpy.mock.calls[0][0]).toContain('bea@example.com');
+    expect(confirmSpy.messages[0]).toContain('Bea');
+    expect(confirmSpy.messages[0]).toContain('bea@example.com');
     http.expectOne({ method: 'DELETE', url: `${base}/${BEA}` }).flush(null, { status: 204, statusText: 'No Content' });
     settle([member(ME, 'Me', 'Owner'), member(CAL, 'Cal', 'Viewer')]);
     expect(rows().length).toBe(2);
@@ -177,7 +178,7 @@ describe('MembersComponent', () => {
 
   it('does not remove anyone when the question is answered no', () => {
     open('Owner');
-    confirmSpy.mockReturnValue(false);
+    confirmSpy.answer(false);
 
     button('Bea', 'remove')!.click();
 
@@ -201,7 +202,7 @@ describe('MembersComponent', () => {
 
     button('Me', 'leave')!.click();
 
-    expect(confirmSpy.mock.calls[0][0]).toContain('Acme');
+    expect(confirmSpy.messages[0]).toContain('Acme');
     http.expectOne({ method: 'DELETE', url: `${base}/${ME}` }).flush(null, { status: 204, statusText: 'No Content' });
     http.expectOne('/api/organizations').flush([]);
     http.expectOne(base).flush([], { status: 404, statusText: 'Not Found' });

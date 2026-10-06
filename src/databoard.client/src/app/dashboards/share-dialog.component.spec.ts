@@ -3,6 +3,7 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { MAT_DIALOG_DATA } from '@angular/material/dialog';
 import { ShareDialogComponent, shareUrl } from './share-dialog.component';
+import { answerConfirm } from '../shared/confirm.testing';
 
 const ORG = '11111111-1111-1111-1111-111111111111';
 const DASH = '44444444-4444-4444-4444-444444444444';
@@ -137,7 +138,7 @@ describe('ShareDialogComponent', () => {
   });
 
   it('revokes a link after asking, and then lists what is left', () => {
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    answerConfirm(true);
     open([share('s1'), share('s2')]);
 
     button('revoke').click();
@@ -149,7 +150,7 @@ describe('ShareDialogComponent', () => {
   });
 
   it('does nothing when the revoke question is answered no', () => {
-    vi.spyOn(window, 'confirm').mockReturnValue(false);
+    answerConfirm(false);
     open();
 
     button('revoke').click();
@@ -158,7 +159,7 @@ describe('ShareDialogComponent', () => {
   });
 
   it('stops offering to copy a link that was just revoked, but not when another one is', () => {
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    answerConfirm(true);
     open([share('s1')]);
     button('create').click();
     http.expectOne({ method: 'POST', url: sharesUrl }).flush({ id: 's9', token: 'T0KEN', createdUtc: '', expiresUtc: null });

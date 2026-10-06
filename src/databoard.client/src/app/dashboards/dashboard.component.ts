@@ -45,6 +45,7 @@ import {
   SharedFilterOperator,
   WidgetResult,
 } from './dashboards.service';
+import { ConfirmService } from '../shared/confirm.service';
 
 /** In and Between take several values, typed as a comma-separated list; the rest take one. */
 export function parseFilterInput(operator: SharedFilterOperator, text: string): string[] {
@@ -337,6 +338,7 @@ export function parseFilterInput(operator: SharedFilterOperator, text: string): 
 })
 export class DashboardComponent implements OnInit {
   private readonly api = inject(DashboardsService);
+  private readonly confirms = inject(ConfirmService);
   private readonly datasetsApi = inject(DatasetsService);
   private readonly chartsApi = inject(ChartsService);
   private readonly dialog = inject(MatDialog);
@@ -552,7 +554,15 @@ export class DashboardComponent implements OnInit {
     const tabs = this.tabs();
     const onIt = d.definition.widgets.filter((w) => tabOf(w, tabs) === tab.id).length;
     const moved = onIt === 0 ? '' : ` The ${onIt} ${onIt === 1 ? 'widget on it moves' : 'widgets on it move'} to the first tab.`;
-    if (!confirm(`Remove the tab "${tab.name}"?${moved}`)) return;
+    this.confirms
+      .ask({ title: 'Remove tab', message: `Remove the tab "${tab.name}"?${moved}`, confirmLabel: 'Remove', danger: true })
+      .subscribe((yes) => {
+        if (yes) this.removeTabConfirmed(d, tab);
+      });
+  }
+
+  private removeTabConfirmed(d: Dashboard, tab: DashboardTab): void {
+    const tabs = this.tabs();
     const remaining = tabs.filter((t) => t.id !== tab.id);
     const home = remaining[0]?.id ?? null;
     // What was on the removed tab goes to the first one, to be placed there; with one tab left it is one page again.
@@ -783,11 +793,15 @@ export class DashboardComponent implements OnInit {
   }
 
   protected removeDashboard(d: Dashboard): void {
-    if (!confirm(`Delete the dashboard "${d.name}"?`)) return;
-    this.api.remove(this.orgId(), d.id).subscribe({
-      next: () => this.deleted.emit(d.id),
-      error: (e) => this.errors.set(problemMessages(e, 'Could not delete the dashboard.')),
-    });
+    this.confirms
+      .ask({ title: 'Delete dashboard', message: `Delete the dashboard "${d.name}"?`, confirmLabel: 'Delete', danger: true })
+      .subscribe((yes) => {
+        if (!yes) return;
+        this.api.remove(this.orgId(), d.id).subscribe({
+          next: () => this.deleted.emit(d.id),
+          error: (e) => this.errors.set(problemMessages(e, 'Could not delete the dashboard.')),
+        });
+      });
   }
 
   private save(d: Dashboard, definition: DashboardDefinition, done?: () => void, rerun = true, failed?: () => void): void {

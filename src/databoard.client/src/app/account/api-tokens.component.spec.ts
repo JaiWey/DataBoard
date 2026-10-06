@@ -2,6 +2,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ApiTokensComponent, mcpUrl } from './api-tokens.component';
+import { answerConfirm } from '../shared/confirm.testing';
 
 const token = (id: string, over: Record<string, unknown> = {}) => ({
   id, name: `Token ${id}`, scope: 'Write', createdUtc: '2026-10-09T10:00:00Z', expiresUtc: '2099-01-01T00:00:00Z', lastUsedUtc: null, expired: false, ...over,
@@ -137,7 +138,7 @@ describe('ApiTokensComponent', () => {
   });
 
   it('revokes a token after asking, and then lists what is left', () => {
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    answerConfirm(true);
     open([token('t1'), token('t2')]);
 
     button('revoke').click();
@@ -149,7 +150,7 @@ describe('ApiTokensComponent', () => {
   });
 
   it('does nothing when the revoke question is answered no', () => {
-    vi.spyOn(window, 'confirm').mockReturnValue(false);
+    answerConfirm(false);
     open();
 
     button('revoke').click();
@@ -158,7 +159,7 @@ describe('ApiTokensComponent', () => {
   });
 
   it('stops offering to copy a token that was just revoked', () => {
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    answerConfirm(true);
     open([]);
     type('x');
     button('create').click();

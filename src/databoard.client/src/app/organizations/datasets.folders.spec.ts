@@ -7,6 +7,7 @@ import { of } from 'rxjs';
 import { fakeMonaco } from '../sql-editor/fake-monaco.testing';
 import { MONACO_LOADER } from '../sql-editor/sql-editor.component';
 import { DatasetsComponent } from './datasets.component';
+import { answerConfirm } from '../shared/confirm.testing';
 
 const ORG = '11111111-1111-1111-1111-111111111111';
 const FOLDERS = `/api/organizations/${ORG}/folders`;
@@ -137,7 +138,7 @@ describe('DatasetsComponent folders', () => {
 
   it('deletes an empty folder after asking', () => {
     load();
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    answerConfirm(true);
 
     tree().deleteFolder.emit(folder('archive', 'Archive'));
     http.expectOne({ method: 'DELETE', url: `${FOLDERS}/archive` }).flush(null, { status: 204, statusText: 'No Content' });
@@ -148,7 +149,7 @@ describe('DatasetsComponent folders', () => {
 
   it('keeps the folder and says why when it is not empty', () => {
     load();
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    answerConfirm(true);
 
     tree().deleteFolder.emit(folder('sales', 'Sales'));
     http.expectOne({ method: 'DELETE', url: `${FOLDERS}/sales` }).flush(
@@ -162,7 +163,7 @@ describe('DatasetsComponent folders', () => {
 
   it('does nothing when the delete is not confirmed', () => {
     load();
-    vi.spyOn(window, 'confirm').mockReturnValue(false);
+    answerConfirm(false);
 
     tree().deleteFolder.emit(folder('archive', 'Archive'));
   });

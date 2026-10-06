@@ -4,6 +4,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, Router, convertToParamMap, provideRouter } from '@angular/router';
 import { ECHARTS_LOADER } from './chart.component';
 import { ChartEditorComponent } from './chart-editor.component';
+import { answerConfirm } from '../shared/confirm.testing';
 
 const ORG = '11111111-1111-1111-1111-111111111111';
 const DS = '33333333-3333-3333-3333-333333333333';
@@ -581,14 +582,14 @@ describe('ChartEditorComponent', () => {
     const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
     open();
     click('Add price');
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    const confirmSpy = answerConfirm(false);
     vi.advanceTimersByTime(300);
     http.expectOne({ method: 'POST', url: queryUrl() }).flush(result(null));
 
     click('Back to dashboards');
     expect(navigate).not.toHaveBeenCalled();
 
-    confirmSpy.mockReturnValue(true);
+    confirmSpy.answer(true);
     click('Back to dashboards');
     expect(navigate).toHaveBeenCalledWith(['/organizations', ORG, 'dashboards'], { queryParams: { view: 'charts' } });
   });
@@ -598,11 +599,11 @@ describe('ChartEditorComponent', () => {
     routeParams = { id: ORG, chartId: 'c1' };
     open();
     preview();
-    const confirmSpy = vi.spyOn(window, 'confirm');
+    const confirmSpy = answerConfirm(false);
 
     click('Back to dashboards');
 
-    expect(confirmSpy).not.toHaveBeenCalled();
+    expect(confirmSpy.ask).not.toHaveBeenCalled();
     expect(navigate).toHaveBeenCalledWith(['/organizations', ORG, 'dashboards'], { queryParams: { view: 'charts', chart: 'c1' } });
   });
 

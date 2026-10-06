@@ -5,6 +5,7 @@ import { problemMessages } from '../../organizations/data-sources.service';
 import { FolderNameDialogComponent, FolderNameDialogData, MoveDialogComponent, MoveDialogData } from './folder-dialogs.component';
 import { TreeEntry, TreeItem, folderPath } from './folder-tree';
 import { Folder, FolderKind, FoldersService } from './folders.service';
+import { ConfirmService } from '../confirm.service';
 
 export interface FolderTreeConfig {
   orgId: () => string;
@@ -21,6 +22,7 @@ export interface FolderTreeConfig {
  */
 export class FolderTreeController {
   private readonly api = inject(FoldersService);
+  private readonly confirms = inject(ConfirmService);
   private readonly dialog = inject(MatDialog);
 
   readonly folders = signal<Folder[]>([]);
@@ -58,7 +60,14 @@ export class FolderTreeController {
   }
 
   deleteFolder(folder: Folder): void {
-    if (!confirm(`Delete the folder "${folder.name}"?`)) return;
+    this.confirms
+      .ask({ title: 'Delete folder', message: `Delete the folder "${folder.name}"?`, confirmLabel: 'Delete', danger: true })
+      .subscribe((yes) => {
+        if (yes) this.deleteConfirmed(folder);
+      });
+  }
+
+  private deleteConfirmed(folder: Folder): void {
     this.errors.set([]);
     this.api.remove(this.config.orgId(), folder.id).subscribe({
       next: () => {

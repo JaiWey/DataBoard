@@ -10,6 +10,7 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { AuthService } from '../auth/auth.service';
 import { problemMessages } from './data-sources.service';
 import { MEMBER_ROLES, Member, MemberRole, MembersService } from './members.service';
+import { ConfirmService } from '../shared/confirm.service';
 
 interface Organization {
   id: string;
@@ -113,6 +114,7 @@ interface Organization {
 })
 export class MembersComponent implements OnInit {
   private readonly route = inject(ActivatedRoute);
+  private readonly confirms = inject(ConfirmService);
   private readonly router = inject(Router);
   private readonly http = inject(HttpClient);
   private readonly api = inject(MembersService);
@@ -159,12 +161,25 @@ export class MembersComponent implements OnInit {
   protected changeRole(m: Member, select: HTMLSelectElement): void {
     const role = select.value as MemberRole;
     if (role === m.role) return;
+    const change = () =>
+      this.run(this.api.changeRole(this.orgId, m.userId, role), 'Could not change the role.', undefined, () => (select.value = m.role));
+
     // Giving up your own Owner role takes the controls away, so ask first.
-    if (this.isMe(m) && m.role === 'Owner' && !confirm('Stop being an Owner? You will no longer be able to manage the members.')) {
-      select.value = m.role;
+    if (this.isMe(m) && m.role === 'Owner') {
+      this.confirms
+        .ask({
+          title: 'Stop being an Owner?',
+          message: 'Stop being an Owner? You will no longer be able to manage the members.',
+          confirmLabel: 'Change my role',
+          danger: true,
+        })
+        .subscribe((yes) => {
+          if (yes) change();
+          else select.value = m.role;
+        });
       return;
     }
-    this.run(this.api.changeRole(this.orgId, m.userId, role), 'Could not change the role.', undefined, () => (select.value = m.role));
+    change();
   }
 
   protected remove(m: Member): void {
@@ -172,11 +187,14 @@ export class MembersComponent implements OnInit {
     const question = leaving
       ? `Leave "${this.organization()?.name}"? You will lose access to everything in it.`
       : `Remove ${m.displayName} (${m.email})? They lose access to the organization at once; what they made stays.`;
-    if (!confirm(question)) return;
-
-    this.run(this.api.remove(this.orgId, m.userId), leaving ? 'Could not leave.' : 'Could not remove the member.', () => {
-      if (leaving) this.router.navigate(['/organizations']);
-    });
+    this.confirms
+      .ask({ title: leaving ? 'Leave organization' : 'Remove member', message: question, confirmLabel: leaving ? 'Leave' : 'Remove', danger: true })
+      .subscribe((yes) => {
+        if (!yes) return;
+        this.run(this.api.remove(this.orgId, m.userId), leaving ? 'Could not leave.' : 'Could not remove the member.', () => {
+          if (leaving) this.router.navigate(['/organizations']);
+        });
+      });
   }
 
   private run(call: ReturnType<MembersService['add']>, failure: string, done?: () => void, failed?: () => void): void {
