@@ -295,8 +295,8 @@ export function problemsOf(state: EditorState, options: { forSave: boolean } = {
       if (state.metrics.length === 0) problems.push('This chart type needs at least one metric.');
   }
 
-  if (state.limit !== null && (!Number.isInteger(state.limit) || state.limit < 1 || state.limit > 1000)) {
-    problems.push('The row limit must be a whole number from 1 to 1000.');
+  if (state.limit !== null && (!Number.isInteger(state.limit) || state.limit < 1 || state.limit > 5000)) {
+    problems.push('The row limit must be a whole number from 1 to 5000.');
   }
   if (state.seriesLimit !== null && (!Number.isInteger(state.seriesLimit) || state.seriesLimit < 1 || state.seriesLimit > 100)) {
     problems.push('The series limit must be a whole number from 1 to 100.');

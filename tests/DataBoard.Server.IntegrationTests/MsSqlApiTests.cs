@@ -243,7 +243,7 @@ public class MsSqlApiTests(ApiFactory factory)
             measures = new object[] { new { aggregation = "Count", alias = "n" } },
             orderBy = new[] { new { field = "month", direction = "Asc" } },
         });
-        Assert.Equal(["2026-01-01", "2026-02-01", "2026-03-01"], Strings(months).Select(s => s[..10]));
+        Assert.Equal(["2026-01", "2026-02", "2026-03"], Strings(months));
         Assert.Equal(["2", "2", "4"], Strings(months, 1));
 
         var quarters = await QueryAsync(client, org, dataset.Id, new
@@ -251,7 +251,7 @@ public class MsSqlApiTests(ApiFactory factory)
             dimensions = new[] { new { column = "created_at", grain = "Quarter" } },
             measures = new object[] { new { aggregation = "Count", alias = "n" } },
         });
-        Assert.Equal(["2026-01-01"], Strings(quarters).Select(s => s[..10]));
+        Assert.Equal(["2026-Q1"], Strings(quarters));
 
         var weeks = await QueryAsync(client, org, dataset.Id, new
         {

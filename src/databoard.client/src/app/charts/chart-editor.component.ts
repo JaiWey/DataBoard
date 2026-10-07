@@ -10,7 +10,7 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { Subscription } from 'rxjs';
 import { problemMessages } from '../organizations/data-sources.service';
 import { DatasetParameter, parameterText, parseParameterValue } from '../organizations/dataset-parameters';
-import { ChartResult, Dataset, DatasetColumn, DatasetsService } from '../organizations/datasets.service';
+import { ChartResult, Dataset, DatasetColumn, DatasetsService, TimeGrain } from '../organizations/datasets.service';
 import {
   AGGREGATIONS,
   EditorState,
@@ -94,6 +94,16 @@ interface Organization {
               <button type="button" class="field-more" [matMenuTriggerFor]="addMenu" [matMenuTriggerData]="{ column }"
                       [attr.aria-label]="'More ways to add ' + column.name">⋮</button>
             </div>
+            @if (isDate(column.dataType)) {
+              @for (g of fieldGrains; track g) {
+                <div cdkDrag [cdkDragData]="{ column, grain: g }" class="grain-field" [title]="'Group ' + column.name + ' by ' + g.toLowerCase()">
+                  <button type="button" class="field-main" [attr.aria-label]="'Add ' + column.name + ' by ' + g" (click)="addField('dimensions', column, g)">
+                    <span class="badge">Date</span>
+                    <span class="grain-name">{{ column.name }} ({{ g }})</span>
+                  </button>
+                </div>
+              }
+            }
           } @empty {
             <p class="hint"><em>{{ state().datasetId ? 'This dataset has no fields.' : 'Choose a dataset to see its fields.' }}</em></p>
           }
@@ -170,6 +180,39 @@ interface Organization {
                 }
               </div>
 
+              <h3>Options</h3>
+              <label class="row">
+                <span>Row limit</span>
+                <input type="number" min="1" max="5000" aria-label="Row limit" placeholder="100" [value]="state().limit ?? ''"
+                       (input)="setLimit($any($event.target).value)" />
+              </label>
+              @if (axisChart() && state().dimensions.length >= 2) {
+                <label class="row">
+                  <span>Series limit</span>
+                  <input type="number" min="1" max="100" aria-label="Series limit" placeholder="All series" [value]="state().seriesLimit ?? ''"
+                         (input)="setSeriesLimit($any($event.target).value)" />
+                </label>
+                <p class="zone-hint">Keeps the series with the largest total of the first metric.</p>
+              }
+              <label class="row">
+                <span>Sort by</span>
+                <select aria-label="Sort by" (change)="patch({ sortBy: $any($event.target).value })">
+                  <option value="" [selected]="!state().sortBy">No sorting</option>
+                  @for (name of sortOptions(); track name) { <option [value]="name" [selected]="name === state().sortBy">{{ name }}</option> }
+                </select>
+              </label>
+              <label class="row">
+                <span>Direction</span>
+                <select aria-label="Sort direction" [disabled]="!state().sortBy" (change)="patch({ sortDirection: $any($event.target).value })">
+                  <option value="Desc" [selected]="state().sortDirection === 'Desc'">Highest first</option>
+                  <option value="Asc" [selected]="state().sortDirection === 'Asc'">Lowest first</option>
+                </select>
+              </label>
+              <label class="row">
+                <span>Description</span>
+                <input aria-label="Description" [value]="state().description" (input)="patch({ description: $any($event.target).value })" />
+              </label>
+
               @if (datasetParameters().length > 0) {
                 <h3>Parameters</h3>
                 <p class="zone-hint">This dataset takes values. Leave one empty to use its default.</p>
@@ -212,42 +255,6 @@ interface Organization {
                 </select>
               </label>
               <app-chart-style-panel [style]="state().style" [type]="state().type" [seriesNames]="seriesNames()" (changed)="patchStyle($event)" />
-            </div>
-          </mat-tab>
-
-          <mat-tab label="Settings">
-            <div class="tab">
-              <label class="row">
-                <span>Row limit</span>
-                <input type="number" min="1" max="1000" aria-label="Row limit" placeholder="100" [value]="state().limit ?? ''"
-                       (input)="setLimit($any($event.target).value)" />
-              </label>
-              @if (axisChart() && state().dimensions.length >= 2) {
-                <label class="row">
-                  <span>Series limit</span>
-                  <input type="number" min="1" max="100" aria-label="Series limit" placeholder="All series" [value]="state().seriesLimit ?? ''"
-                         (input)="setSeriesLimit($any($event.target).value)" />
-                </label>
-                <p class="zone-hint">Keeps the series with the largest total of the first metric.</p>
-              }
-              <label class="row">
-                <span>Sort by</span>
-                <select aria-label="Sort by" (change)="patch({ sortBy: $any($event.target).value })">
-                  <option value="" [selected]="!state().sortBy">No sorting</option>
-                  @for (name of sortOptions(); track name) { <option [value]="name" [selected]="name === state().sortBy">{{ name }}</option> }
-                </select>
-              </label>
-              <label class="row">
-                <span>Direction</span>
-                <select aria-label="Sort direction" [disabled]="!state().sortBy" (change)="patch({ sortDirection: $any($event.target).value })">
-                  <option value="Desc" [selected]="state().sortDirection === 'Desc'">Highest first</option>
-                  <option value="Asc" [selected]="state().sortDirection === 'Asc'">Lowest first</option>
-                </select>
-              </label>
-              <label class="row">
-                <span>Description</span>
-                <input aria-label="Description" [value]="state().description" (input)="patch({ description: $any($event.target).value })" />
-              </label>
             </div>
           </mat-tab>
         </mat-tab-group>
@@ -298,6 +305,8 @@ interface Organization {
     .field { display: flex; align-items: center; border-radius: 4px; background: var(--mat-sys-surface-container-low); }
     .field:hover { background: var(--mat-sys-surface-container); }
     .field-main { flex: 1; display: flex; align-items: center; gap: 0.5rem; border: 0; background: none; padding: 0.4rem 0.5rem; cursor: grab; text-align: left; font: inherit; color: inherit; }
+    .grain-field { display: flex; align-items: center; margin-left: 1.4rem; border-radius: 4px; background: var(--mat-sys-surface-container-low); }
+    .grain-field:hover { background: var(--mat-sys-surface-container); }
     .field-more { border: 0; background: none; cursor: pointer; padding: 0.3rem 0.5rem; font-size: 1.1rem; color: inherit; }
     .badge { min-width: 2.2rem; font: var(--mat-sys-label-small); color: var(--mat-sys-primary); }
     .measure .badge { color: #2b8a3e; }
@@ -357,6 +366,8 @@ export class ChartEditorComponent implements OnInit {
   protected readonly palettes = PALETTE_NAMES;
   protected readonly operators = FILTER_OPERATORS;
   protected readonly grains = TIME_GRAINS;
+  /** The ways a date field offers itself in the list, always shown under it. */
+  protected readonly fieldGrains: TimeGrain[] = ['Year', 'Month', 'Day'];
 
   /** Charts with an X axis (not a table, number or round chart): the ones where a second dimension makes series. */
   protected readonly axisChart = computed(() => isAxisType(this.state().type));
@@ -505,11 +516,12 @@ export class ChartEditorComponent implements OnInit {
     return parameter.label || parameter.name;
   }
 
-  protected addField(zone: Zone, column: DatasetColumn): void {
+  /** A grain only means something in Dimensions; Metrics and Filters take the field as it is. */
+  protected addField(zone: Zone, column: DatasetColumn, grain?: TimeGrain): void {
     const s = this.state();
     switch (zone) {
       case 'dimensions':
-        return this.patch({ dimensions: [...s.dimensions, dimensionFor(column)] });
+        return this.patch({ dimensions: [...s.dimensions, grain ? { ...dimensionFor(column), grain } : dimensionFor(column)] });
       case 'metrics':
         return this.patch({ metrics: [...s.metrics, metricFor(column)] });
       case 'filters':
@@ -529,8 +541,10 @@ export class ChartEditorComponent implements OnInit {
       this.patch({ [zone]: items } as Partial<EditorState>);
       return;
     }
-    const column = event.item.data as DatasetColumn | undefined;
-    if (column) this.addField(zone, column);
+    const data = event.item.data as DatasetColumn | { column: DatasetColumn; grain: TimeGrain } | undefined;
+    if (!data) return;
+    if ('grain' in data) this.addField(zone, data.column, data.grain);
+    else this.addField(zone, data);
   }
 
   protected remove(zone: Zone, index: number): void {

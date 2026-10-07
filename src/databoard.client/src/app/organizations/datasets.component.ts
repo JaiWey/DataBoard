@@ -92,12 +92,12 @@ interface Organization {
     .list app-dataset-tree { flex: 1; }
     .fail { color: var(--mat-sys-error); margin: 0 0 0.5rem; }
     .workspace { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
-    .workspace > app-dataset-tab, .workspace > app-new-dataset-tab { flex: 1; min-height: 0; }
+    .workspace > app-dataset-tab, .workspace > app-new-dataset-tab, .workspace > app-new-table-view-tab { flex: 1; min-height: 0; }
     .workspace > .empty { flex: 1; }
     @media (max-width: 52rem) {
       .layout { grid-template-columns: 1fr; height: auto; }
       .list { height: auto; max-height: 20rem; }
-      .workspace > app-dataset-tab, .workspace > app-new-dataset-tab { min-height: 30rem; }
+      .workspace > app-dataset-tab, .workspace > app-new-dataset-tab, .workspace > app-new-table-view-tab { min-height: 30rem; }
     }
     mat-card-title { font: var(--mat-sys-title-medium); }
     .add { margin-left: auto; }

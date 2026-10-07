@@ -306,6 +306,32 @@ describe('DatasetsComponent', () => {
     expect(items).toEqual(['SQL dataset', 'Table view dataset']);
   });
 
+  // The panel on the left and the tab on the right are as tall as the space under the title; a tab that does not take that height
+  // grows with its content, and the page scrolls instead of the tab (this happened to the table view tab).
+  const insideThePanel = (selector: string) => {
+    const style = getComputedStyle(el().querySelector(selector) as HTMLElement);
+    expect([style.flexGrow, style.minHeight]).toEqual(['1', '0px']);
+  };
+
+  it('keeps a new SQL dataset tab inside the height of the panel, so it scrolls inside and not the page', async () => {
+    load('Owner', [], false);
+    await startNew('sql');
+
+    insideThePanel('app-new-dataset-tab');
+  });
+
+  it('keeps a new table view tab inside the height of the panel, so it scrolls inside and not the page', async () => {
+    await startView();
+
+    insideThePanel('app-new-table-view-tab');
+  });
+
+  it('keeps an opened dataset inside the height of the panel too', () => {
+    load('Owner', [dataset(null)]);
+
+    insideThePanel('app-dataset-tab');
+  });
+
   it('opens the table view builder in a new tab, with the data source picked inside it', async () => {
     await startView();
 

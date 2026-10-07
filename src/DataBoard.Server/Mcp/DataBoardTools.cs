@@ -244,7 +244,7 @@ internal static class QueryHelp
         "On a chart with an axis the first dimension is the X-axis and a second dimension splits the data into one series per value. " +
         "measures: totals to compute, e.g. {\"aggregation\":\"Sum\",\"column\":\"price\",\"alias\":\"revenue\"}; aggregation is Sum, Avg, Min, Max, Count or CountDistinct (Sum and Avg need a number column; Count needs no column and counts rows). " +
         "filters: conditions on columns, e.g. {\"column\":\"region\",\"operator\":\"In\",\"values\":[\"Auckland\"]}; operators Eq, NotEq, Gt, Gte, Lt, Lte (value), In, NotIn, Between (values), Contains, StartsWith (text value), IsNull, IsNotNull. " +
-        "orderBy: [{\"field\":\"revenue\",\"direction\":\"Desc\"}] names a dimension or measure alias. limit: rows, 1 to 1000 (default 100). " +
+        "orderBy: [{\"field\":\"revenue\",\"direction\":\"Desc\"}] names a dimension or measure alias. limit: rows, 1 to 5000 (default 100). " +
         "seriesLimit: keep only the largest N series (1 to 100) when there are two dimensions. " +
         "parameters: values for the dataset's own parameters (listed by list_datasets), as {\"region\":\"Auckland\"}; a parameter not given uses its default. Use only column names from list_datasets.";
 

@@ -482,7 +482,7 @@ export function buildChartOption(
         ? {
             ...(style.smooth ? { smooth: true } : {}),
             ...(style.lineWidth !== undefined && style.lineWidth !== 2 ? { lineStyle: { width: style.lineWidth } } : {}),
-            ...(style.symbols === false ? { showSymbol: false } : {}),
+            ...(style.symbols === true ? {} : { showSymbol: false }),
           }
         : {}),
       ...(kind === 'Area' ? { areaStyle: style.areaOpacity !== undefined && style.areaOpacity !== 70 ? { opacity: style.areaOpacity / 100 } : {} } : {}),

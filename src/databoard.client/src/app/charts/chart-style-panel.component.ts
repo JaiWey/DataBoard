@@ -321,7 +321,7 @@ const PIE_POSITIONS: { value: LabelPosition; label: string }[] = [
         <summary>Look</summary>
         <div class="body">
           <mat-checkbox [checked]="style().smooth === true" (change)="changed.emit({ smooth: $event.checked })">Smooth lines</mat-checkbox>
-          <mat-checkbox [checked]="style().symbols !== false" (change)="changed.emit({ symbols: $event.checked })">Show points</mat-checkbox>
+          <mat-checkbox [checked]="style().symbols === true" (change)="changed.emit({ symbols: $event.checked })">Show points</mat-checkbox>
           <label class="row"><span>Line width</span>
             <input type="number" min="1" max="8" aria-label="Line width" [value]="style().lineWidth ?? 2" (input)="changed.emit({ lineWidth: whole($event, 1, 8) ?? 2 })" /></label>
           @if (area()) {

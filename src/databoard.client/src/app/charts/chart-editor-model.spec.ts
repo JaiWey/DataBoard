@@ -319,9 +319,9 @@ describe('problemsOf', () => {
   it('keeps the row limit within what the server accepts', () => {
     const s = state({ metrics: [rowCountMetric()] });
 
-    expect(problemsOf({ ...s, limit: 1000 })).toEqual([]);
+    expect(problemsOf({ ...s, limit: 5000 })).toEqual([]);
     expect(problemsOf({ ...s, limit: 0 })).toHaveLength(1);
-    expect(problemsOf({ ...s, limit: 1001 })).toHaveLength(1);
+    expect(problemsOf({ ...s, limit: 5001 })).toHaveLength(1);
     expect(problemsOf({ ...s, limit: 2.5 })).toHaveLength(1);
   });
 

@@ -259,7 +259,7 @@ public class CsvUploadApiTests(ApiFactory factory)
             measures = new object[] { new { aggregation = "Count", alias = "n" } },
         }));
 
-        Assert.Equal(["2026-01-01", "2026-02-01"], result.Rows.Select(r => r[0].GetString()));
+        Assert.Equal(["2026-01", "2026-02"], result.Rows.Select(r => r[0].GetString()));
         Assert.Equal([2, 1], result.Rows.Select(r => r[1].GetInt32()));
     }
 

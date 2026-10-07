@@ -140,8 +140,9 @@ public class ChartQueryApiTests(ApiFactory factory)
 
         Assert.Equal(["ordered_on_month", "n", "revenue"], result.Columns.Select(c => c.Name));
         Assert.Equal(
-            [("2026-01-01", 2L, 2000m), ("2026-02-01", 2L, 950m), ("2026-03-01", 4L, 1400m)],
-            result.Rows.Select(r => (r[0].GetString()![..10], r[1].GetInt64(), r[2].GetDecimal())));
+            [("2026-01", 2L, 2000m), ("2026-02", 2L, 950m), ("2026-03", 4L, 1400m)],
+            result.Rows.Select(r => (r[0].GetString(), r[1].GetInt64(), r[2].GetDecimal())));
+        Assert.Equal("text", result.Columns[0].DataType); // the name of the month, not a date
     }
 
     [Fact]

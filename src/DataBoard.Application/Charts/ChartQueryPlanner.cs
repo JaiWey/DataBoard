@@ -21,7 +21,7 @@ public static partial class ChartQueryPlanner
     public const int MaxTextValueLength = 1_000;
     public const int MaxPatternLength = 200;
     public const int DefaultLimit = 100;
-    public const int MaxLimit = 1_000;
+    public const int MaxLimit = 5_000;
     public const int MaxSeriesLimit = 100;
     public const int MaxAliasLength = 63; // PostgreSQL silently cuts longer identifiers, which could make two aliases collide
 

@@ -195,7 +195,7 @@ describe('ChartStylePanelComponent', () => {
       boxes[boxes.length - 2].click(); // smooth
       boxes[boxes.length - 1].click(); // points
 
-      expect(changes).toEqual([{ lineWidth: 4 }, { smooth: true }, { symbols: false }]);
+      expect(changes).toEqual([{ lineWidth: 4 }, { smooth: true }, { symbols: true }]);
     });
 
     it('reports the pie choices and shows the type\'s own hole size as a hint', () => {

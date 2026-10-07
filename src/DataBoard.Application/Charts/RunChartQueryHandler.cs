@@ -65,7 +65,8 @@ public sealed class RunChartQueryHandler(
         if (key is not null && cacheRequest.Mode == CacheMode.Use && cache.Get(key) is { } hit)
             return new ChartResult(hit.Result.Columns, hit.Result.Rows, hit.Result.Truncated, includeSql ? hit.Sql : null, hit.CachedUtc);
 
-        var result = await connectors.Get(source.Type).ExecuteAsync(connectionString, built, plan.Limit, ct);
+        // Dates grouped by a grain become the name of their period here, so the cache keeps what the charts show.
+        var result = GrainLabels.Apply(await connectors.Get(source.Type).ExecuteAsync(connectionString, built, plan.Limit, ct), plan);
 
         if (key is not null)
         {

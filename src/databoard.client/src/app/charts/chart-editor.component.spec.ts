@@ -197,6 +197,27 @@ describe('ChartEditorComponent', () => {
     preview();
   });
 
+  it('always lists the year, month and day of a date field under it, and of no other field', () => {
+    open();
+
+    const names = Array.from(el().querySelectorAll('.grain-name')).map((f) => f.textContent?.trim());
+    expect(names).toEqual(['ordered_on (Year)', 'ordered_on (Month)', 'ordered_on (Day)']);
+  });
+
+  it('adds a date to the dimensions with the grain that was clicked, or dragged', () => {
+    open();
+
+    click('Add ordered_on by Year');
+    click('Add ordered_on by Day');
+    editor()['dropped']('dimensions' as never, {
+      previousContainer: {}, container: {}, item: { data: { column: datasets[0].columns[2], grain: 'Month' } },
+    } as never);
+    fixture.detectChanges();
+
+    const grains = Array.from(el().querySelectorAll('#zone-dimensions select')).map((s) => (s as HTMLSelectElement).value);
+    expect(grains).toEqual(['Year', 'Day', 'Month']);
+  });
+
   it('adds a field dragged from the list to the zone it was dropped in, and moves items within a zone', () => {
     open();
     const column = datasets[0].columns[0];
@@ -400,13 +421,22 @@ describe('ChartEditorComponent', () => {
 
   // ---- style and settings ----
 
-  it('sends the row limit and the sort from the Settings tab', () => {
+  it('has only the Data and Style tabs, with the row limit and the sort in Data', () => {
+    open();
+
+    const tabs = Array.from(el().querySelectorAll('.config [role=tab]')).map((t) => t.textContent?.trim());
+    expect(tabs).toEqual(['Data', 'Style']);
+    expect(byLabel('Row limit')).not.toBeNull();
+    expect(byLabel('Sort by')).not.toBeNull();
+    expect(byLabel('Description')).not.toBeNull();
+  });
+
+  it('sends the row limit and the sort from the Data tab', () => {
     open();
     click('Add region');
     click('Add price');
     preview();
 
-    openTab(2);
     typeInto('Row limit', '25');
     choose('Sort by', 'sum_price');
     choose('Sort direction', 'Asc');
@@ -424,8 +454,6 @@ describe('ChartEditorComponent', () => {
     click('Add price');
     preview();
 
-    openTab(2);
-
     const options = Array.from(byLabel<HTMLSelectElement>('Sort by').options).map((o) => o.value);
     expect(options).toEqual(['', 'region', 'sum_price']);
   });
@@ -435,10 +463,9 @@ describe('ChartEditorComponent', () => {
     click('Add price');
     preview({ ...result(), columns: [{ name: 'sum_price', dataType: 'numeric' }], rows: [[1]] });
 
-    openTab(2);
-    typeInto('Row limit', '5000');
+    typeInto('Row limit', '5001');
 
-    expect(el().querySelector('.problems')?.textContent).toContain('whole number from 1 to 1000');
+    expect(el().querySelector('.problems')?.textContent).toContain('whole number from 1 to 5000');
   });
 
   it('keeps the style choices in what is saved', () => {
@@ -667,7 +694,6 @@ describe('ChartEditorComponent', () => {
     open();
     click('Add region');
     click('Add price');
-    openTab(2);
     expect(byLabel('Series limit')).toBeNull();
 
     click('Add ordered_on');

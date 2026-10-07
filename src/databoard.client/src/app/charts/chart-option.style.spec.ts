@@ -234,18 +234,24 @@ describe('legend', () => {
 });
 
 describe('look of series', () => {
-  it('curves, thickens and hides the points of lines', () => {
-    const o = option('Line', sales, { smooth: true, lineWidth: 5, symbols: false });
+  it('curves and thickens lines', () => {
+    const o = option('Line', sales, { smooth: true, lineWidth: 5, symbols: true });
 
-    expect(o['series'][0]).toMatchObject({ type: 'line', smooth: true, lineStyle: { width: 5 }, showSymbol: false });
+    expect(o['series'][0]).toMatchObject({ type: 'line', smooth: true, lineStyle: { width: 5 } });
   });
 
   it('leaves lines as ECharts draws them without choices, and with the defaults', () => {
-    const o = option('Line', sales, { smooth: false, lineWidth: 2, symbols: true });
+    const o = option('Line', sales, { smooth: false, lineWidth: 2 });
 
     expect(o['series'][0].smooth).toBeUndefined();
     expect(o['series'][0].lineStyle).toBeUndefined();
-    expect(o['series'][0].showSymbol).toBeUndefined();
+  });
+
+  it('hides the points of lines unless they are asked for', () => {
+    expect(option('Line', sales, {})['series'][0].showSymbol).toBe(false);
+    expect(option('Line', sales, { symbols: false })['series'][0].showSymbol).toBe(false);
+    expect(option('Line', sales, { symbols: true })['series'][0].showSymbol).toBeUndefined();
+    expect(option('Area', sales, {})['series'][0].showSymbol).toBe(false);
   });
 
   it('sets the width of bars and rounds their ends the right way round', () => {
