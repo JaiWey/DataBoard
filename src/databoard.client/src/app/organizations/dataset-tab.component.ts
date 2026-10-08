@@ -9,12 +9,13 @@ import { CACHE_CHOICES, cacheLabel } from '../shared/relative-time';
 import { DatasetParameter, parametersMissingDefaults, sameParameters } from './dataset-parameters';
 import { ParametersPanelComponent } from './parameters-panel.component';
 import { Dataset, DatasetsService, TableViewDefinition, emptyTableView } from './datasets.service';
+import { AppSelectComponent, SelectOption } from '../shared/app-select.component';
 import { ConfirmService } from '../shared/confirm.service';
 
 /** One open dataset: its SQL editor and the preview/explore panels. Each tab keeps its own state while hidden. */
 @Component({
   selector: 'app-dataset-tab',
-  imports: [MatCardModule, MatButtonModule, SqlEditorComponent, SqlResultsComponent, TableViewBuilderComponent, ParametersPanelComponent],
+  imports: [MatCardModule, MatButtonModule, AppSelectComponent, SqlEditorComponent, SqlResultsComponent, TableViewBuilderComponent, ParametersPanelComponent],
   template: `
     <mat-card appearance="raised" class="detail">
       <mat-card-header>
@@ -39,14 +40,10 @@ import { ConfirmService } from '../shared/confirm.service';
 
         @if (canEdit()) {
           <p class="cache">
-            <label>
+            <span class="field">
               <span>Keep results for</span>
-              <select aria-label="Cache results for" [disabled]="cacheBusy()" (change)="setCache($any($event.target))">
-                @for (choice of cacheChoices(); track choice.seconds) {
-                  <option [value]="choice.seconds" [selected]="choice.seconds === cacheSeconds()">{{ choice.label }}</option>
-                }
-              </select>
-            </label>
+              <app-select ariaLabel="Cache results for" [options]="cacheOptions()" [value]="'' + cacheSeconds()" [disabled]="cacheBusy()" (valueChange)="setCache($event)" />
+            </span>
             <small>Charts on this dataset reuse a result for this long instead of asking the database again.</small>
           </p>
         } @else if (cacheSeconds() > 0) {
@@ -114,8 +111,7 @@ import { ConfirmService } from '../shared/confirm.service';
     .save-row { display: flex; align-items: center; gap: 0.75rem; margin: 0.5rem 0; }
     .hint { margin: 0.25rem 0 0; }
     .cache { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem; margin: 0.25rem 0 0.75rem; }
-    .cache label { display: flex; align-items: center; gap: 0.5rem; }
-    .cache select { padding: 0.25rem; }
+    .cache .field { display: flex; align-items: center; gap: 0.5rem; }
   `,
   host: { '[class.inactive]': '!active()' },
 })
@@ -171,6 +167,7 @@ export class DatasetTabComponent {
       ? CACHE_CHOICES
       : [...CACHE_CHOICES, { seconds: this.cacheSeconds(), label: cacheLabel(this.cacheSeconds()) }],
   );
+  protected readonly cacheOptions = computed<SelectOption[]>(() => this.cacheChoices().map((c) => ({ value: String(c.seconds), label: c.label })));
   protected readonly cacheBusy = signal(false);
   protected readonly sqlErrors = signal<string[]>([]);
   /** Rows from running the editor's current SQL (saved or not) against the dataset's data source. */
@@ -229,9 +226,9 @@ export class DatasetTabComponent {
   }
 
   /** Takes effect at once and needs no Save: it is how the dataset is served, not what it is. */
-  protected setCache(select: HTMLSelectElement): void {
+  protected setCache(value: string): void {
     const dataset = this.dataset();
-    const seconds = Number(select.value);
+    const seconds = Number(value);
     if (!this.canEdit() || this.cacheBusy() || seconds === this.cacheSeconds()) return;
     this.cacheBusy.set(true);
     this.sqlErrors.set([]);
@@ -243,8 +240,7 @@ export class DatasetTabComponent {
       },
       error: (e) => {
         this.cacheBusy.set(false);
-        this.sqlErrors.set(problemMessages(e, 'Could not change how long results are kept.'));
-        select.value = String(this.cacheSeconds()); // nothing in the page changed, so put the control back by hand
+        this.sqlErrors.set(problemMessages(e, 'Could not change how long results are kept.')); // the select still shows the old setting
       },
     });
   }

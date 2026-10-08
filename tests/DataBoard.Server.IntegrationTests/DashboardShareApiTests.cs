@@ -96,7 +96,7 @@ public class DashboardShareApiTests(ApiFactory factory)
     // ---- making and managing links ----------------------------------------------------------------------------
 
     [Fact]
-    public async Task An_editor_makes_a_link_that_expires_and_the_list_never_shows_the_token_again()
+    public async Task An_editor_makes_a_link_that_expires_and_the_list_gives_the_token_back_to_editors_only()
     {
         var f = await NewFixtureAsync();
 
@@ -108,10 +108,19 @@ public class DashboardShareApiTests(ApiFactory factory)
         Assert.Matches("^[A-Za-z0-9_-]+$", token);
         Assert.InRange(created.GetProperty("expiresUtc").GetDateTime(), before.AddDays(7).AddMinutes(-1), DateTime.UtcNow.AddDays(7).AddMinutes(1));
 
-        var list = await f.Owner.GetStringAsync($"/api/organizations/{f.Org}/dashboards/{f.Dashboard}/shares");
-        Assert.Contains(created.GetProperty("id").GetString()!, list);
-        Assert.DoesNotContain(token, list);
-        Assert.DoesNotContain("token", list, StringComparison.OrdinalIgnoreCase);
+        // An editor can copy the link again: the list carries the same secret.
+        var list = await ReadAsync(await f.Owner.GetAsync($"/api/organizations/{f.Org}/dashboards/{f.Dashboard}/shares"));
+        var listed = list.EnumerateArray().Single(s => s.GetProperty("id").GetString() == created.GetProperty("id").GetString());
+        Assert.Equal(token, listed.GetProperty("token").GetString());
+
+        // The link made from that copy opens the dashboard.
+        Assert.Equal(HttpStatusCode.OK, (await OpenAsync(Visitor(), listed.GetProperty("token").GetString()!)).StatusCode);
+
+        // Someone who cannot edit never gets the list, so never the secrets.
+        var viewer = await AddMemberAsync(f, "Viewer");
+        var refused = await viewer.GetAsync($"/api/organizations/{f.Org}/dashboards/{f.Dashboard}/shares");
+        Assert.Equal(HttpStatusCode.Forbidden, refused.StatusCode);
+        Assert.DoesNotContain(token, await refused.Content.ReadAsStringAsync());
     }
 
     [Fact]

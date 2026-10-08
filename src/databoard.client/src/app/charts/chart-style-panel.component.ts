@@ -1,5 +1,6 @@
 import { Component, computed, input, output } from '@angular/core';
 import { MatCheckboxModule } from '@angular/material/checkbox';
+import { AppSelectComponent, SelectOption } from '../shared/app-select.component';
 import { AxisOptions, LabelPosition, TableAlign, TableOptions, TableSize, LegendPosition, LegendType, LineType, MarginOptions, SplitLineOptions, colorsOf, pieParts } from './chart-option';
 import { ChartStyle, ChartType } from './charts.service';
 import { NumberFormatOptions } from './number-format';
@@ -31,7 +32,7 @@ const PIE_POSITIONS: { value: LabelPosition; label: string }[] = [
  */
 @Component({
   selector: 'app-chart-style-panel',
-  imports: [MatCheckboxModule, ColorFieldComponent, FontFieldsComponent],
+  imports: [MatCheckboxModule, AppSelectComponent, ColorFieldComponent, FontFieldsComponent],
   template: `
     @if (titled()) {
       <details class="section" open>
@@ -98,11 +99,9 @@ const PIE_POSITIONS: { value: LabelPosition; label: string }[] = [
       <details class="section">
         <summary>Numbers</summary>
         <div class="body">
-          <label class="row"><span>Decimals</span>
-            <select aria-label="Decimals" (change)="setFormat({ decimals: decimals($event) })">
-              <option value="" [selected]="format().decimals == null">as they are</option>
-              @for (d of [0, 1, 2, 3, 4, 5, 6]; track d) { <option [value]="d" [selected]="format().decimals === d">{{ d }}</option> }
-            </select></label>
+          <div class="row"><span>Decimals</span>
+            <app-select ariaLabel="Decimals" [options]="decimalOptions" [value]="format().decimals == null ? '' : '' + format().decimals"
+                        (valueChange)="setFormat({ decimals: $event === '' ? null : +$event })" /></div>
           <mat-checkbox [checked]="format().thousands !== false" (change)="setFormat({ thousands: $event.checked })">Thousands separator</mat-checkbox>
           <mat-checkbox [checked]="format().compact === true" (change)="setFormat({ compact: $event.checked })">Short form (1.2K, 3.4M)</mat-checkbox>
           <label class="row"><span>Prefix</span>
@@ -121,10 +120,8 @@ const PIE_POSITIONS: { value: LabelPosition; label: string }[] = [
           <mat-checkbox [checked]="tableOf().border !== false" (change)="patchTable({ border: $event.checked })">Show border</mat-checkbox>
           <mat-checkbox [checked]="tableOf().rowNumber === true" (change)="patchTable({ rowNumber: $event.checked })">Row numbers</mat-checkbox>
           <mat-checkbox [checked]="tableOf().sortable !== false" (change)="patchTable({ sortable: $event.checked })">Sort by clicking a header</mat-checkbox>
-          <label class="row"><span>Size</span>
-            <select aria-label="Table size" (change)="patchTable({ size: $any($event.target).value })">
-              @for (s of tableSizes; track s.value) { <option [value]="s.value" [selected]="(tableOf().size ?? 'small') === s.value">{{ s.label }}</option> }
-            </select></label>
+          <div class="row"><span>Size</span>
+            <app-select ariaLabel="Table size" [options]="tableSizes" [value]="tableOf().size ?? 'small'" (valueChange)="patchTable({ size: $any($event) })" /></div>
           <mat-checkbox [checked]="tableOf().pageSize != null" (change)="patchTable({ pageSize: $event.checked ? 20 : null })">Pages</mat-checkbox>
           @if (tableOf().pageSize != null) {
             <label class="row"><span>Rows per page</span>
@@ -141,10 +138,8 @@ const PIE_POSITIONS: { value: LabelPosition; label: string }[] = [
             <app-color-field label="Header background" fallback="#f1f3f5" [value]="tableOf().headerBackground" (changed)="patchTable({ headerBackground: $event })" /></div>
           <div class="row"><span>Font</span>
             <app-font-fields label="Header font" [font]="tableOf().headerFont" (changed)="patchTable({ headerFont: $event })" /></div>
-          <label class="row"><span>Align</span>
-            <select aria-label="Header align" (change)="patchTable({ headerAlign: $any($event.target).value })">
-              @for (a of tableAligns; track a.value) { <option [value]="a.value" [selected]="(tableOf().headerAlign ?? 'left') === a.value">{{ a.label }}</option> }
-            </select></label>
+          <div class="row"><span>Align</span>
+            <app-select ariaLabel="Header align" [options]="tableAligns" [value]="tableOf().headerAlign ?? 'left'" (valueChange)="patchTable({ headerAlign: $any($event) })" /></div>
         </div>
       </details>
 
@@ -177,10 +172,9 @@ const PIE_POSITIONS: { value: LabelPosition; label: string }[] = [
           <label class="row"><span>Largest text</span>
             <input type="number" min="12" max="150" aria-label="Largest text" [value]="cloudOf().maxFontSize ?? cloudDefaults.maxFontSize"
                    (input)="patchCloud({ maxFontSize: whole($event, 12, 150) ?? cloudDefaults.maxFontSize })" /></label>
-          <label class="row"><span>Direction</span>
-            <select aria-label="Word direction" (change)="patchCloud({ rotation: $any($event.target).value })">
-              @for (r of cloudRotations; track r.value) { <option [value]="r.value" [selected]="(cloudOf().rotation ?? cloudDefaults.rotation) === r.value">{{ r.label }}</option> }
-            </select></label>
+          <div class="row"><span>Direction</span>
+            <app-select ariaLabel="Word direction" [options]="cloudRotations" [value]="cloudOf().rotation ?? cloudDefaults.rotation"
+                        (valueChange)="patchCloud({ rotation: $any($event) })" /></div>
           <div class="row"><span>Font</span>
             <app-font-fields label="Word font" [font]="style().labelFont" (changed)="changed.emit({ labelFont: $event })" /></div>
         </div>
@@ -217,11 +211,9 @@ const PIE_POSITIONS: { value: LabelPosition; label: string }[] = [
             <label class="row"><span>Width</span>
               <input type="number" min="1" max="10" [attr.aria-label]="(axis === 'x' ? 'X' : 'Y') + ' split line width'" placeholder="1" [value]="splitOf(axis).width ?? ''"
                      (input)="patchSplit(axis, { width: whole($event, 1, 10) })" /></label>
-            <label class="row"><span>Style</span>
-              <select [attr.aria-label]="(axis === 'x' ? 'X' : 'Y') + ' split line style'" (change)="patchSplit(axis, { lineType: lineTypeOf($event) })">
-                <option value="" [selected]="!splitOf(axis).lineType">Default</option>
-                @for (t of lineTypes; track t.value) { <option [value]="t.value" [selected]="splitOf(axis).lineType === t.value">{{ t.label }}</option> }
-              </select></label>
+            <div class="row"><span>Style</span>
+              <app-select [ariaLabel]="(axis === 'x' ? 'X' : 'Y') + ' split line style'" [options]="splitLineTypes" [value]="splitOf(axis).lineType ?? ''"
+                          (valueChange)="patchSplit(axis, { lineType: ($event || null) ? $any($event) : null })" /></div>
           }
         </div>
       </details>
@@ -232,11 +224,8 @@ const PIE_POSITIONS: { value: LabelPosition; label: string }[] = [
       <details class="section">
         <summary>Margin</summary>
         <div class="body">
-          <label class="row"><span>Unit</span>
-            <select aria-label="Margin unit" (change)="patchMarginUnit($any($event.target).value)">
-              <option value="px" [selected]="marginUnit() === 'px'">Pixels</option>
-              <option value="%" [selected]="marginUnit() === '%'">Percent</option>
-            </select></label>
+          <div class="row"><span>Unit</span>
+            <app-select ariaLabel="Margin unit" [options]="marginUnits" [value]="marginUnit()" (valueChange)="patchMarginUnit($any($event))" /></div>
           @if (axes()) {
             <mat-checkbox [checked]="style().margin?.containLabel !== false" (change)="patchMargin('containLabel', $event.checked)">Contain label</mat-checkbox>
           }
@@ -257,10 +246,9 @@ const PIE_POSITIONS: { value: LabelPosition; label: string }[] = [
             <input type="number" min="10" max="100" aria-label="Bar width" placeholder="auto" [value]="style().barWidth ?? ''" (input)="changed.emit({ barWidth: whole($event, 10, 100) })" /></label>
           <label class="row"><span>Rounded corners</span>
             <input type="number" min="0" max="20" aria-label="Bar corner radius" [value]="style().barRadius ?? 0" (input)="changed.emit({ barRadius: whole($event, 0, 20) ?? 0 })" /></label>
-          <label class="row"><span>Border style</span>
-            <select aria-label="Bar border style" (change)="changed.emit({ barBorderStyle: $any($event.target).value })">
-              @for (t of lineTypes; track t.value) { <option [value]="t.value" [selected]="(style().barBorderStyle ?? 'solid') === t.value">{{ t.label }}</option> }
-            </select></label>
+          <div class="row"><span>Border style</span>
+            <app-select ariaLabel="Bar border style" [options]="lineTypes" [value]="style().barBorderStyle ?? 'solid'"
+                        (valueChange)="changed.emit({ barBorderStyle: $any($event) })" /></div>
           <label class="row"><span>Border width</span>
             <input type="number" min="0" max="10" aria-label="Bar border width" [value]="style().barBorderWidth ?? 0" (input)="changed.emit({ barBorderWidth: whole($event, 0, 10) ?? 0 })" /></label>
           <div class="row"><span>Border colour</span>
@@ -277,10 +265,9 @@ const PIE_POSITIONS: { value: LabelPosition; label: string }[] = [
       <details class="section">
         <summary>Labels</summary>
         <div class="body">
-          <label class="row"><span>Position</span>
-            <select aria-label="Label position" (change)="changed.emit({ labelPosition: $any($event.target).value })">
-              @for (p of positionChoices(); track p.value) { <option [value]="p.value" [selected]="(style().labelPosition ?? 'auto') === p.value">{{ p.label }}</option> }
-            </select></label>
+          <div class="row"><span>Position</span>
+            <app-select ariaLabel="Label position" [options]="positionChoices()" [value]="style().labelPosition ?? 'auto'"
+                        (valueChange)="changed.emit({ labelPosition: $any($event) })" /></div>
           @if (round()) {
             <mat-checkbox [checked]="parts().name" (change)="patchParts({ name: $event.checked })">Show name</mat-checkbox>
             <mat-checkbox [checked]="parts().value" (change)="patchParts({ value: $event.checked })">Show value</mat-checkbox>
@@ -298,14 +285,12 @@ const PIE_POSITIONS: { value: LabelPosition; label: string }[] = [
       <details class="section">
         <summary>Legend</summary>
         <div class="body">
-          <label class="row"><span>Position</span>
-            <select aria-label="Legend position" (change)="changed.emit({ legendPosition: $any($event.target).value })">
-              @for (p of legendPositions; track p.value) { <option [value]="p.value" [selected]="(style().legendPosition ?? 'bottom') === p.value">{{ p.label }}</option> }
-            </select></label>
-          <label class="row"><span>Type</span>
-            <select aria-label="Legend type" (change)="changed.emit({ legendType: $any($event.target).value })">
-              @for (t of legendTypes; track t.value) { <option [value]="t.value" [selected]="(style().legendType ?? 'auto') === t.value">{{ t.label }}</option> }
-            </select></label>
+          <div class="row"><span>Position</span>
+            <app-select ariaLabel="Legend position" [options]="legendPositions" [value]="style().legendPosition ?? 'bottom'"
+                        (valueChange)="changed.emit({ legendPosition: $any($event) })" /></div>
+          <div class="row"><span>Type</span>
+            <app-select ariaLabel="Legend type" [options]="legendTypes" [value]="style().legendType ?? 'auto'"
+                        (valueChange)="changed.emit({ legendType: $any($event) })" /></div>
           <mat-checkbox [checked]="style().legendSelector === true" (change)="changed.emit({ legendSelector: $event.checked })">Select all and invert buttons</mat-checkbox>
           <label class="row"><span>Height (px)</span>
             <input type="number" min="20" max="1000" aria-label="Legend height" placeholder="auto" [value]="style().legendHeight ?? ''"
@@ -350,7 +335,7 @@ const PIE_POSITIONS: { value: LabelPosition; label: string }[] = [
     summary { cursor: pointer; font: var(--mat-sys-title-small); padding: 0.25rem 0; }
     .body { display: flex; flex-direction: column; gap: 0.4rem; padding: 0.4rem 0 0.2rem; }
     .row { display: grid; grid-template-columns: 10rem 1fr; align-items: center; gap: 0.5rem; }
-    .row input[type=text], .row input[type=number], .row select { min-width: 0; padding: 0.3rem 0.4rem; font: inherit; }
+    .row input[type=text], .row input[type=number] { min-width: 0; padding: 0.3rem 0.4rem; font: inherit; }
     .swatches, .series { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
     .swatch, .series-colour { display: inline-flex; align-items: center; gap: 0.25rem; }
     .series { flex-direction: column; align-items: stretch; }
@@ -374,6 +359,9 @@ export class ChartStylePanelComponent {
   protected readonly lineTypes = LINE_TYPES;
   protected readonly labelPositions = LABEL_POSITIONS;
   protected readonly legendTypes = LEGEND_TYPES;
+  protected readonly decimalOptions: SelectOption[] = [{ value: '', label: 'as they are' }, ...[0, 1, 2, 3, 4, 5, 6].map((d) => ({ value: String(d), label: String(d) }))];
+  protected readonly splitLineTypes: SelectOption[] = [{ value: '', label: 'Default' }, ...LINE_TYPES];
+  protected readonly marginUnits: SelectOption[] = [{ value: 'px', label: 'Pixels' }, { value: '%', label: 'Percent' }];
   protected readonly axisKeys: ('x' | 'y')[] = ['x', 'y'];
   protected readonly sides: (keyof MarginOptions)[] = ['left', 'top', 'right', 'bottom'];
   protected readonly positionChoices = computed(() => (this.round() ? PIE_POSITIONS : LABEL_POSITIONS));
@@ -450,10 +438,6 @@ export class ChartStylePanelComponent {
     return valueAxis && this.style().grid !== false;
   }
 
-  protected lineTypeOf(event: Event): LineType | null {
-    return (this.text(event) as LineType | null);
-  }
-
   protected readonly marginUnit = computed(() => this.style().margin?.unit ?? 'px');
   /** The most a side can be: 300 pixels, or half of the chart. */
   protected readonly marginMax = computed(() => (this.marginUnit() === '%' ? 50 : 300));
@@ -514,11 +498,6 @@ export class ChartStylePanelComponent {
 
   protected rotation(event: Event): number {
     return this.whole(event, -90, 90) ?? 0;
-  }
-
-  protected decimals(event: Event): number | null {
-    const raw = (event.target as HTMLSelectElement).value;
-    return raw === '' ? null : Number(raw);
   }
 
   protected setFormat(changes: Partial<NumberFormatOptions>): void {

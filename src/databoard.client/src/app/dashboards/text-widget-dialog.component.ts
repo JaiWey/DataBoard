@@ -2,6 +2,7 @@ import { Component, computed, inject, signal } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MAT_DIALOG_DATA, MatDialogModule, MatDialogRef } from '@angular/material/dialog';
 import { problemMessages } from '../organizations/data-sources.service';
+import { AppSelectComponent } from '../shared/app-select.component';
 import { MarkdownComponent } from '../shared/markdown.component';
 import { arrangeTab, bottomOf, tabOf } from './dashboard-tabs';
 import {
@@ -25,7 +26,7 @@ const NEW_HEIGHT = 2;
 /** Writes the text of a text widget, in simple Markdown, with a preview. Closes with the saved dashboard, or with nothing if cancelled. */
 @Component({
   selector: 'app-text-widget-dialog',
-  imports: [MatDialogModule, MatButtonModule, MarkdownComponent],
+  imports: [MatDialogModule, MatButtonModule, MarkdownComponent, AppSelectComponent],
   template: `
     <h2 mat-dialog-title>{{ data.widget ? 'Text' : 'Add text' }}</h2>
     <mat-dialog-content>
@@ -37,14 +38,10 @@ const NEW_HEIGHT = 2;
       <small class="count">{{ text().length }} / {{ max }}. Headings start with #, lists with - or 1., links are [words](https://address).</small>
 
       <div class="options">
-        <label class="row"><span>Align</span>
-          <select aria-label="Text alignment" (change)="align.set($any($event.target).value)">
-            @for (a of aligns; track a.value) { <option [value]="a.value" [selected]="a.value === align()">{{ a.label }}</option> }
-          </select></label>
-        <label class="row"><span>Size</span>
-          <select aria-label="Text size" (change)="size.set($any($event.target).value)">
-            @for (s of sizes; track s.value) { <option [value]="s.value" [selected]="s.value === size()">{{ s.label }}</option> }
-          </select></label>
+        <div class="row"><span>Align</span>
+          <app-select ariaLabel="Text alignment" [options]="aligns" [value]="align()" (valueChange)="align.set($any($event))" /></div>
+        <div class="row"><span>Size</span>
+          <app-select ariaLabel="Text size" [options]="sizes" [value]="size()" (valueChange)="size.set($any($event))" /></div>
       </div>
 
       <div class="preview" aria-label="Preview">
@@ -71,7 +68,6 @@ const NEW_HEIGHT = 2;
     .count { display: block; margin: 0.25rem 0 0.5rem; color: var(--mat-sys-on-surface-variant); }
     .options { display: flex; gap: 1rem; flex-wrap: wrap; }
     .row { display: flex; align-items: center; gap: 0.5rem; }
-    .row select { padding: 0.3rem 0.4rem; font: inherit; }
     .preview { margin-top: 0.75rem; padding: 0.75rem; min-height: 3rem; border: 1px dashed var(--mat-sys-outline-variant); border-radius: 0.5rem; }
   `,
 })

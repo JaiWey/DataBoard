@@ -3,6 +3,7 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { MAT_DIALOG_DATA, MatDialogRef } from '@angular/material/dialog';
 import { Dashboard, DashboardWidget } from './dashboards.service';
+import { chooseOption, selectedValue } from '../shared/select.testing';
 import { ImageWidgetDialogComponent, ImageWidgetDialogData } from './image-widget-dialog.component';
 
 const ORG = '11111111-1111-1111-1111-111111111111';
@@ -68,8 +69,7 @@ describe('ImageWidgetDialogComponent', () => {
 
     it('sends the picture with its fit, description and link', () => {
       pick(png());
-      field<HTMLSelectElement>('How the picture fits').value = 'cover';
-      field<HTMLSelectElement>('How the picture fits').dispatchEvent(new Event('change'));
+      chooseOption(fixture, 'How the picture fits', 'cover');
       type('Picture description', ' Our logo ');
       type('Picture link', 'https://example.com');
       button('Add picture').click();
@@ -126,7 +126,7 @@ describe('ImageWidgetDialogComponent', () => {
       expect(el().querySelector('h2')?.textContent).toContain('Picture');
       expect(field<HTMLInputElement>('Picture description').value).toBe('Logo');
       expect(field<HTMLInputElement>('Picture link').value).toBe('https://example.com');
-      expect(field<HTMLSelectElement>('How the picture fits').value).toBe('contain');
+      expect(selectedValue(fixture, 'How the picture fits')).toBe('contain');
       expect(el().textContent).toContain('Keeping the current picture');
       expect(button('Save').disabled).toBe(true);
     });
@@ -134,8 +134,7 @@ describe('ImageWidgetDialogComponent', () => {
     it('saves new settings with the dashboard, widget by widget, without touching the picture', () => {
       type('Picture description', 'New logo');
       type('Picture link', '');
-      field<HTMLSelectElement>('How the picture fits').value = 'fill';
-      field<HTMLSelectElement>('How the picture fits').dispatchEvent(new Event('change'));
+      chooseOption(fixture, 'How the picture fits', 'fill');
       button('Save').click();
 
       const request = http.expectOne({ method: 'PUT', url: BASE });

@@ -8,6 +8,7 @@ import { fakeMonaco } from '../sql-editor/fake-monaco.testing';
 import { MONACO_LOADER } from '../sql-editor/sql-editor.component';
 import { DatasetsComponent } from './datasets.component';
 import { answerConfirm } from '../shared/confirm.testing';
+import { chooseOption, selectDisabled, selectHost, selectOptions, selectedLabel, selectedValue } from '../shared/select.testing';
 
 const ORG = '11111111-1111-1111-1111-111111111111';
 
@@ -196,8 +197,7 @@ describe('DatasetsComponent', () => {
 
     expect(tabNames()).toEqual(['New dataset']);
     expect(monaco.editors.length).toBe(1);
-    const options = Array.from(el().querySelectorAll('select[aria-label="Data source"] option')).map((o) => o.textContent?.trim());
-    expect(options).toEqual(['Shop DB', 'Warehouse']);
+    expect(selectOptions(fixture, 'Data source').map(([, text]) => text)).toEqual(['Shop DB', 'Warehouse']);
   });
 
   it('cannot save the new dataset until there is SQL', async () => {
@@ -216,9 +216,7 @@ describe('DatasetsComponent', () => {
   it('asks for the name in a dialog on save and turns the tab into the created dataset', async () => {
     load('Owner', [dataset(null)], false);
     await startNew();
-    const pickSource = el().querySelector('select[aria-label="Data source"]') as HTMLSelectElement;
-    pickSource.value = 'src-2';
-    pickSource.dispatchEvent(new Event('change'));
+    chooseOption(fixture, 'Data source', 'src-2');
     monaco.editors[0].type('SELECT region FROM sales');
     await settle();
     const created = { ...dataset('SELECT region FROM sales'), id: '55555555-5555-5555-5555-555555555555', name: 'Returns' };
@@ -280,12 +278,7 @@ describe('DatasetsComponent', () => {
     byLabel<HTMLButtonElement>(label).click();
     fixture.detectChanges();
   };
-  const choose = (label: string, value: string) => {
-    const select = byLabel<HTMLSelectElement>(label);
-    select.value = value;
-    select.dispatchEvent(new Event('change'));
-    fixture.detectChanges();
-  };
+  const choose = (label: string, value: string) => chooseOption(fixture, label, value);
   /** Makes the next "Fields" dialog answer with these fields, as if they were ticked and Done was pressed. */
   const pickFields = (fields: string[]) =>
     vi.spyOn(TestBed.inject(MatDialog), 'open').mockReturnValue({ afterClosed: () => of(fields) } as never);
@@ -338,7 +331,7 @@ describe('DatasetsComponent', () => {
     expect(tabNames()).toEqual(['New table view']);
     expect(monaco.editors.length).toBe(0); // no SQL editor: this kind is built from tables
     expect(el().textContent).toContain('Step 1 · Main table');
-    const tables = Array.from(el().querySelectorAll('select[aria-label="Table of step 1"] option')).map((o) => o.textContent?.trim());
+    const tables = selectOptions(fixture, 'Table of step 1').map(([, text]) => text);
     expect(tables).toEqual(['Choose a table…', 'public.orders', 'public.Returns']);
   });
 
@@ -380,7 +373,7 @@ describe('DatasetsComponent', () => {
     choose('Table of step 2', '1');
     pickFields(['name']);
     click('Choose fields of step 2');
-    const left = Array.from(el().querySelectorAll('select[aria-label^="Earlier field of condition 1"] option')).map((o) => o.textContent?.trim());
+    const left = selectOptions(fixture, 'Earlier field of condition 1 in step 2').map(([, text]) => text);
     expect(left).toEqual(['Choose…', 'orders.id', 'orders.customer_id']);
     choose('Earlier field of condition 1 in step 2', '0:customer_id');
     choose('Field of this table in condition 1 in step 2', 'id');
@@ -486,7 +479,7 @@ describe('DatasetsComponent', () => {
     http.expectOne(schemaUrl('src-2')).flush({ schemas: [], truncated: false });
     await settle();
 
-    expect(byLabel<HTMLSelectElement>('Table of step 1').value).toBe('');
+    expect(selectedValue(fixture, 'Table of step 1')).toBe('');
   });
 
   // ---- a saved table view ----
@@ -503,7 +496,7 @@ describe('DatasetsComponent', () => {
     await settle();
 
     expect(el().textContent).toContain('Step 1 · Main table');
-    expect(byLabel<HTMLSelectElement>('Table of step 1').selectedOptions[0].textContent?.trim()).toBe('public.orders');
+    expect(selectedLabel(fixture, 'Table of step 1')).toBe('public.orders');
     expect(Array.from(el().querySelectorAll('.step .chip')).map((c) => c.textContent?.trim())).toEqual(['id']);
     expect(monaco.editors.length).toBe(1);
     expect(monaco.editors[0].readOnly).toBe(true);
@@ -760,11 +753,11 @@ describe('DatasetsComponent', () => {
 
   // ---- keeping results ----
 
-  const cacheSelect = () => el().querySelector('select[aria-label="Cache results for"]') as HTMLSelectElement;
+  const cacheSelect = () => selectHost(fixture, 'Cache results for');
+  const cacheChosen = () => selectedLabel(fixture, 'Cache results for');
   const cacheUrl = `${datasetUrl}/cache`;
   const chooseCache = async (seconds: number) => {
-    cacheSelect().value = String(seconds);
-    cacheSelect().dispatchEvent(new Event('change'));
+    chooseOption(fixture, 'Cache results for', String(seconds));
     await settle();
   };
 
@@ -772,8 +765,8 @@ describe('DatasetsComponent', () => {
     load('Editor', [dataset('SELECT 1')]);
     await settle();
 
-    expect(cacheSelect().selectedOptions[0].textContent?.trim()).toBe('Off (always live)');
-    expect(Array.from(cacheSelect().options).map((o) => o.textContent?.trim())).toEqual([
+    expect(cacheChosen()).toBe('Off (always live)');
+    expect(selectOptions(fixture, 'Cache results for').map(([, text]) => text)).toEqual([
       'Off (always live)', '1 minute', '5 minutes', '15 minutes', '1 hour', '6 hours', '24 hours',
     ]);
   });
@@ -788,7 +781,7 @@ describe('DatasetsComponent', () => {
     expect(req.request.body).toEqual({ cacheSeconds: 300 });
     req.flush({ ...dataset('SELECT 1'), cacheSeconds: 300 });
     await settle();
-    expect(cacheSelect().selectedOptions[0].textContent?.trim()).toBe('5 minutes');
+    expect(cacheChosen()).toBe('5 minutes');
     expect(saveButton().disabled).toBe(true); // nothing to save: it was not a change to the dataset
   });
 
@@ -816,15 +809,15 @@ describe('DatasetsComponent', () => {
     await settle();
 
     expect(el().querySelector('[role=alert]')?.textContent).toContain('0 to 86400');
-    expect(cacheSelect().disabled).toBe(false);
-    expect(cacheSelect().selectedOptions[0].textContent?.trim()).toBe('1 minute'); // the control is back to what is saved
+    expect(selectDisabled(fixture, 'Cache results for')).toBe(false);
+    expect(cacheChosen()).toBe('1 minute'); // the control still shows what is saved
   });
 
   it('lets a setting that is not one of the choices show as itself', async () => {
     load('Editor', [{ ...dataset('SELECT 1'), cacheSeconds: 120 }]);
     await settle();
 
-    expect(cacheSelect().selectedOptions[0].textContent?.trim()).toBe('2 minutes');
+    expect(cacheChosen()).toBe('2 minutes');
   });
 
   it('tells a viewer that the data can be behind, without a way to change it', async () => {
@@ -846,8 +839,13 @@ describe('DatasetsComponent', () => {
 
   const PARAMETER_SQL = 'SELECT region FROM sales WHERE region = {{region}}';
   const withParameters = (sql = PARAMETER_SQL) => ({ ...dataset(sql), parameters: [{ name: 'region', type: 'Text', default: 'Auckland' }] });
-  const control = (label: string) => el().querySelector(`[aria-label="${label}"]`) as HTMLInputElement | HTMLSelectElement;
+  const control = (label: string) => el().querySelector(`[aria-label="${label}"]`) as HTMLInputElement;
   const setControl = async (label: string, value: string, event = 'input') => {
+    if (event === 'change') {
+      chooseOption(fixture, label, value); // a Material select: the choice is picked from its list
+      await settle();
+      return;
+    }
     const c = control(label);
     c.value = value;
     c.dispatchEvent(new Event(event));
@@ -859,7 +857,7 @@ describe('DatasetsComponent', () => {
     await settle();
 
     expect(el().querySelector('app-parameters-panel .name')?.textContent).toBe('{{region}}');
-    expect((control('Type of region') as HTMLSelectElement).value).toBe('Text');
+    expect(selectedValue(fixture, 'Type of region')).toBe('Text');
     expect((control('Default of region') as HTMLInputElement).value).toBe('Auckland');
     expect(el().textContent).toContain('Charts and dashboards can choose its value');
   });

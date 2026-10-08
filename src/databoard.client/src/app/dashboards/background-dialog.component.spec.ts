@@ -2,6 +2,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { MAT_DIALOG_DATA, MatDialogRef } from '@angular/material/dialog';
+import { chooseOption, selectDisabled, selectedValue } from '../shared/select.testing';
 import { BackgroundDialogComponent, BackgroundDialogData } from './background-dialog.component';
 import { Dashboard } from './dashboards.service';
 
@@ -59,7 +60,7 @@ describe('BackgroundDialogComponent', () => {
       expect(button('Choose a picture')).toBeDefined();
       expect(button('Save')!.disabled).toBe(true);
       expect(button('Remove picture')).toBeUndefined();
-      expect(field<HTMLSelectElement>('How the picture is shown').disabled).toBe(true);
+      expect(selectDisabled(fixture, 'How the picture is shown')).toBe(true);
     });
 
     it('previews the chosen picture and sends it with the way to show it', () => {
@@ -67,8 +68,7 @@ describe('BackgroundDialogComponent', () => {
 
       expect(el().querySelector('[role=img]')).not.toBeNull();
       expect(button('Choose another picture')).toBeDefined();
-      field<HTMLSelectElement>('How the picture is shown').value = 'tile';
-      field<HTMLSelectElement>('How the picture is shown').dispatchEvent(new Event('change'));
+      chooseOption(fixture, 'How the picture is shown', 'tile');
       field<HTMLInputElement>('Picture strength').value = '60';
       field<HTMLInputElement>('Picture strength').dispatchEvent(new Event('input'));
       fixture.detectChanges();
@@ -119,16 +119,14 @@ describe('BackgroundDialogComponent', () => {
 
     it('shows the current picture and how it is shown', () => {
       expect(el().querySelector('[role=img]')).not.toBeNull();
-      expect(field<HTMLSelectElement>('How the picture is shown').value).toBe('contain');
+      expect(selectedValue(fixture, 'How the picture is shown')).toBe('contain');
       expect(field<HTMLInputElement>('Picture strength').value).toBe('70');
       expect(button('Remove picture')).toBeDefined();
       expect(button('Save')!.disabled).toBe(true); // nothing changed
     });
 
     it('saves a change to how it is shown without sending the picture again', () => {
-      field<HTMLSelectElement>('How the picture is shown').value = 'center';
-      field<HTMLSelectElement>('How the picture is shown').dispatchEvent(new Event('change'));
-      fixture.detectChanges();
+      chooseOption(fixture, 'How the picture is shown', 'center');
       expect(button('Save')!.disabled).toBe(false);
 
       button('Save')!.click();

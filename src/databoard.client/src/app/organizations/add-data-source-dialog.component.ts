@@ -5,6 +5,7 @@ import { MatCheckboxModule } from '@angular/material/checkbox';
 import { MAT_DIALOG_DATA, MatDialogModule, MatDialogRef } from '@angular/material/dialog';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
+import { AppSelectComponent, SelectOption } from '../shared/app-select.component';
 import { buildMySqlConnectionString, buildPostgresConnectionString, buildSqlServerConnectionString } from './connection-string';
 import {
   CSV_DELIMITERS,
@@ -28,19 +29,11 @@ const PRODUCT = { postgres: 'PostgreSQL', mysql: 'MySQL', mssql: 'SQL Server' } 
 /** Closes with the created data source, or with nothing if the user cancelled. */
 @Component({
   selector: 'app-add-data-source-dialog',
-  imports: [ReactiveFormsModule, MatDialogModule, MatButtonModule, MatCheckboxModule, MatFormFieldModule, MatInputModule],
+  imports: [ReactiveFormsModule, MatDialogModule, MatButtonModule, MatCheckboxModule, MatFormFieldModule, MatInputModule, AppSelectComponent],
   template: `
     <h2 mat-dialog-title>Add a data source</h2>
     <mat-dialog-content>
-      <mat-form-field class="wide">
-        <mat-label>Type</mat-label>
-        <select matNativeControl aria-label="Type" [value]="kind()" (change)="setKind($any($event.target).value)" [disabled]="uploaded() !== null">
-          <option value="postgres">PostgreSQL database</option>
-          <option value="mysql">MySQL database</option>
-          <option value="mssql">SQL Server database</option>
-          <option value="csv">CSV file</option>
-        </select>
-      </mat-form-field>
+      <app-select class="wide" label="Type" ariaLabel="Type" [options]="kinds" [value]="kind()" [disabled]="uploaded() !== null" (valueChange)="setKind($any($event))" />
     </mat-dialog-content>
 
     @if (kind() !== 'csv') {
@@ -51,14 +44,7 @@ const PRODUCT = { postgres: 'PostgreSQL', mysql: 'MySQL', mssql: 'SQL Server' } 
             <mat-form-field><mat-label>Host</mat-label><input matInput formControlName="host" placeholder="db.example.com" /></mat-form-field>
             <mat-form-field><mat-label>Port</mat-label><input matInput type="number" formControlName="port" /></mat-form-field>
             <mat-form-field><mat-label>Database</mat-label><input matInput formControlName="database" /></mat-form-field>
-            <mat-form-field>
-              <mat-label>SSL</mat-label>
-              <select matNativeControl formControlName="sslMode">
-                <option value="Prefer">Prefer</option>
-                <option value="Require">Require</option>
-                <option value="Disable">Disable</option>
-              </select>
-            </mat-form-field>
+            <app-select label="SSL" ariaLabel="SSL" formControlName="sslMode" [options]="sslModes" />
             <mat-form-field><mat-label>Username</mat-label><input matInput formControlName="username" autocomplete="off" /></mat-form-field>
             <mat-form-field><mat-label>Password</mat-label><input matInput type="password" formControlName="password" autocomplete="new-password" /></mat-form-field>
           </div>
@@ -110,14 +96,7 @@ const PRODUCT = { postgres: 'PostgreSQL', mysql: 'MySQL', mssql: 'SQL Server' } 
               <small>Up to 20 MB, 200,000 rows and 200 columns. Each column is given the type that fits what is in it.</small>
             </div>
 
-            <mat-form-field>
-              <mat-label>Delimiter</mat-label>
-              <select matNativeControl formControlName="delimiter">
-                @for (d of delimiters; track d.value) {
-                  <option [value]="d.value">{{ d.label }}</option>
-                }
-              </select>
-            </mat-form-field>
+            <app-select label="Delimiter" ariaLabel="Delimiter" formControlName="delimiter" [options]="delimiters" />
             <mat-form-field>
               <mat-label>Table name (optional)</mat-label>
               <input matInput formControlName="tableName" placeholder="from the file's name" spellcheck="false" />
@@ -160,6 +139,17 @@ export class AddDataSourceDialogComponent {
   protected readonly draftTest = signal<ConnectionTestResult | null>(null);
   protected readonly errors = signal<string[]>([]);
   protected readonly delimiters = CSV_DELIMITERS;
+  protected readonly kinds: SelectOption[] = [
+    { value: 'postgres', label: 'PostgreSQL database' },
+    { value: 'mysql', label: 'MySQL database' },
+    { value: 'mssql', label: 'SQL Server database' },
+    { value: 'csv', label: 'CSV file' },
+  ];
+  protected readonly sslModes: SelectOption[] = [
+    { value: 'Prefer', label: 'Prefer' },
+    { value: 'Require', label: 'Require' },
+    { value: 'Disable', label: 'Disable' },
+  ];
   protected readonly file = signal<File | null>(null);
   /** What was read from the file, shown before the dialog closes. */
   protected readonly uploaded = signal<CsvUploadResult | null>(null);

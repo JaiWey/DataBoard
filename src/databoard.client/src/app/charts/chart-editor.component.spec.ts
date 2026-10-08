@@ -5,6 +5,7 @@ import { ActivatedRoute, Router, convertToParamMap, provideRouter } from '@angul
 import { ECHARTS_LOADER } from './chart.component';
 import { ChartEditorComponent } from './chart-editor.component';
 import { answerConfirm } from '../shared/confirm.testing';
+import { chooseOption, selectDisabled, selectOptions, selectedLabel, selectedValue } from '../shared/select.testing';
 
 const ORG = '11111111-1111-1111-1111-111111111111';
 const DS = '33333333-3333-3333-3333-333333333333';
@@ -71,12 +72,7 @@ describe('ChartEditorComponent', () => {
     byLabel<HTMLButtonElement>(label).click();
     fixture.detectChanges();
   };
-  const choose = (label: string, value: string) => {
-    const select = byLabel<HTMLSelectElement>(label);
-    select.value = value;
-    select.dispatchEvent(new Event('change'));
-    fixture.detectChanges();
-  };
+  const choose = (label: string, value: string) => chooseOption(fixture, label, value);
   const typeInto = (label: string, value: string) => {
     const input = byLabel<HTMLInputElement>(label);
     input.value = value;
@@ -87,7 +83,7 @@ describe('ChartEditorComponent', () => {
   const zone = (id: string) => Array.from(el().querySelectorAll(`#zone-${id} .item`));
   /** Each metric as "Aggregation field", e.g. "Sum price". */
   const metrics = () =>
-    zone('metrics').map((i) => `${(i.querySelector('select') as HTMLSelectElement).selectedOptions[0].textContent?.trim()} ${i.querySelector('.item-name')?.textContent}`);
+    zone('metrics').map((i) => `${i.querySelector('mat-select')?.getAttribute('data-value')} ${i.querySelector('.item-name')?.textContent}`);
   /** Opens a tab of the config panel. Real timers are faked in these tests, so the tab body is given a moment by hand. */
   const openTab = (index: number) => {
     (el().querySelectorAll('[role=tab]')[index] as HTMLElement).click();
@@ -156,7 +152,7 @@ describe('ChartEditorComponent', () => {
     const names = Array.from(el().querySelectorAll('.field .field-name')).map((f) => f.textContent?.trim());
     expect(badges).toEqual(['Str', '123', 'Date']);
     expect(names).toEqual(['region', 'price', 'ordered_on']);
-    expect(byLabel<HTMLSelectElement>('Dataset').selectedOptions[0].textContent?.trim()).toBe('Orders');
+    expect(selectedLabel(fixture, 'Dataset')).toBe('Orders');
   });
 
   it('starts with the dataset named in the address', () => {
@@ -190,8 +186,7 @@ describe('ChartEditorComponent', () => {
     open();
     click('Add ordered_on');
 
-    const grain = byLabel<HTMLSelectElement>('Group ordered_on by');
-    expect(grain.value).toBe('Month');
+    expect(selectedValue(fixture, 'Group ordered_on by')).toBe('Month');
     choose('Group ordered_on by', 'Year');
     click('Add price');
     preview();
@@ -214,7 +209,7 @@ describe('ChartEditorComponent', () => {
     } as never);
     fixture.detectChanges();
 
-    const grains = Array.from(el().querySelectorAll('#zone-dimensions select')).map((s) => (s as HTMLSelectElement).value);
+    const grains = Array.from(el().querySelectorAll('#zone-dimensions mat-select')).map((s) => s.getAttribute('data-value'));
     expect(grains).toEqual(['Year', 'Day', 'Month']);
   });
 
@@ -393,7 +388,7 @@ describe('ChartEditorComponent', () => {
     editor()['addField']('metrics' as never, datasets[0].columns[1] as never);
     fixture.detectChanges();
 
-    const options = (label: string) => Array.from(byLabel<HTMLSelectElement>(label).options).map((o) => o.value);
+    const options = (label: string) => selectOptions(fixture, label).map(([value]) => value);
     expect(options('Aggregation of metric 1')).toEqual(['Count', 'CountDistinct']);
     expect(options('Aggregation of metric 2')).toEqual(['Sum', 'Avg', 'Min', 'Max', 'Count', 'CountDistinct']);
   });
@@ -454,7 +449,7 @@ describe('ChartEditorComponent', () => {
     click('Add price');
     preview();
 
-    const options = Array.from(byLabel<HTMLSelectElement>('Sort by').options).map((o) => o.value);
+    const options = selectOptions(fixture, 'Sort by').map(([value]) => value);
     expect(options).toEqual(['', 'region', 'sum_price']);
   });
 
@@ -598,7 +593,7 @@ describe('ChartEditorComponent', () => {
 
     expect(el().querySelector('.notice')?.textContent).toContain('needs Editor access');
     expect(saveButton().disabled).toBe(true);
-    expect(byLabel<HTMLSelectElement>('Dataset').disabled).toBe(true);
+    expect(selectDisabled(fixture, 'Dataset')).toBe(true);
     vi.advanceTimersByTime(300);
     http.expectOne({ method: 'POST', url: queryUrl() }).flush(result(null));
   });
@@ -808,7 +803,7 @@ describe('ChartEditorComponent', () => {
       const min = byLabel<HTMLInputElement>('Value of min_price');
       expect([min.type, min.placeholder]).toEqual(['number', 'default: 0']);
       expect(el().textContent).toContain('Minimum price'); // the label, when it has one
-      expect(byLabel<HTMLSelectElement>('Value of paid').selectedOptions[0].textContent).toContain('default (true)');
+      expect(selectedLabel(fixture, 'Value of paid')).toContain('default (true)');
     });
 
     it('sends the values chosen to the preview, as the type of the parameter, and leaves the others to their defaults', () => {

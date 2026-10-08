@@ -4,6 +4,7 @@ import { MatCardModule } from '@angular/material/card';
 import { MatDialog } from '@angular/material/dialog';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
+import { AppSelectComponent, SelectOption } from '../shared/app-select.component';
 import { SqlEditorComponent } from '../sql-editor/sql-editor.component';
 import { SqlResultsComponent } from '../sql-editor/sql-results.component';
 import { DataSource, DataSourcesService, MAX_PREVIEW_ROWS, QueryPreview, problemMessages } from './data-sources.service';
@@ -15,7 +16,7 @@ import { SaveDatasetDialogComponent, SaveDatasetDialogData } from './save-datase
 /** An unsaved dataset: pick the data source, write the SQL, and Save asks for a name. */
 @Component({
   selector: 'app-new-dataset-tab',
-  imports: [MatCardModule, MatButtonModule, MatFormFieldModule, MatInputModule, SqlEditorComponent, SqlResultsComponent, ParametersPanelComponent],
+  imports: [MatCardModule, MatButtonModule, MatFormFieldModule, MatInputModule, AppSelectComponent, SqlEditorComponent, SqlResultsComponent, ParametersPanelComponent],
   template: `
     <mat-card appearance="raised" class="detail">
       <mat-card-header>
@@ -29,12 +30,7 @@ import { SaveDatasetDialogComponent, SaveDatasetDialogData } from './save-datase
         @if (loaded() && sources().length === 0) {
           <p class="fail" role="alert">Add a data source first; a dataset is a saved query on one.</p>
         }
-        <mat-form-field class="source">
-          <mat-label>Data source</mat-label>
-          <select matNativeControl aria-label="Data source" [value]="sourceId()" (change)="sourceId.set($any($event.target).value)">
-            @for (s of sources(); track s.id) { <option [value]="s.id">{{ s.name }}</option> }
-          </select>
-        </mat-form-field>
+        <app-select class="source" label="Data source" ariaLabel="Data source" [options]="sourceOptions()" [value]="sourceId()" (valueChange)="sourceId.set($event)" />
         <app-sql-editor [value]="sql()" (valueChange)="sql.set($event)" (save)="openSave()" (run)="test()" />
         <app-parameters-panel [sql]="sql()" [(parameters)]="parameters" />
         <p><small>One read-only SELECT. Give every column a unique name. {{ parameterHint }}</small></p>
@@ -73,6 +69,7 @@ export class NewDatasetTabComponent implements OnInit {
   readonly dirtyChange = output<boolean>();
 
   protected readonly sources = signal<DataSource[]>([]);
+  protected readonly sourceOptions = computed<SelectOption[]>(() => this.sources().map((s) => ({ value: s.id, label: s.name })));
   protected readonly loaded = signal(false);
   protected readonly sourceId = signal('');
   protected readonly sql = signal('');

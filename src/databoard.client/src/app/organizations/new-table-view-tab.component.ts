@@ -4,6 +4,7 @@ import { MatCardModule } from '@angular/material/card';
 import { MatDialog } from '@angular/material/dialog';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
+import { AppSelectComponent, SelectOption } from '../shared/app-select.component';
 import { DataSource, DataSourcesService, problemMessages } from './data-sources.service';
 import { Dataset, TableViewDefinition, emptyTableView } from './datasets.service';
 import { SaveDatasetDialogComponent, SaveDatasetDialogData } from './save-dataset-dialog.component';
@@ -12,7 +13,7 @@ import { TableViewBuilderComponent } from './table-view-builder.component';
 /** An unsaved table view dataset: pick the data source, build the view step by step, and Save asks for a name. */
 @Component({
   selector: 'app-new-table-view-tab',
-  imports: [MatCardModule, MatButtonModule, MatFormFieldModule, MatInputModule, TableViewBuilderComponent],
+  imports: [MatCardModule, MatButtonModule, MatFormFieldModule, MatInputModule, AppSelectComponent, TableViewBuilderComponent],
   template: `
     <mat-card appearance="raised" class="detail">
       <mat-card-header>
@@ -25,12 +26,7 @@ import { TableViewBuilderComponent } from './table-view-builder.component';
         @if (loaded() && sources().length === 0) {
           <p class="fail" role="alert">Add a data source first; a dataset is built on one.</p>
         }
-        <mat-form-field class="source">
-          <mat-label>Data source</mat-label>
-          <select matNativeControl aria-label="Data source" (change)="changeSource($any($event.target).value)">
-            @for (s of sources(); track s.id) { <option [value]="s.id" [selected]="s.id === sourceId()">{{ s.name }}</option> }
-          </select>
-        </mat-form-field>
+        <app-select class="source" label="Data source" ariaLabel="Data source" [options]="sourceOptions()" [value]="sourceId()" (valueChange)="changeSource($event)" />
         @for (message of errors(); track message) {
           <p class="fail" role="alert">{{ message }}</p>
         }
@@ -66,6 +62,7 @@ export class NewTableViewTabComponent implements OnInit {
   readonly dirtyChange = output<boolean>();
 
   protected readonly sources = signal<DataSource[]>([]);
+  protected readonly sourceOptions = computed<SelectOption[]>(() => this.sources().map((s) => ({ value: s.id, label: s.name })));
   protected readonly loaded = signal(false);
   protected readonly sourceId = signal('');
   protected readonly definition = signal<TableViewDefinition>(emptyTableView());

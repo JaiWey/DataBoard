@@ -2,6 +2,7 @@ import { Component, DestroyRef, OnInit, computed, inject, signal } from '@angula
 import { MatButtonModule } from '@angular/material/button';
 import { MAT_DIALOG_DATA, MatDialogModule, MatDialogRef } from '@angular/material/dialog';
 import { problemMessages } from '../organizations/data-sources.service';
+import { AppSelectComponent } from '../shared/app-select.component';
 import {
   BACKGROUND_FITS, BACKGROUND_MAX_BYTES, BACKGROUND_TYPES, BackgroundFit, Dashboard, DashboardBackground, DashboardsService,
 } from './dashboards.service';
@@ -20,7 +21,7 @@ export interface BackgroundDialogData {
  */
 @Component({
   selector: 'app-background-dialog',
-  imports: [MatDialogModule, MatButtonModule],
+  imports: [MatDialogModule, MatButtonModule, AppSelectComponent],
   template: `
     <h2 mat-dialog-title>Background of "{{ data.dashboardName }}"</h2>
     <mat-dialog-content>
@@ -39,12 +40,10 @@ export interface BackgroundDialogData {
         <small>PNG, JPEG, GIF or WebP, up to 5 MB.</small>
       </div>
 
-      <label class="row">
+      <div class="row">
         <span>Show it</span>
-        <select aria-label="How the picture is shown" [disabled]="!hasPicture()" (change)="fit.set($any($event.target).value)">
-          @for (f of fits; track f.value) { <option [value]="f.value" [selected]="f.value === fit()">{{ f.label }}</option> }
-        </select>
-      </label>
+        <app-select ariaLabel="How the picture is shown" [options]="fits" [value]="fit()" [disabled]="!hasPicture()" (valueChange)="fit.set($any($event))" />
+      </div>
       <label class="row">
         <span>Strength ({{ opacity() }}%)</span>
         <input type="range" min="10" max="100" step="5" aria-label="Picture strength" [disabled]="!hasPicture()"
@@ -72,7 +71,6 @@ export interface BackgroundDialogData {
     .picture { position: absolute; inset: 0; background-position: center; }
     .pick { display: flex; align-items: center; gap: 0.75rem; margin: 0.75rem 0; flex-wrap: wrap; }
     .row { display: grid; grid-template-columns: 9rem 1fr; align-items: center; gap: 0.5rem; margin: 0.4rem 0; }
-    .row select { padding: 0.3rem 0.4rem; font: inherit; }
     .hint { margin: 0.5rem 0 0; font-size: 0.8rem; color: var(--mat-sys-on-surface-variant); }
     .spacer { flex: 1; }
     mat-dialog-actions { display: flex; }

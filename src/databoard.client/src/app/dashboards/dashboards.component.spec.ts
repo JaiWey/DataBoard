@@ -175,7 +175,10 @@ describe('DashboardsComponent', () => {
     fixture.detectChanges();
     answerDashboard('d1', 'Sales', [widget('w1', 'c1'), widget('w2', 'c2')], [c1, c2]);
 
-    (el().querySelector('button.remove-widget') as HTMLButtonElement).click();
+    (el().querySelector('.widget-actions .more') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    Array.from(document.querySelectorAll<HTMLElement>('.mat-mdc-menu-item')).find((b) => b.textContent?.trim() === 'Remove')!.click();
+    document.querySelectorAll('.cdk-overlay-container').forEach((c) => (c.innerHTML = ''));
     http.expectOne({ method: 'PUT', url: `/api/organizations/${ORG}/dashboards/d1` }).flush(full('d1', 'Sales', [widget('w2', 'c2')]));
     http.expectOne(`/api/organizations/${ORG}/dashboards/d1/run`).flush({ widgets: [] });
     fixture.detectChanges();
@@ -193,7 +196,10 @@ describe('DashboardsComponent', () => {
     const words = { id: 'w8', chartId: '00000000-0000-0000-0000-000000000000', kind: 'Text', text: 'Notes' };
     vi.spyOn(TestBed.inject(MatDialog), 'open').mockReturnValue({ afterClosed: () => of(full('d1', 'Sales', [widget('w1', 'c1'), picture, words])) } as never);
 
-    (Array.from(el().querySelectorAll('button')).find((b) => b.textContent?.trim() === 'Add picture') as HTMLButtonElement).click();
+    (el().querySelector('.add-menu') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    Array.from(document.querySelectorAll<HTMLElement>('.mat-mdc-menu-item')).find((b) => b.textContent?.trim() === 'Picture')!.click();
+    document.querySelectorAll('.cdk-overlay-container').forEach((c) => (c.innerHTML = ''));
     fixture.detectChanges();
     http.expectOne({ method: 'GET', url: `/api/organizations/${ORG}/dashboards/d1/image-widgets/w9/image?v=k` }).flush(new Blob(['x']));
     fixture.detectChanges();

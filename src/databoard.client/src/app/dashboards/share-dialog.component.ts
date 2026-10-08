@@ -6,6 +6,7 @@ import { MAT_DIALOG_DATA, MatDialogModule } from '@angular/material/dialog';
 import { Observable } from 'rxjs';
 import { problemMessages } from '../organizations/data-sources.service';
 import { DashboardShare, DashboardsService, OrgShare, ShareLifetime } from './dashboards.service';
+import { AppSelectComponent, SelectOption } from '../shared/app-select.component';
 import { ConfirmService } from '../shared/confirm.service';
 
 export interface ShareDialogData {
@@ -38,7 +39,7 @@ export const shareUrl = (token: string): string => `${window.location.origin}/sh
  */
 @Component({
   selector: 'app-share-dialog',
-  imports: [MatDialogModule, MatButtonModule, DatePipe],
+  imports: [MatDialogModule, MatButtonModule, DatePipe, AppSelectComponent],
   template: `
     <h2 mat-dialog-title>Share "{{ data.dashboardName }}"</h2>
     <mat-dialog-content>
@@ -69,20 +70,16 @@ export const shareUrl = (token: string): string => `${window.location.origin}/sh
       </fieldset>
 
       <div class="make">
-        <label>
+        <div class="lifetime">
           <span>Link works for</span>
-          <select aria-label="Link lifetime" (change)="lifetime.set(+$any($event.target).value)">
-            @for (option of lifetimes; track option.label; let i = $index) {
-              <option [value]="i" [selected]="i === lifetime()">{{ option.label }}</option>
-            }
-          </select>
-        </label>
+          <app-select ariaLabel="Link lifetime" [options]="lifetimeOptions" [value]="'' + lifetime()" (valueChange)="lifetime.set(+$event)" />
+        </div>
         <button mat-flat-button type="button" class="create" [disabled]="busy() || (restricted() && chosen().size === 0)" (click)="create()">Create link</button>
       </div>
 
       @if (created(); as link) {
         <div class="created" role="status">
-          <strong>Copy the link now. It cannot be shown again.</strong>
+          <strong>Your new link</strong>
           <div class="copy">
             <input readonly aria-label="Share link" [value]="link" (focus)="$any($event.target).select()" />
             <button mat-stroked-button type="button" class="copy-button" (click)="copy(link)">{{ copied() ? 'Copied' : 'Copy' }}</button>
@@ -132,7 +129,15 @@ export const shareUrl = (token: string): string => `${window.location.origin}/sh
               @else { never expires }
               · <span class="who-can">{{ whoFor(share) }}</span>
             </span>
-            <button mat-button type="button" class="revoke" [disabled]="busy()" (click)="revoke(share)">Revoke</button>
+            <span class="row-actions">
+              @if (share.token) {
+                <button mat-button type="button" class="copy-link" [attr.aria-label]="'Copy the link made ' + (share.createdUtc | date: 'medium')"
+                        (click)="copyRow(share)">{{ copiedRow() === share.id ? 'Copied' : 'Copy link' }}</button>
+              } @else {
+                <small class="no-address" title="Links made before addresses could be copied cannot be shown. Make a new one if you need it again.">address not kept</small>
+              }
+              <button mat-button type="button" class="revoke" [disabled]="busy()" (click)="revoke(share)">Revoke</button>
+            </span>
           </li>
         }
       </ul>
@@ -150,12 +155,14 @@ export const shareUrl = (token: string): string => `${window.location.origin}/sh
     .orgs-shared { display: grid; gap: 0.2rem; }
     .unknown { display: flex; align-items: center; gap: 0.5rem; color: var(--mat-sys-on-surface-variant); }
     .make { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.75rem; }
-    .make label { display: flex; flex-direction: column; gap: 0.2rem; }
+    .make .lifetime { display: flex; flex-direction: column; gap: 0.2rem; }
     .created { margin: 1rem 0; padding: 0.75rem; border-radius: 8px; background: var(--mat-sys-secondary-container); }
     .copy { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
     .copy input { flex: 1; min-width: 0; padding: 0.4rem; font-family: monospace; }
     h3 { margin-top: 1.25rem; }
     .shares { list-style: none; margin: 0; padding: 0; }
+    .row-actions { display: flex; align-items: center; gap: 0.25rem; flex-shrink: 0; }
+    .no-address { color: var(--mat-sys-on-surface-variant); }
     .shares li { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; padding: 0.2rem 0; border-bottom: 1px solid var(--mat-sys-outline-variant); }
   `,
 })
@@ -166,6 +173,7 @@ export class ShareDialogComponent implements OnInit {
   private readonly http = inject(HttpClient);
 
   protected readonly lifetimes = SHARE_LIFETIMES;
+  protected readonly lifetimeOptions: SelectOption[] = SHARE_LIFETIMES.map((o, i) => ({ value: String(i), label: o.label }));
   protected readonly lifetime = signal(DEFAULT_LIFETIME);
   protected readonly shares = signal<DashboardShare[]>([]);
   /** The organizations the dashboard is shown to. */
@@ -182,6 +190,8 @@ export class ShareDialogComponent implements OnInit {
   private readonly names = computed(() => new Map(this.organizations().map((o) => [o.id, o.name])));
   protected readonly created = signal<string | null>(null);
   protected readonly copied = signal(false);
+  /** The link in the list whose address was just copied. */
+  protected readonly copiedRow = signal<string | null>(null);
   protected readonly busy = signal(false);
   protected readonly errors = signal<string[]>([]);
   private createdId: string | null = null;
@@ -287,6 +297,15 @@ export class ShareDialogComponent implements OnInit {
     navigator.clipboard?.writeText(link).then(
       () => this.copied.set(true),
       () => this.copied.set(false),
+    );
+  }
+
+  /** Copies the address of a link in the list; the secret comes with the list, for editors only. */
+  protected copyRow(share: DashboardShare): void {
+    if (!share.token) return;
+    navigator.clipboard?.writeText(shareUrl(share.token)).then(
+      () => this.copiedRow.set(share.id),
+      () => this.copiedRow.set(null),
     );
   }
 

@@ -1,6 +1,7 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MAT_DIALOG_DATA, MatDialogModule, MatDialogRef } from '@angular/material/dialog';
+import { AppSelectComponent, SelectOption } from '../shared/app-select.component';
 import { problemMessages } from '../organizations/data-sources.service';
 import { Member, MemberRole, MembersService } from '../organizations/members.service';
 import { AccessRule, DashboardsService } from './dashboards.service';
@@ -26,7 +27,7 @@ const ROLE_CHOICES: { value: MemberRole; label: string }[] = [
  */
 @Component({
   selector: 'app-access-dialog',
-  imports: [MatDialogModule, MatButtonModule],
+  imports: [MatDialogModule, MatButtonModule, AppSelectComponent],
   template: `
     <h2 mat-dialog-title>Who can see "{{ data.name }}"</h2>
     <mat-dialog-content>
@@ -47,15 +48,10 @@ const ROLE_CHOICES: { value: MemberRole; label: string }[] = [
       </fieldset>
 
       @if (limited()) {
-        <label class="role">
+        <div class="role">
           <span>People with the role</span>
-          <select aria-label="Minimum role" (change)="setRole($any($event.target).value)">
-            <option value="" [selected]="minRole() === null">Nobody by role</option>
-            @for (r of roleChoices(); track r.value) {
-              <option [value]="r.value" [selected]="minRole() === r.value">{{ r.label }}</option>
-            }
-          </select>
-        </label>
+          <app-select ariaLabel="Minimum role" [options]="roleOptions()" [value]="minRole() ?? ''" (valueChange)="setRole($event)" />
+        </div>
 
         <p class="people-title">and these people:</p>
         <ul class="people" aria-label="People">
@@ -90,7 +86,6 @@ const ROLE_CHOICES: { value: MemberRole; label: string }[] = [
     .scope { border: 0; margin: 0 0 0.75rem; padding: 0; display: grid; gap: 0.3rem; }
     .scope legend { padding: 0; margin-bottom: 0.3rem; font-weight: 500; }
     .role { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.5rem; }
-    .role select { padding: 0.25rem; }
     .people-title { margin: 0.5rem 0 0.25rem; }
     .people { list-style: none; margin: 0; padding: 0; max-height: 15rem; overflow: auto; border: 1px solid var(--mat-sys-outline-variant); border-radius: 8px; }
     .people li { padding: 0.25rem 0.6rem; border-bottom: 1px solid var(--mat-sys-outline-variant); }
@@ -117,6 +112,8 @@ export class AccessDialogComponent implements OnInit {
 
   protected readonly roleChoices = computed(() =>
     this.minRole() === 'Viewer' ? [{ value: 'Viewer' as MemberRole, label: 'Everyone (any role)' }, ...ROLE_CHOICES] : ROLE_CHOICES);
+
+  protected readonly roleOptions = computed<SelectOption[]>(() => [{ value: '', label: 'Nobody by role' }, ...this.roleChoices()]);
 
   /** A limited rule has to let somebody in by role or by name; otherwise it would be no limit at all. */
   protected readonly valid = computed(() => !this.limited() || this.minRole() !== null || this.chosen().size > 0);

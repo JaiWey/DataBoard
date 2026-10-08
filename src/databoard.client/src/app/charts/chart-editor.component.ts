@@ -37,6 +37,7 @@ import { ChartStylePanelComponent } from './chart-style-panel.component';
 import { ChartViewComponent } from './chart-view.component';
 import { ChartTypePickerComponent } from './chart-type-picker.component';
 import { ChartType, ChartsService, PALETTE_NAMES } from './charts.service';
+import { AppSelectComponent, SelectOption } from '../shared/app-select.component';
 import { ConfirmService } from '../shared/confirm.service';
 
 type Zone = 'dimensions' | 'metrics' | 'filters';
@@ -53,7 +54,7 @@ interface Organization {
  */
 @Component({
   selector: 'app-chart-editor',
-  imports: [CdkDropList, CdkDrag, MatButtonModule, MatButtonToggleModule, MatCheckboxModule, MatMenuModule, MatTabsModule, ChartStylePanelComponent, ChartTypePickerComponent, ChartViewComponent],
+  imports: [CdkDropList, CdkDrag, AppSelectComponent, MatButtonModule, MatButtonToggleModule, MatCheckboxModule, MatMenuModule, MatTabsModule, ChartStylePanelComponent, ChartTypePickerComponent, ChartViewComponent],
   template: `
     <header class="top">
       <button type="button" class="back" aria-label="Back to dashboards" (click)="back()">←</button>
@@ -75,13 +76,8 @@ interface Organization {
 
     <div class="editor">
       <aside class="fields" aria-label="Fields">
-        <label class="dataset">
-          <span>Dataset</span>
-          <select aria-label="Dataset" [disabled]="!canEdit()" (change)="chooseDataset($any($event.target).value)">
-            <option value="" [selected]="!state().datasetId">Choose a dataset…</option>
-            @for (d of datasets(); track d.id) { <option [value]="d.id" [selected]="d.id === state().datasetId">{{ d.name }}</option> }
-          </select>
-        </label>
+        <app-select class="dataset" label="Dataset" ariaLabel="Dataset" [options]="datasetOptions()" [value]="state().datasetId"
+                    [disabled]="!canEdit()" (valueChange)="chooseDataset($event)" />
 
         <div cdkDropList id="field-list" class="field-list" cdkDropListSortingDisabled
              [cdkDropListConnectedTo]="['zone-dimensions', 'zone-metrics', 'zone-filters']">
@@ -131,10 +127,7 @@ interface Organization {
                     @if (axisChart()) { <span class="role">{{ $index === 0 ? 'X-axis' : 'Series' }}</span> }
                     <span class="item-name">{{ item.column }}</span>
                     @if (isDate(item.dataType)) {
-                      <select class="small" [attr.aria-label]="'Group ' + item.column + ' by'" (change)="setGrain($index, $any($event.target).value)">
-                        <option value="" [selected]="!item.grain">exact value</option>
-                        @for (g of grains; track g) { <option [value]="g" [selected]="g === item.grain">{{ g }}</option> }
-                      </select>
+                      <app-select class="small" [ariaLabel]="'Group ' + item.column + ' by'" [options]="grainOptions" [value]="item.grain" (valueChange)="setGrain($index, $event)" />
                     }
                     <button type="button" class="remove" [attr.aria-label]="'Remove ' + item.column + ' from Dimensions'" (click)="remove('dimensions', $index)">×</button>
                   </div>
@@ -147,11 +140,8 @@ interface Organization {
               <div cdkDropList id="zone-metrics" class="zone" (cdkDropListDropped)="dropped('metrics', $event)">
                 @for (item of state().metrics; track $index) {
                   <div cdkDrag class="item metric">
-                    <select class="small" [attr.aria-label]="'Aggregation of metric ' + ($index + 1)" (change)="setAggregation($index, $any($event.target).value)">
-                      @for (a of aggregationOptions(item.dataType, item.column); track a.value) {
-                        <option [value]="a.value" [selected]="a.value === item.aggregation">{{ a.label }}</option>
-                      }
-                    </select>
+                    <app-select class="small" [ariaLabel]="'Aggregation of metric ' + ($index + 1)" [options]="aggregationOptions(item.dataType, item.column)"
+                                [value]="item.aggregation" (valueChange)="setAggregation($index, $event)" />
                     <span class="item-name">{{ item.column ?? 'rows' }}</span>
                     <button type="button" class="remove" [attr.aria-label]="'Remove metric ' + ($index + 1)" (click)="remove('metrics', $index)">×</button>
                   </div>
@@ -166,9 +156,8 @@ interface Organization {
                 @for (item of state().filters; track $index) {
                   <div cdkDrag class="item filter">
                     <span class="item-name">{{ item.column }}</span>
-                    <select class="small" [attr.aria-label]="'Condition of filter ' + ($index + 1)" (change)="setOperator($index, $any($event.target).value)">
-                      @for (op of operators; track op.value) { <option [value]="op.value" [selected]="op.value === item.operator">{{ op.label }}</option> }
-                    </select>
+                    <app-select class="small" [ariaLabel]="'Condition of filter ' + ($index + 1)" [options]="operators" [value]="item.operator"
+                                (valueChange)="setOperator($index, $event)" />
                     @if (needsValue(item.operator)) {
                       <input class="value" [attr.aria-label]="'Value of filter ' + ($index + 1)" [value]="item.value"
                              [placeholder]="listOperator(item.operator) ? 'a, b, c' : 'value'" (input)="setFilterValue($index, $any($event.target).value)" />
@@ -194,20 +183,15 @@ interface Organization {
                 </label>
                 <p class="zone-hint">Keeps the series with the largest total of the first metric.</p>
               }
-              <label class="row">
+              <div class="row">
                 <span>Sort by</span>
-                <select aria-label="Sort by" (change)="patch({ sortBy: $any($event.target).value })">
-                  <option value="" [selected]="!state().sortBy">No sorting</option>
-                  @for (name of sortOptions(); track name) { <option [value]="name" [selected]="name === state().sortBy">{{ name }}</option> }
-                </select>
-              </label>
-              <label class="row">
+                <app-select ariaLabel="Sort by" [options]="sortChoices()" [value]="state().sortBy" (valueChange)="patch({ sortBy: $event })" />
+              </div>
+              <div class="row">
                 <span>Direction</span>
-                <select aria-label="Sort direction" [disabled]="!state().sortBy" (change)="patch({ sortDirection: $any($event.target).value })">
-                  <option value="Desc" [selected]="state().sortDirection === 'Desc'">Highest first</option>
-                  <option value="Asc" [selected]="state().sortDirection === 'Asc'">Lowest first</option>
-                </select>
-              </label>
+                <app-select ariaLabel="Sort direction" [options]="directions" [value]="state().sortDirection" [disabled]="!state().sortBy"
+                            (valueChange)="patch({ sortDirection: $any($event) })" />
+              </div>
               <label class="row">
                 <span>Description</span>
                 <input aria-label="Description" [value]="state().description" (input)="patch({ description: $any($event.target).value })" />
@@ -221,11 +205,8 @@ interface Organization {
                     <label class="param">
                       <span>{{ parameterLabel(parameter) }}</span>
                       @if (parameter.type === 'Boolean') {
-                        <select [attr.aria-label]="'Value of ' + parameter.name" [disabled]="!canEdit()" (change)="setParameter(parameter, $any($event.target).value)">
-                          <option value="" [selected]="parameterValue(parameter) === ''">default ({{ defaultText(parameter) }})</option>
-                          <option value="true" [selected]="parameterValue(parameter) === 'true'">true</option>
-                          <option value="false" [selected]="parameterValue(parameter) === 'false'">false</option>
-                        </select>
+                        <app-select [ariaLabel]="'Value of ' + parameter.name" [options]="booleanChoices(parameter)" [value]="parameterValue(parameter)"
+                                    [disabled]="!canEdit()" (valueChange)="setParameter(parameter, $event)" />
                       } @else {
                         <input [attr.aria-label]="'Value of ' + parameter.name" [disabled]="!canEdit()"
                                [type]="parameter.type === 'Number' ? 'number' : parameter.type === 'Date' ? 'date' : 'text'"
@@ -248,12 +229,10 @@ interface Organization {
                             (change)="patchStyle($event.checked ? { stack: true } : { stack: false, percent: false })">Stack series</mat-checkbox>
               <mat-checkbox [checked]="state().style.percent" [disabled]="!axisChart()"
                             (change)="patchStyle($event.checked ? { stack: true, percent: true } : { percent: false })">Show as 100% (shares)</mat-checkbox>
-              <label class="row">
+              <div class="row">
                 <span>Colours</span>
-                <select aria-label="Colour palette" (change)="patchStyle({ palette: $any($event.target).value })">
-                  @for (p of palettes; track p) { <option [value]="p" [selected]="p === state().style.palette">{{ p }}</option> }
-                </select>
-              </label>
+                <app-select ariaLabel="Colour palette" [options]="paletteOptions" [value]="state().style.palette" (valueChange)="patchStyle({ palette: $event })" />
+              </div>
               <app-chart-style-panel [style]="state().style" [type]="state().type" [seriesNames]="seriesNames()" (changed)="patchStyle($event)" />
             </div>
           </mat-tab>
@@ -299,8 +278,8 @@ interface Organization {
     .editor { display: grid; grid-template-columns: 16rem 24rem 1fr; height: calc(100vh - 15rem); min-height: 28rem; }
     .fields, .config, .preview { min-height: 0; overflow: auto; padding: 0.75rem 1rem; }
     .fields, .config { border-right: 1px solid var(--mat-sys-outline-variant); }
-    .dataset { display: grid; gap: 0.25rem; margin-bottom: 0.5rem; font: var(--mat-sys-label-medium); }
-    select, input.value, .row input { font: inherit; padding: 0.35rem 0.4rem; border: 1px solid var(--mat-sys-outline); border-radius: 4px; background: #fff; }
+    .dataset { display: block; width: 100%; margin: 0.25rem 0 0.5rem; }
+    input.value, .row input { font: inherit; padding: 0.35rem 0.4rem; border: 1px solid var(--mat-sys-outline); border-radius: 4px; background: #fff; }
     .field-list { display: grid; gap: 0.15rem; }
     .field { display: flex; align-items: center; border-radius: 4px; background: var(--mat-sys-surface-container-low); }
     .field:hover { background: var(--mat-sys-surface-container); }
@@ -324,7 +303,7 @@ interface Organization {
     .drop-hint { margin: 0.6rem 0; text-align: center; color: var(--mat-sys-on-surface-variant); }
     .item { min-width: 0; display: flex; align-items: center; gap: 0.4rem; padding: 0.3rem 0.5rem; background: #fff; border: 1px solid var(--mat-sys-outline-variant); border-radius: 4px; }
     .item-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .small { font-size: 0.85rem; max-width: 7.5rem; min-width: 0; }
+    .small { max-width: 9rem; min-width: 0; }
     .value { flex: 1; min-width: 0; width: 100%; }
     .remove { border: 0; background: none; cursor: pointer; font-size: 1.1rem; color: inherit; }
     .row { display: grid; gap: 0.25rem; font: var(--mat-sys-label-medium); }
@@ -363,9 +342,13 @@ export class ChartEditorComponent implements OnInit {
   /** The values the dataset's SQL takes; a chart can choose them, and what it leaves alone uses the default. */
   protected readonly datasetParameters = computed<DatasetParameter[]>(() => this.dataset()?.parameters ?? []);
 
-  protected readonly palettes = PALETTE_NAMES;
+  protected readonly paletteOptions: SelectOption[] = PALETTE_NAMES.map((p) => ({ value: p, label: p }));
   protected readonly operators = FILTER_OPERATORS;
-  protected readonly grains = TIME_GRAINS;
+  protected readonly grainOptions: SelectOption[] = [{ value: '', label: 'exact value' }, ...TIME_GRAINS.map((g) => ({ value: g, label: g }))];
+  protected readonly directions: SelectOption[] = [
+    { value: 'Desc', label: 'Highest first' },
+    { value: 'Asc', label: 'Lowest first' },
+  ];
   /** The ways a date field offers itself in the list, always shown under it. */
   protected readonly fieldGrains: TimeGrain[] = ['Year', 'Month', 'Day'];
 
@@ -381,6 +364,14 @@ export class ChartEditorComponent implements OnInit {
   protected readonly problems = computed(() => problemsOf(this.state()));
   protected readonly dirty = computed(() => JSON.stringify(toSaveChart(this.state())) !== this.savedJson());
   protected readonly canSave = computed(() => this.canEdit() && !this.saving() && problemsOf(this.state(), { forSave: true }).length === 0);
+  protected readonly datasetOptions = computed<SelectOption[]>(() => [
+    { value: '', label: 'Choose a dataset…' },
+    ...this.datasets().map((d) => ({ value: d.id, label: d.name })),
+  ]);
+  protected readonly sortChoices = computed<SelectOption[]>(() => [
+    { value: '', label: 'No sorting' },
+    ...this.sortOptions().map((name) => ({ value: name, label: name })),
+  ]);
   protected readonly sortOptions = computed(() => {
     const names = resultNames(this.state());
     return [...names.dimensions, ...names.metrics];
@@ -465,6 +456,15 @@ export class ChartEditorComponent implements OnInit {
     const role = this.columns().find((c) => c.name === column)?.role ?? null;
     const allowed = aggregationsFor(column === null ? null : dataType, role);
     return AGGREGATIONS.filter((a) => allowed.includes(a.value));
+  }
+
+  /** A true or false parameter: leave it to its default, or choose a side. */
+  protected booleanChoices(parameter: DatasetParameter): SelectOption[] {
+    return [
+      { value: '', label: `default (${this.defaultText(parameter)})` },
+      { value: 'true', label: 'true' },
+      { value: 'false', label: 'false' },
+    ];
   }
 
   protected needsValue(operator: FilterOperator): boolean {

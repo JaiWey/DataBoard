@@ -1,3 +1,5 @@
+import type { EchartsApi } from './chart.component';
+
 /** Turning a query result into a file the person can keep: CSV text and the download itself. */
 
 interface Tabular {
@@ -59,3 +61,19 @@ export function downloadJson(title: string, data: unknown, extension = 'json'): 
 export function downloadImage(title: string, dataUrl: string): void {
   save(dataUrl, fileName(title, 'png'));
 }
+
+/**
+ * Saves a picture of the chart drawn inside the element marked `data-export-scope` that `host` sits in (the widget or card
+ * the Export menu belongs to). Nothing happens if no chart is drawn there.
+ */
+export async function downloadChartPicture(host: HTMLElement, title: string, loader: () => Promise<EchartsApi>): Promise<void> {
+  const chartElement = host.closest('[data-export-scope]')?.querySelector<HTMLElement>('app-chart .chart');
+  if (!chartElement) return;
+
+  const instance = (await loader()).getInstanceByDom?.(chartElement);
+  const picture = instance?.getDataURL?.({ type: 'png', pixelRatio: 2, backgroundColor: '#ffffff' });
+  if (picture) downloadImage(title, picture);
+}
+
+/** A table, a number and a word cloud are not drawn on a canvas, so there is no picture to take; they have the CSV. */
+export const hasPicture = (type: string, rows: number): boolean => !['Table', 'Number', 'WordCloud'].includes(type) && rows > 0;

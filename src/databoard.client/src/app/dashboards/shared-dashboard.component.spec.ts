@@ -67,6 +67,15 @@ describe('SharedDashboardComponent', () => {
     expect(el().textContent).toContain('Weekly numbers');
   });
 
+  it('has no top bar and no way back on a public link, only the dashboard', () => {
+    open();
+    http.expectOne(runUrl);
+
+    expect(el().querySelector('header')).toBeNull();
+    expect(el().textContent).not.toContain('Shared view');
+    expect(el().querySelector('a.back')).toBeNull();
+  });
+
   it('draws each chart the way it was saved, in the places it was given', () => {
     open();
     http.expectOne(runUrl).flush(run(
@@ -75,7 +84,10 @@ describe('SharedDashboardComponent', () => {
     ));
     fixture.detectChanges();
 
-    expect(Array.from(el().querySelectorAll('.widget mat-card-title')).map((t) => t.textContent?.trim())).toEqual(['Revenue by region', 'Orders']);
+    // The names are not drawn; they stay in the page for screen readers.
+    const titles = Array.from(el().querySelectorAll('.widget mat-card-title'));
+    expect(titles.map((t) => t.textContent?.trim())).toEqual(['Revenue by region', 'Orders']);
+    expect(titles.every((t) => t.classList.contains('sr-only'))).toBe(true);
     expect(el().querySelectorAll('app-chart').length).toBe(1);
     expect(Array.from(el().querySelectorAll('tbody td')).map((c) => c.textContent)).toEqual(['Auckland', '3', 'Dunedin', '1']);
     const cells = Array.from(el().querySelectorAll('app-dashboard-grid .cell')) as HTMLElement[];
@@ -100,7 +112,12 @@ describe('SharedDashboardComponent', () => {
     http.expectOne(runUrl).flush(run({ widgetId: 'w1', result: rows(['Auckland', 3]), error: null }, { widgetId: 'w2', result: null, error: 'x' }));
     fixture.detectChanges();
 
-    expect(el().querySelectorAll('app-export-menu').length).toBe(1); // none for the chart that failed
+    expect(el().querySelectorAll('.widget-actions .more').length).toBe(1); // none for the chart that failed
+    expect(el().querySelector('.widget .export')).toBeNull(); // the downloads are in the three-dot menu, not a button
+    (el().querySelector('.widget-actions .more') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(Array.from(document.querySelectorAll('.mat-mdc-menu-item')).map((i) => i.textContent?.trim())).toEqual(['Download CSV', 'Download PNG']);
+    document.querySelectorAll('.cdk-overlay-container').forEach((c) => (c.innerHTML = ''));
     (el().querySelector('button.print') as HTMLButtonElement).click();
     expect(print).toHaveBeenCalledTimes(1);
     print.mockRestore();

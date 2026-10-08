@@ -14,6 +14,7 @@ internal sealed class DashboardShareConfiguration : IEntityTypeConfiguration<Das
         builder.HasKey(s => s.Id);
         builder.Property(s => s.AllowedOrganizationIds).HasColumnType("uuid[]").IsRequired();
         builder.Property(s => s.TokenHash).IsRequired().HasMaxLength(DashboardShare.TokenHashLength).IsFixedLength();
+        builder.Property(s => s.EncryptedToken).HasMaxLength(DashboardShare.MaxEncryptedTokenLength);
 
         // A link is found by its token, on every visit.
         builder.HasIndex(s => s.TokenHash).IsUnique();

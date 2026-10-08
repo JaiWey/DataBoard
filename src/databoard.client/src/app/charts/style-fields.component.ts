@@ -1,5 +1,6 @@
 import { Component, computed, input, output } from '@angular/core';
 import { MatCheckboxModule } from '@angular/material/checkbox';
+import { AppSelectComponent, SelectOption } from '../shared/app-select.component';
 import { FONT_FAMILIES, FontOptions } from './chart-option';
 
 /** A colour with a way back to "not chosen": the colour input cannot be empty, so a Default button clears it. */
@@ -43,13 +44,10 @@ export class ColorFieldComponent {
  */
 @Component({
   selector: 'app-font-fields',
-  imports: [MatCheckboxModule, ColorFieldComponent],
+  imports: [MatCheckboxModule, ColorFieldComponent, AppSelectComponent],
   template: `
     <div class="font" role="group" [attr.aria-label]="label()">
-      <select [attr.aria-label]="label() + ' family'" (change)="change({ family: text($event) })">
-        <option value="" [selected]="!font()?.family">Default font</option>
-        @for (f of families; track f) { <option [value]="f" [selected]="font()?.family === f">{{ f }}</option> }
-      </select>
+      <app-select [ariaLabel]="label() + ' family'" [options]="familyOptions" [value]="font()?.family ?? ''" (valueChange)="change({ family: $event || null })" />
       <input type="number" min="8" max="48" placeholder="size" [attr.aria-label]="label() + ' size'" [value]="font()?.size ?? ''"
              (input)="change({ size: whole($event) })" />
       <mat-checkbox [checked]="font()?.weight === 'bold'" [aria-label]="label() + ' bold'" (change)="change({ weight: $event.checked ? 'bold' : null })">Bold</mat-checkbox>
@@ -59,7 +57,7 @@ export class ColorFieldComponent {
   `,
   styles: `
     .font { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 0.6rem; }
-    select, input[type=number] { padding: 0.3rem 0.4rem; font: inherit; min-width: 0; }
+    input[type=number] { padding: 0.3rem 0.4rem; font: inherit; min-width: 0; }
     input[type=number] { width: 4.5rem; }
   `,
 })
@@ -69,16 +67,12 @@ export class FontFieldsComponent {
   readonly font = input<FontOptions | null | undefined>(null);
   readonly changed = output<FontOptions | null>();
 
-  protected readonly families = FONT_FAMILIES;
+  protected readonly familyOptions: SelectOption[] = [{ value: '', label: 'Default font' }, ...FONT_FAMILIES.map((f) => ({ value: f, label: f }))];
 
   protected change(changes: Partial<FontOptions>): void {
     const next: FontOptions = { ...(this.font() ?? {}), ...changes };
     const empty = !next.family && !next.size && !next.weight && !next.italic && !next.color;
     this.changed.emit(empty ? null : next);
-  }
-
-  protected text(event: Event): string | null {
-    return (event.target as HTMLSelectElement).value || null;
   }
 
   protected whole(event: Event): number | null {

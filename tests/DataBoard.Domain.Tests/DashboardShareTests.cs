@@ -25,6 +25,23 @@ public class DashboardShareTests
         Assert.Equal(Now.AddDays(30), share.ExpiresUtc);
     }
 
+    [Fact]
+    public void Keeps_the_encrypted_secret_when_it_is_given_and_none_otherwise()
+    {
+        var withSecret = DashboardShare.Create(Guid.NewGuid(), Guid.NewGuid(), Hash, Guid.NewGuid(), Now, null, null, "CfDJ8-encrypted");
+
+        Assert.Equal("CfDJ8-encrypted", withSecret.EncryptedToken);
+        Assert.Null(Create().EncryptedToken); // a link made before secrets were kept
+    }
+
+    [Fact]
+    public void Refuses_an_encrypted_secret_that_is_too_long()
+    {
+        var tooLong = new string('x', DashboardShare.MaxEncryptedTokenLength + 1);
+
+        Assert.Throws<ArgumentException>(() => DashboardShare.Create(Guid.NewGuid(), Guid.NewGuid(), Hash, Guid.NewGuid(), Now, null, null, tooLong));
+    }
+
     private static DashboardShare Limited(params Guid[] organizations) =>
         DashboardShare.Create(Guid.NewGuid(), Guid.NewGuid(), Hash, Guid.NewGuid(), Now, null, organizations);
 

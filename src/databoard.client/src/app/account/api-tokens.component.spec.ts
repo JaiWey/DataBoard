@@ -3,6 +3,7 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ApiTokensComponent, mcpUrl } from './api-tokens.component';
 import { answerConfirm } from '../shared/confirm.testing';
+import { chooseOption, selectOptions, selectedValue } from '../shared/select.testing';
 
 const token = (id: string, over: Record<string, unknown> = {}) => ({
   id, name: `Token ${id}`, scope: 'Write', createdUtc: '2026-10-09T10:00:00Z', expiresUtc: '2099-01-01T00:00:00Z', lastUsedUtc: null, expired: false, ...over,
@@ -21,10 +22,8 @@ describe('ApiTokensComponent', () => {
     fixture.detectChanges();
   };
   const choose = (label: string, text: string) => {
-    const select = el().querySelector(`select[aria-label="${label}"]`) as HTMLSelectElement;
-    select.value = Array.from(select.options).find((o) => o.textContent?.trim() === text)!.value;
-    select.dispatchEvent(new Event('change'));
-    fixture.detectChanges();
+    const [value] = selectOptions(fixture, label).find(([, t]) => t === text)!;
+    chooseOption(fixture, label, value);
   };
 
   const open = (existing = [token('t1')]) => {
@@ -61,9 +60,9 @@ describe('ApiTokensComponent', () => {
   it('starts with the wider scope and a 90-day lifetime, and needs a name', () => {
     open([]);
 
-    expect((el().querySelector('select[aria-label="Token scope"]') as HTMLSelectElement).value).toBe('Write');
-    const lifetime = el().querySelector('select[aria-label="Token lifetime"]') as HTMLSelectElement;
-    expect(lifetime.options[lifetime.selectedIndex].textContent?.trim()).toBe('90 days');
+    expect(selectedValue(fixture, 'Token scope')).toBe('Write');
+    const lifetime = selectOptions(fixture, 'Token lifetime').find(([value]) => value === selectedValue(fixture, 'Token lifetime'));
+    expect(lifetime?.[1]).toBe('90 days');
     expect(button('create').disabled).toBe(true);
     type('Claude Desktop');
     expect(button('create').disabled).toBe(false);

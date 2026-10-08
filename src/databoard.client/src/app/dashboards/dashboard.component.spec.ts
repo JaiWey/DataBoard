@@ -8,6 +8,7 @@ import { ECHARTS_LOADER } from '../charts/chart.component';
 import { DashboardComponent, parseFilterInput } from './dashboard.component';
 import { answerConfirm } from '../shared/confirm.testing';
 import { QUIET_REQUEST } from '../shared/loading.service';
+import { chooseOption, disabledOptions, selectHost, selectOptions, selectedLabel } from '../shared/select.testing';
 
 const ORG = '11111111-1111-1111-1111-111111111111';
 const DASH = '44444444-4444-4444-4444-444444444444';
@@ -113,7 +114,26 @@ describe('DashboardComponent', () => {
     http = TestBed.inject(HttpTestingController);
   });
 
-  afterEach(() => http.verify());
+  afterEach(() => {
+    http.verify();
+    closeMenus();
+  });
+
+  /** A chart's three-dot menu opens in an overlay outside the page; this opens the one of the nth chart. */
+  const openMenu = (index = 0) => {
+    (el().querySelectorAll('.widget-actions .more')[index] as HTMLButtonElement).click();
+    fixture.detectChanges();
+  };
+  const menuItems = () => Array.from(document.querySelectorAll<HTMLElement>('.mat-mdc-menu-item'));
+  const menuItem = (text: string) => menuItems().find((b) => b.textContent?.trim() === text);
+  const closeMenus = () => document.querySelectorAll('.cdk-overlay-container').forEach((c) => (c.innerHTML = ''));
+  /** Adds something to the dashboard through the Add menu. */
+  const add = (what: 'Chart' | 'Picture' | 'Text') => {
+    (el().querySelector('.add-menu') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    menuItem(what)!.click(); // choosing an item closes the menu
+    fixture.detectChanges();
+  };
 
   it('runs the dashboard on open and draws each chart the way it was saved', () => {
     load('Viewer');
@@ -133,11 +153,14 @@ describe('DashboardComponent', () => {
     expect(cells).toEqual(['Auckland', '3', 'Dunedin', '1']); // the table
   });
 
-  it('shows the dataset each chart reads from', () => {
+  it('does not draw the name of a chart or its dataset above it, only for screen readers', () => {
     load('Viewer');
     http.expectOne(runUrl).flush({ widgets: [] });
 
-    expect(el().querySelector('.widget mat-card-subtitle')?.textContent).toContain('Orders');
+    expect(el().querySelector('.widget mat-card-subtitle')).toBeNull();
+    const title = el().querySelector('.widget mat-card-title') as HTMLElement;
+    expect(title.textContent).toContain('Revenue by region');
+    expect(title.classList).toContain('sr-only');
   });
 
   it('sends the filter values typed by the viewer when applying', () => {
@@ -201,7 +224,8 @@ describe('DashboardComponent', () => {
     load('Editor');
     http.expectOne(runUrl).flush({ widgets: [] });
 
-    (el().querySelector('button.remove-widget') as HTMLButtonElement).click();
+    openMenu(0);
+    menuItem('Remove')!.click();
     const put = http.expectOne({ method: 'PUT', url: dashboardUrl });
     expect(put.request.body.name).toBe('Sales overview');
     // The widget left behind is written down with its place (it had none saved, so it takes the first free spot).
@@ -218,7 +242,12 @@ describe('DashboardComponent', () => {
     load('Editor');
     http.expectOne(runUrl).flush({ widgets: [] });
 
-    const links = Array.from(el().querySelectorAll('.widget a')).map((a) => a.getAttribute('href'));
+    const links = [0, 1].map((i) => {
+      openMenu(i);
+      const href = document.querySelector('a.edit-chart')?.getAttribute('href');
+      closeMenus();
+      return href;
+    });
     expect(links).toEqual([`/organizations/${ORG}/charts/${C_BAR}`, `/organizations/${ORG}/charts/${C_TABLE}`]);
   });
 
@@ -227,7 +256,7 @@ describe('DashboardComponent', () => {
     http.expectOne(runUrl).flush({ widgets: [] });
     const open = vi.spyOn(TestBed.inject(MatDialog), 'open').mockReturnValue({ afterClosed: () => of([C_SPARE]) } as never);
 
-    buttonByText('Add chart').click();
+    add('Chart');
     http.expectOne(`/api/organizations/${ORG}/charts`).flush(charts); // the list is refreshed when the dialog opens
 
     const data = (open.mock.calls[0][1] as { data: { charts: { id: string }[]; orgId: string } }).data;
@@ -250,7 +279,7 @@ describe('DashboardComponent', () => {
     http.expectOne(runUrl).flush({ widgets: [] });
     vi.spyOn(TestBed.inject(MatDialog), 'open').mockReturnValue({ afterClosed: () => of(undefined) } as never);
 
-    buttonByText('Add chart').click();
+    add('Chart');
     http.expectOne(`/api/organizations/${ORG}/charts`).flush(charts);
 
     http.expectNone({ method: 'PUT', url: dashboardUrl });
@@ -261,20 +290,17 @@ describe('DashboardComponent', () => {
       intervalMinutes: 15, nextUtc: null, lastUtc: new Date(Date.now() - 4 * 60_000).toISOString(), lastFailures: 0, lastMessage: null, ...over,
     });
     const scheduled = (over: Record<string, unknown> = {}) => ({ ...dashboard(false), refresh: refresh(over) });
-    const select = () => el().querySelector('select[aria-label="Refresh schedule"]') as HTMLSelectElement;
+    const select = () => selectHost(fixture, 'Refresh schedule');
     const status = () => el().querySelector('.schedule')?.textContent?.replace(/\s+/g, ' ').trim();
-    const choose = (value: string) => {
-      select().value = value;
-      select().dispatchEvent(new Event('change'));
-      fixture.detectChanges();
-    };
+    const choose = (value: string) => chooseOption(fixture, 'Refresh schedule', value);
+    const chosen = () => selectedLabel(fixture, 'Refresh schedule');
 
     it('shows editors the schedule with its current choice', () => {
       load('Editor', scheduled());
       http.expectOne(runUrl).flush({ widgets: [] });
 
-      expect(select().selectedOptions[0].textContent?.trim()).toBe('15 minutes');
-      expect(Array.from(select().options).map((o) => o.textContent?.trim())).toEqual(
+      expect(chosen()).toBe('15 minutes');
+      expect(selectOptions(fixture, 'Refresh schedule').map(([, text]) => text)).toEqual(
         ['Off', '5 minutes', '15 minutes', '30 minutes', '1 hour', '6 hours', '24 hours']);
       expect(status()).toContain('Last refresh 4 min ago.');
     });
@@ -304,7 +330,7 @@ describe('DashboardComponent', () => {
       load('Editor', { ...dashboard(false), refresh: refresh({ intervalMinutes: null, lastUtc: null }) });
       http.expectOne(runUrl).flush({ widgets: [] });
 
-      expect(select().selectedOptions[0].textContent?.trim()).toBe('Off');
+      expect(chosen()).toBe('Off');
       expect(el().querySelector('.schedule .status')).toBeNull();
     });
 
@@ -333,7 +359,7 @@ describe('DashboardComponent', () => {
       expect(put.request.body).toEqual({ intervalMinutes: 15 });
       put.flush(scheduled({ lastUtc: null }));
       fixture.detectChanges();
-      expect(select().selectedOptions[0].textContent?.trim()).toBe('15 minutes');
+      expect(chosen()).toBe('15 minutes');
       expect(status()).toContain('Not refreshed yet.');
       http.expectNone(runUrl); // the data on the page is as fresh as it was
     });
@@ -363,7 +389,7 @@ describe('DashboardComponent', () => {
       fixture.detectChanges();
 
       expect(el().querySelector('[role=alert]')?.textContent).toContain('At most 20 dashboards');
-      expect(select().selectedOptions[0].textContent?.trim()).toBe('Off');
+      expect(chosen()).toBe('Off');
     });
 
     it('does not ask again for the choice that is already made', () => {
@@ -385,13 +411,10 @@ describe('DashboardComponent', () => {
 
   describe('reload interval', () => {
     const reloading = (seconds: number | null = 30) => ({ ...dashboard(false), definition: { ...dashboard(false).definition, reloadSeconds: seconds } });
-    const select = () => el().querySelector('select[aria-label="Reload interval"]') as HTMLSelectElement;
+    const select = () => selectHost(fixture, 'Reload interval');
     const bar = () => el().querySelector('.reload-bar')?.textContent?.replace(/\s+/g, ' ').trim();
-    const choose = (value: string) => {
-      select().value = value;
-      select().dispatchEvent(new Event('change'));
-      fixture.detectChanges();
-    };
+    const choose = (value: string) => chooseOption(fixture, 'Reload interval', value);
+    const chosen = () => selectedLabel(fixture, 'Reload interval');
 
     afterEach(() => vi.useRealTimers());
 
@@ -399,7 +422,7 @@ describe('DashboardComponent', () => {
       load('Editor', dashboard(false));
       http.expectOne(runUrl).flush({ widgets: [] });
 
-      expect(select().selectedOptions[0].textContent?.trim()).toBe('Never');
+      expect(chosen()).toBe('Never');
       expect(bar()).not.toContain('Updated 00');
     });
 
@@ -429,7 +452,7 @@ describe('DashboardComponent', () => {
       expect(put.request.body.definition.reloadSeconds).toBe(60);
       put.flush(reloading(60));
       fixture.detectChanges();
-      expect(select().selectedOptions[0].textContent?.trim()).toBe('1 minute');
+      expect(chosen()).toBe('1 minute');
       http.expectNone(runUrl);
     });
 
@@ -454,7 +477,7 @@ describe('DashboardComponent', () => {
       fixture.detectChanges();
 
       expect(el().querySelector('[role=alert]')?.textContent).toContain('reloads every 10 to 3600');
-      expect(select().selectedOptions[0].textContent?.trim()).toBe('Never');
+      expect(chosen()).toBe('Never');
     });
 
     it('loads the charts the first time with the loading bar, since the person asked for them', () => {
@@ -660,7 +683,24 @@ describe('DashboardComponent', () => {
       });
       fixture.detectChanges();
 
-      expect(Array.from(el().querySelectorAll('app-export-menu')).length).toBe(1); // none for the one that failed
+      expect(el().querySelectorAll('.widget-actions .more').length).toBe(1); // none for the one that failed
+
+      openMenu(0);
+      expect(menuItems().map((i) => i.textContent?.trim())).toEqual(['Download CSV', 'Download PNG']); // a viewer cannot edit or remove
+    });
+
+    it('offers no picture of a table, and to editors the chart editor and Remove', () => {
+      load('Editor');
+      http.expectOne(runUrl).flush({
+        widgets: [
+          { widgetId: W_BAR, result: ok([['Auckland', 3]]), error: null, appliedFilters: [] },
+          { widgetId: W_TABLE, result: ok([['Auckland', 3]]), error: null, appliedFilters: [] },
+        ],
+      });
+      fixture.detectChanges();
+
+      openMenu(1);
+      expect(menuItems().map((i) => i.textContent?.trim())).toEqual(['Download CSV', 'Edit chart', 'Remove']);
     });
   });
 
@@ -776,6 +816,148 @@ describe('DashboardComponent', () => {
       http.expectNone({ method: 'PUT', url: dashboardUrl });
     });
 
+    describe('undo and redo', () => {
+      const height = () => cell(0).style.getPropertyValue('--h');
+      const width = () => cell(0).style.getPropertyValue('--w');
+      const startEditing = () => {
+        load('Editor');
+        http.expectOne(runUrl).flush({ widgets: [] });
+        buttonByText('Edit layout').click();
+        fixture.detectChanges();
+      };
+      const click = (text: string) => {
+        buttonByText(text).click();
+        fixture.detectChanges();
+      };
+      const ctrl = (key: string, over: KeyboardEventInit = {}, target: Element = document.body) => {
+        const event = new KeyboardEvent('keydown', { key, ctrlKey: true, bubbles: true, cancelable: true, ...over });
+        target.dispatchEvent(event);
+        fixture.detectChanges();
+        return event;
+      };
+
+      it('starts with nothing to undo or redo', () => {
+        startEditing();
+
+        expect(buttonByText('Undo').disabled).toBe(true);
+        expect(buttonByText('Redo').disabled).toBe(true);
+      });
+
+      it('undoes and redoes each change, one at a time', () => {
+        startEditing();
+        press(handle(0), 'ArrowDown', true); // taller
+        press(handle(0), 'ArrowRight', true); // wider
+        expect([width(), height()]).toEqual(['7', '6']);
+
+        click('Undo');
+        expect([width(), height()]).toEqual(['6', '6']);
+        click('Undo');
+        expect([width(), height()]).toEqual(['6', '5']);
+        expect(buttonByText('Undo').disabled).toBe(true);
+        expect(buttonByText('Save layout').disabled).toBe(true); // back to what is saved
+
+        click('Redo');
+        expect([width(), height()]).toEqual(['6', '6']);
+        click('Redo');
+        expect([width(), height()]).toEqual(['7', '6']);
+        expect(buttonByText('Redo').disabled).toBe(true);
+      });
+
+      it('counts a whole drag as one step', () => {
+        startEditing();
+        const grid = el().querySelector('app-dashboard-grid .grid') as HTMLElement;
+        vi.spyOn(grid, 'getBoundingClientRect').mockReturnValue({ width: 1200 } as DOMRect);
+        const corner = cell(0).querySelector('.resize') as HTMLElement;
+
+        corner.dispatchEvent(new MouseEvent('pointerdown', { clientX: 500, clientY: 300, button: 0, bubbles: true, cancelable: true }));
+        document.dispatchEvent(new MouseEvent('pointermove', { clientX: 500, clientY: 300 + 96 }));
+        document.dispatchEvent(new MouseEvent('pointermove', { clientX: 500, clientY: 300 + 96 * 2 }));
+        document.dispatchEvent(new MouseEvent('pointerup'));
+        fixture.detectChanges();
+        expect(height()).toBe('7');
+
+        click('Undo');
+        expect(height()).toBe('5');
+        expect(buttonByText('Undo').disabled).toBe(true);
+      });
+
+      it('does not count a click that moved nothing', () => {
+        startEditing();
+        const corner = cell(0).querySelector('.resize') as HTMLElement;
+
+        corner.dispatchEvent(new MouseEvent('pointerdown', { clientX: 500, clientY: 300, button: 0, bubbles: true, cancelable: true }));
+        document.dispatchEvent(new MouseEvent('pointerup'));
+        fixture.detectChanges();
+
+        expect(buttonByText('Undo').disabled).toBe(true);
+      });
+
+      it('forgets what could be redone when something new is changed', () => {
+        startEditing();
+        press(handle(0), 'ArrowDown', true);
+        click('Undo');
+        expect(buttonByText('Redo').disabled).toBe(false);
+
+        press(handle(0), 'ArrowRight', true);
+
+        expect(buttonByText('Redo').disabled).toBe(true);
+      });
+
+      it('saves the layout as it is after an undo', () => {
+        startEditing();
+        press(handle(0), 'ArrowDown', true);
+        press(handle(0), 'ArrowRight', true);
+        click('Undo'); // the width is undone, the height stays
+
+        click('Save layout');
+        const put = http.expectOne({ method: 'PUT', url: dashboardUrl });
+        expect(put.request.body.definition.widgets[0].layout).toEqual({ x: 0, y: 0, w: 6, h: 6 });
+        put.flush({ ...dashboard(), definition: { ...dashboard().definition, widgets: put.request.body.definition.widgets } });
+      });
+
+      it('starts again with an empty history after Cancel', () => {
+        startEditing();
+        press(handle(0), 'ArrowDown', true);
+        click('Cancel');
+
+        click('Edit layout');
+
+        expect(buttonByText('Undo').disabled).toBe(true);
+        expect(buttonByText('Redo').disabled).toBe(true);
+      });
+
+      it('answers Ctrl+Z, Ctrl+Y and Ctrl+Shift+Z while arranging', () => {
+        startEditing();
+        press(handle(0), 'ArrowDown', true);
+
+        expect(ctrl('z').defaultPrevented).toBe(true);
+        expect(height()).toBe('5');
+        ctrl('y');
+        expect(height()).toBe('6');
+        ctrl('z');
+        ctrl('Z', { shiftKey: true });
+        expect(height()).toBe('6');
+      });
+
+      it('leaves the keys alone outside layout editing and inside a text box', () => {
+        load('Editor');
+        http.expectOne(runUrl).flush({ widgets: [] });
+        expect(ctrl('z').defaultPrevented).toBe(false); // not arranging
+
+        buttonByText('Edit layout').click();
+        fixture.detectChanges();
+        press(handle(0), 'ArrowDown', true);
+        const box = document.createElement('input');
+        document.body.appendChild(box);
+        try {
+          expect(ctrl('z', {}, box).defaultPrevented).toBe(false);
+          expect(height()).toBe('6');
+        } finally {
+          box.remove();
+        }
+      });
+    });
+
     it('does not offer layout editing for an empty dashboard', () => {
       load('Editor', { ...dashboard(), definition: { widgets: [], filters: [] } });
       http.expectOne(runUrl).flush({ widgets: [] });
@@ -797,14 +979,10 @@ describe('DashboardComponent', () => {
     load('Editor', dashboard(false));
     http.expectOne(runUrl).flush({ widgets: [] });
 
-    const columns = Array.from(el().querySelectorAll('select[aria-label="Filter column"] option')).map((o) => o.textContent?.trim());
-    expect(columns).toEqual(['price', 'region']);
+    expect(selectOptions(fixture, 'Filter column').map(([, text]) => text)).toEqual(['price', 'region']);
 
     type('input[aria-label="Filter label"]', 'Region');
-    const select = el().querySelector('select[aria-label="Filter column"]') as HTMLSelectElement;
-    select.value = 'region';
-    select.dispatchEvent(new Event('change'));
-    fixture.detectChanges();
+    chooseOption(fixture, 'Filter column', 'region');
     (el().querySelector('form button[type=submit]') as HTMLButtonElement).click();
 
     const put = http.expectOne({ method: 'PUT', url: dashboardUrl });
@@ -817,20 +995,14 @@ describe('DashboardComponent', () => {
 
   describe('filters on a dataset parameter', () => {
     const withParameters = [{ ...datasets[0], parameters: [{ name: 'region', type: 'Text', default: 'Auckland' }, { name: 'min_price', type: 'Number', default: 0 }] }];
-    const filterSelect = (label: string) => el().querySelector(`select[aria-label="${label}"]`) as HTMLSelectElement;
-    const choose = (label: string, value: string) => {
-      const select = filterSelect(label);
-      select.value = value;
-      select.dispatchEvent(new Event('change'));
-      fixture.detectChanges();
-    };
+    const choose = (label: string, value: string) => chooseOption(fixture, label, value);
+    const columnChoices = () => selectOptions(fixture, 'Filter column').map(([, text]) => text);
 
     it('offers parameters only when a dataset has them', () => {
       load('Editor', dashboard(false));
       http.expectOne(runUrl).flush({ widgets: [] });
 
-      const option = Array.from(filterSelect('Filter applies to').options).find((o) => o.value === 'Parameter')!;
-      expect(option.disabled).toBe(true);
+      expect(disabledOptions(fixture, 'Filter applies to')).toEqual(['Parameter']);
     });
 
     it('lists the parameters of the datasets, fixes the condition at "is", and saves the target', () => {
@@ -838,8 +1010,8 @@ describe('DashboardComponent', () => {
       http.expectOne(runUrl).flush({ widgets: [] });
 
       choose('Filter applies to', 'Parameter');
-      expect(Array.from(filterSelect('Filter column').options).map((o) => o.textContent?.trim())).toEqual(['min_price', 'region']);
-      expect(el().querySelector('select[aria-label="Filter condition"]')).toBeNull(); // a parameter takes one value
+      expect(columnChoices()).toEqual(['min_price', 'region']);
+      expect(selectHost(fixture, 'Filter condition')).toBeNull(); // a parameter takes one value
 
       type('input[aria-label="Filter label"]', 'Region');
       choose('Filter column', 'region');
@@ -860,8 +1032,8 @@ describe('DashboardComponent', () => {
       choose('Filter applies to', 'Parameter');
       choose('Filter applies to', 'Column');
 
-      expect(Array.from(filterSelect('Filter column').options).map((o) => o.textContent?.trim())).toEqual(['price', 'region']);
-      expect(filterSelect('Filter condition')).not.toBeNull();
+      expect(columnChoices()).toEqual(['price', 'region']);
+      expect(selectHost(fixture, 'Filter condition')).not.toBeNull();
     });
   });
 
@@ -881,7 +1053,8 @@ describe('DashboardComponent', () => {
     const changed: { definition: { widgets: unknown[] } }[] = [];
     fixture.componentInstance.changed.subscribe((d) => changed.push(d));
 
-    (el().querySelector('button.remove-widget') as HTMLButtonElement).click();
+    openMenu(0);
+    menuItem('Remove')!.click();
     const saved = dashboard();
     saved.definition.widgets = saved.definition.widgets.slice(1);
     http.expectOne({ method: 'PUT', url: dashboardUrl }).flush(saved);
@@ -1038,7 +1211,7 @@ describe('DashboardComponent', () => {
 
     it('offers editors Add picture, Edit picture and Remove on the picture, and viewers none of them', () => {
       open('Editor');
-      expect(buttonByText('Add picture')).toBeDefined();
+      expect(el().querySelector('.add-menu')).not.toBeNull();
       expect(el().querySelector('.picture-actions .edit-picture')).not.toBeNull();
       expect(el().querySelector('.picture-actions .remove-widget')).not.toBeNull();
     });
@@ -1046,7 +1219,7 @@ describe('DashboardComponent', () => {
     it('offers viewers nothing to change', () => {
       open('Viewer');
 
-      expect(buttonByText('Add picture')).toBeUndefined();
+      expect(el().querySelector('.add-menu')).toBeNull();
       expect(el().querySelector('.picture-actions')).toBeNull();
     });
 
@@ -1066,7 +1239,7 @@ describe('DashboardComponent', () => {
       const changed = vi.fn();
       fixture.componentInstance.changed.subscribe(changed);
 
-      buttonByText('Add picture').click();
+      add('Picture');
       fixture.detectChanges();
 
       expect((dialog.mock.calls[0][1] as { data: { dashboard: { id: string }; widget?: unknown } }).data.widget).toBeUndefined();
@@ -1156,7 +1329,7 @@ describe('DashboardComponent', () => {
 
     it('offers editors Add text, Edit text and Remove, and viewers none of them', () => {
       open('Editor');
-      expect(buttonByText('Add text')).toBeDefined();
+      expect(el().querySelector('.add-menu')).not.toBeNull();
       expect(el().querySelector('.picture-actions .edit-text')).not.toBeNull();
       expect(el().querySelector('.picture-actions .remove-widget')).not.toBeNull();
     });
@@ -1164,7 +1337,7 @@ describe('DashboardComponent', () => {
     it('offers viewers nothing to change', () => {
       open('Viewer');
 
-      expect(buttonByText('Add text')).toBeUndefined();
+      expect(el().querySelector('.add-menu')).toBeNull();
       expect(el().querySelector('.picture-actions')).toBeNull();
     });
 
@@ -1172,7 +1345,7 @@ describe('DashboardComponent', () => {
       open('Owner');
       const dialog = vi.spyOn(TestBed.inject(MatDialog), 'open').mockReturnValue({ afterClosed: () => of(withText()) } as never);
 
-      buttonByText('Add text').click();
+      add('Text');
       fixture.detectChanges();
       (el().querySelector('.picture-actions .edit-text') as HTMLButtonElement).click();
       fixture.detectChanges();
@@ -1389,9 +1562,10 @@ describe('DashboardComponent', () => {
     it('moves a widget to another tab, to its first free place there, and puts the rest of its old tab together', () => {
       open('Owner');
 
-      (el().querySelector('app-move-to-tab .move') as HTMLButtonElement).click();
+      openMenu(0);
+      menuItem('Move to tab')!.click();
       fixture.detectChanges();
-      (Array.from(document.querySelectorAll<HTMLButtonElement>('.mat-mdc-menu-item')).find((b) => b.textContent?.trim() === 'Costs') as HTMLButtonElement).click();
+      menuItem('Costs')!.click();
 
       const request = lastSave();
       const moved = request.request.body.definition.widgets.find((w: { id: string }) => w.id === W_BAR);
@@ -1411,8 +1585,8 @@ describe('DashboardComponent', () => {
       clickTab('Costs');
       const picker = dialog(undefined);
 
-      buttonByText('Add text').click();
-      buttonByText('Add picture').click();
+      add('Text');
+      add('Picture');
 
       expect((picker.mock.calls[0][1] as { data: { tabId: string } }).data.tabId).toBe(T2);
       expect((picker.mock.calls[1][1] as { data: { tabId: string } }).data.tabId).toBe(T2);
@@ -1454,7 +1628,7 @@ describe('DashboardComponent', () => {
       clickTab('Costs');
       const picker = dialog([C_SPARE]);
 
-      buttonByText('Add chart').click();
+      add('Chart');
       http.expectOne(`/api/organizations/${ORG}/charts`).flush(charts);
 
       const request = lastSave();

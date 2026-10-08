@@ -4,6 +4,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { AuthService } from '../auth/auth.service';
 import { OrgContext } from '../organizations/org-context.service';
+import { chooseOption } from '../shared/select.testing';
 import { HomeComponent } from './home.component';
 
 const ORG = '11111111-1111-1111-1111-111111111111';
@@ -134,10 +135,7 @@ describe('HomeComponent', () => {
       c: http.expectOne(`/api/organizations/${ORG}/data-sources`),
     };
 
-    const select = el().querySelector('select[aria-label="Organization"]') as HTMLSelectElement;
-    select.value = OTHER;
-    select.dispatchEvent(new Event('change'));
-    fixture.detectChanges();
+    chooseOption(fixture, 'Organization', OTHER);
     flushOrg(OTHER, [], [datasets[1]], []);
 
     // The first organization's data arrives late and must not overwrite the second's.

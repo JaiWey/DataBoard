@@ -1,4 +1,5 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { chooseOption, selectOptions, selectedValue } from '../shared/select.testing';
 import { ChartStylePanelComponent } from './chart-style-panel.component';
 import { ChartStyle, ChartType, defaultChartStyle } from './charts.service';
 
@@ -146,10 +147,8 @@ describe('ChartStylePanelComponent', () => {
     it('reports each choice together with the others already made', () => {
       create('Bar', { numberFormat: { decimals: 2, thousands: false } });
 
-      const decimals = field<HTMLSelectElement>('Decimals');
-      expect(decimals.value).toBe('2');
-      decimals.value = '';
-      decimals.dispatchEvent(new Event('change'));
+      expect(selectedValue(fixture, 'Decimals')).toBe('2');
+      chooseOption(fixture, 'Decimals', '');
       type(field('Number prefix'), '$');
       type(field('Number suffix'), '');
 
@@ -177,9 +176,7 @@ describe('ChartStylePanelComponent', () => {
     it('reports the legend position, bar width and corners, clamped to what is allowed', () => {
       create('Bar');
 
-      const position = field<HTMLSelectElement>('Legend position');
-      position.value = 'right';
-      position.dispatchEvent(new Event('change'));
+      chooseOption(fixture, 'Legend position', 'right');
       type(field('Bar width'), '500');
       type(field('Bar width'), '');
       type(field('Bar corner radius'), '8');
@@ -211,11 +208,7 @@ describe('ChartStylePanelComponent', () => {
 
   describe('the finer groups', () => {
     const box = (text: string) => Array.from(el().querySelectorAll('mat-checkbox')).find((c) => c.textContent?.trim() === text)!.querySelector('input') as HTMLInputElement;
-    const select = (label: string, value: string) => {
-      const s = field<HTMLSelectElement>(label);
-      s.value = value;
-      s.dispatchEvent(new Event('change'));
-    };
+    const select = (label: string, value: string) => chooseOption(fixture, label, value);
 
     describe('axes', () => {
       it('reports what is turned off on an axis, keeping the rest of what was chosen for it', () => {
@@ -372,7 +365,7 @@ describe('ChartStylePanelComponent', () => {
       it('shows what a bar has now', () => {
         create('Bar', { barBorderStyle: 'dashed', barBorderWidth: 3, barBorderColor: '#c92a2a', barGap: 20, barCategoryGap: 40 });
 
-        expect(field<HTMLSelectElement>('Bar border style').value).toBe('dashed');
+        expect(selectedValue(fixture, 'Bar border style')).toBe('dashed');
         expect(field<HTMLInputElement>('Bar border width').value).toBe('3');
         expect(field<HTMLInputElement>('Bar border colour').value).toBe('#c92a2a');
         expect(field<HTMLInputElement>('Bar gap').value).toBe('20');
@@ -390,7 +383,7 @@ describe('ChartStylePanelComponent', () => {
     describe('labels', () => {
       it('has a position and a font for axis charts and for pies, with the positions that suit each', () => {
         create('Bar');
-        const options = () => Array.from(field<HTMLSelectElement>('Label position').options).map((o) => o.value);
+        const options = () => selectOptions(fixture, 'Label position').map(([value]) => value);
         expect(options()).toContain('insideTop');
         expect(options()).not.toContain('outside');
         create('Pie');
@@ -461,7 +454,7 @@ describe('ChartStylePanelComponent', () => {
       it('is offered for a pie too, in pixels to begin with, and has no Contain label there', () => {
         create('Pie');
 
-        expect(field<HTMLSelectElement>('Margin unit').value).toBe('px');
+        expect(selectedValue(fixture, 'Margin unit')).toBe('px');
         expect(field('left margin')).not.toBeNull();
         expect(Array.from(el().querySelectorAll('mat-checkbox')).some((c) => c.textContent?.includes('Contain label'))).toBe(false);
       });
@@ -534,18 +527,14 @@ describe('ChartStylePanelComponent', () => {
 
   describe('table', () => {
     const tbox = (text: string) => Array.from(el().querySelectorAll('mat-checkbox')).find((c) => c.textContent?.trim() === text)!.querySelector('input') as HTMLInputElement;
-    const choose = (label: string, value: string) => {
-      const s = field<HTMLSelectElement>(label);
-      s.value = value;
-      s.dispatchEvent(new Event('change'));
-    };
+    const choose = (label: string, value: string) => chooseOption(fixture, label, value);
 
     it('shows the usual look to begin with: fixed header, borders and sorting on, no row numbers, no pages', () => {
       create('Table');
 
       expect([tbox('Fixed header').checked, tbox('Show border').checked, tbox('Row numbers').checked, tbox('Sort by clicking a header').checked, tbox('Pages').checked])
         .toEqual([true, true, false, true, false]);
-      expect(field<HTMLSelectElement>('Table size').value).toBe('small');
+      expect(selectedValue(fixture, 'Table size')).toBe('small');
       expect(field('Rows per page')).toBeNull();
     });
 
@@ -634,11 +623,7 @@ describe('ChartStylePanelComponent', () => {
       expect(field('Number prefix')).not.toBeNull();
     });
   });  describe('word cloud', () => {
-    const choose = (label: string, value: string) => {
-      const s = field<HTMLSelectElement>(label);
-      s.value = value;
-      s.dispatchEvent(new Event('change'));
-    };
+    const choose = (label: string, value: string) => chooseOption(fixture, label, value);
     const type = (label: string, value: string) => {
       const i = field<HTMLInputElement>(label);
       i.value = value;
@@ -649,7 +634,7 @@ describe('ChartStylePanelComponent', () => {
       create('WordCloud');
 
       expect([field<HTMLInputElement>('Most words').value, field<HTMLInputElement>('Smallest text').value, field<HTMLInputElement>('Largest text').value]).toEqual(['100', '12', '60']);
-      expect(field<HTMLSelectElement>('Word direction').value).toBe('mixed');
+      expect(selectedValue(fixture, 'Word direction')).toBe('mixed');
     });
 
     it('reports each choice together with what was chosen before, kept inside its range', () => {

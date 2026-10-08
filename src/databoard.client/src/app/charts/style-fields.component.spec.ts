@@ -1,4 +1,5 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { chooseOption, selectedValue } from '../shared/select.testing';
 import { FontOptions } from './chart-option';
 import { ColorFieldComponent, FontFieldsComponent } from './style-fields.component';
 
@@ -76,7 +77,7 @@ describe('FontFieldsComponent', () => {
   it('starts with the default font and nothing else chosen', () => {
     create();
 
-    expect(field<HTMLSelectElement>('Label font family').value).toBe('');
+    expect(selectedValue(fixture, 'Label font family')).toBe('');
     expect(field<HTMLInputElement>('Label font size').value).toBe('');
     expect(field<HTMLInputElement>('Label font bold').checked).toBe(false);
     expect(el().querySelector('app-color-field')?.textContent).toContain('default');
@@ -85,7 +86,7 @@ describe('FontFieldsComponent', () => {
   it('shows the font it was given', () => {
     create({ family: 'serif', size: 14, weight: 'bold', italic: true, color: '#123456' });
 
-    expect(field<HTMLSelectElement>('Label font family').value).toBe('serif');
+    expect(selectedValue(fixture, 'Label font family')).toBe('serif');
     expect(field<HTMLInputElement>('Label font size').value).toBe('14');
     expect(field<HTMLInputElement>('Label font bold').checked).toBe(true);
     expect(field<HTMLInputElement>('Label font italic').checked).toBe(true);
@@ -95,9 +96,7 @@ describe('FontFieldsComponent', () => {
   it('reports the whole font each time something changes, keeping what was chosen before', () => {
     create({ size: 12 });
 
-    const family = field<HTMLSelectElement>('Label font family');
-    family.value = 'monospace';
-    family.dispatchEvent(new Event('change'));
+    chooseOption(fixture, 'Label font family', 'monospace');
     settle();
     field<HTMLInputElement>('Label font bold').click();
     settle();
@@ -132,9 +131,7 @@ describe('FontFieldsComponent', () => {
   it('reports nothing at all (null) once every choice has been taken back, so no empty font is stored', () => {
     create({ family: 'serif', weight: 'bold' });
 
-    const family = field<HTMLSelectElement>('Label font family');
-    family.value = '';
-    family.dispatchEvent(new Event('change'));
+    chooseOption(fixture, 'Label font family', '');
     settle();
     field<HTMLInputElement>('Label font bold').click();
 

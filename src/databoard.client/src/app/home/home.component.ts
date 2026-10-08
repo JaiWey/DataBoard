@@ -16,6 +16,7 @@ import { DashboardsService } from '../dashboards/dashboards.service';
 import { DataSourcesService } from '../organizations/data-sources.service';
 import { DatasetsService } from '../organizations/datasets.service';
 import { OrgContext } from '../organizations/org-context.service';
+import { AppSelectComponent, SelectOption } from '../shared/app-select.component';
 
 type Kind = 'Dashboard' | 'Dataset' | 'Data source';
 type Tab = 'recent' | Kind;
@@ -51,6 +52,7 @@ const TABS: { id: Tab; label: string }[] = [
     MatSortModule,
     MatTableModule,
     MatTabsModule,
+    AppSelectComponent,
   ],
   template: `
     @if (ctx.loaded() && !org()) {
@@ -76,14 +78,7 @@ const TABS: { id: Tab; label: string }[] = [
                 </div>
               </div>
 
-              <mat-form-field class="org" subscriptSizing="dynamic">
-                <mat-label>Organization</mat-label>
-                <select matNativeControl aria-label="Organization" [value]="o.id" (change)="choose($any($event.target).value)">
-                  @for (item of ctx.organizations(); track item.id) {
-                    <option [value]="item.id" [selected]="item.id === o.id">{{ item.name }}</option>
-                  }
-                </select>
-              </mat-form-field>
+              <app-select class="org" label="Organization" ariaLabel="Organization" [options]="organizationOptions()" [value]="o.id" (valueChange)="choose($event)" />
               <div class="muted role">Your role: {{ o.role }}</div>
 
               <mat-divider />
@@ -248,6 +243,7 @@ export class HomeComponent {
   protected readonly error = signal<string | null>(null);
 
   protected readonly org = this.ctx.current;
+  protected readonly organizationOptions = computed<SelectOption[]>(() => this.ctx.organizations().map((o) => ({ value: o.id, label: o.name })));
   protected readonly dashboards = signal<Row[]>([]);
   protected readonly datasets = signal<Row[]>([]);
   protected readonly sources = signal<Row[]>([]);

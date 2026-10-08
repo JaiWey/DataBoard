@@ -2,6 +2,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { MAT_DIALOG_DATA, MatDialogRef } from '@angular/material/dialog';
+import { chooseOption } from '../shared/select.testing';
 import { AddDataSourceDialogComponent } from './add-data-source-dialog.component';
 
 const ORG = '11111111-1111-1111-1111-111111111111';
@@ -101,12 +102,7 @@ describe('AddDataSourceDialogComponent', () => {
   });
 
   describe('a MySQL database', () => {
-    const chooseMySql = () => {
-      const select = el().querySelector('select[aria-label=Type]') as HTMLSelectElement;
-      select.value = 'mysql';
-      select.dispatchEvent(new Event('change'));
-      fixture.detectChanges();
-    };
+    const chooseMySql = () => chooseOption(fixture, 'Type', 'mysql');
     const mysqlString = 'Server=db.example.com;Port=3306;Database=wh;User ID=reader;Password=pw;SSL Mode=Preferred';
 
     it('uses the same fields and switches the port to the one MySQL listens on', () => {
@@ -156,12 +152,7 @@ describe('AddDataSourceDialogComponent', () => {
   });
 
   describe('a SQL Server database', () => {
-    const chooseSqlServer = () => {
-      const select = el().querySelector('select[aria-label=Type]') as HTMLSelectElement;
-      select.value = 'mssql';
-      select.dispatchEvent(new Event('change'));
-      fixture.detectChanges();
-    };
+    const chooseSqlServer = () => chooseOption(fixture, 'Type', 'mssql');
     // "Prefer" encrypts without insisting on a certificate the server may not have
     const mssqlString = 'Server=db.example.com,1433;Database=wh;User ID=reader;Password=pw;Encrypt=True;Trust Server Certificate=True';
 
@@ -173,10 +164,7 @@ describe('AddDataSourceDialogComponent', () => {
 
     it('moves the port back and forth between databases but keeps one that was typed', () => {
       chooseSqlServer();
-      const select = el().querySelector('select[aria-label=Type]') as HTMLSelectElement;
-      select.value = 'mysql';
-      select.dispatchEvent(new Event('change'));
-      fixture.detectChanges();
+      chooseOption(fixture, 'Type', 'mysql');
       expect((el().querySelector('input[formcontrolname=port]') as HTMLInputElement).value).toBe('3306');
 
       set('input[formcontrolname=port]', '14330');
@@ -215,12 +203,7 @@ describe('AddDataSourceDialogComponent', () => {
   describe('a CSV file', () => {
     const csvFile = () => new File(['a,b\n1,2\n'], 'Q1 sales.csv', { type: 'text/csv' });
 
-    const chooseType = (value: string) => {
-      const select = el().querySelector('select[aria-label=Type]') as HTMLSelectElement;
-      select.value = value;
-      select.dispatchEvent(new Event('change'));
-      fixture.detectChanges();
-    };
+    const chooseType = (value: string) => chooseOption(fixture, 'Type', value);
 
     const pick = (file: File) => {
       const input = el().querySelector('input[type=file]') as HTMLInputElement;
@@ -269,10 +252,7 @@ describe('AddDataSourceDialogComponent', () => {
       chooseType('csv');
       pick(csvFile());
       set('input[formcontrolname=tableName]', ' sales ');
-      const delimiter = el().querySelector('select[formcontrolname=delimiter]') as HTMLSelectElement;
-      delimiter.value = delimiter.querySelector('option[value=tab]')!.getAttribute('value')!;
-      delimiter.dispatchEvent(new Event('change'));
-      fixture.detectChanges();
+      chooseOption(fixture, 'Delimiter', 'tab');
 
       (el().querySelector('form') as HTMLFormElement).dispatchEvent(new Event('submit'));
 

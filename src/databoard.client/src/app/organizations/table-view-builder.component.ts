@@ -5,6 +5,7 @@ import { MatDialog } from '@angular/material/dialog';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { Subscription } from 'rxjs';
+import { AppSelectComponent, SelectOption } from '../shared/app-select.component';
 import { SqlResultsComponent } from '../sql-editor/sql-results.component';
 import { DataSourcesService, MAX_PREVIEW_ROWS, QueryPreview, TableSchema, problemMessages } from './data-sources.service';
 import { DatasetsService, JoinType, TableViewDefinition, TableViewTable } from './datasets.service';
@@ -29,7 +30,7 @@ const MAX_CONDITIONS = 5;
  */
 @Component({
   selector: 'app-table-view-builder',
-  imports: [MatCardModule, MatButtonModule, MatFormFieldModule, MatInputModule, SqlResultsComponent],
+  imports: [MatCardModule, MatButtonModule, MatFormFieldModule, MatInputModule, AppSelectComponent, SqlResultsComponent],
   template: `
     @if (loadError(); as error) {
       <p class="fail" role="alert">{{ error }}</p>
@@ -46,26 +47,11 @@ const MAX_CONDITIONS = 5;
         <mat-card-content>
           <div class="form-row">
             @if (step.index > 0) {
-              <mat-form-field class="type">
-                <mat-label>Join</mat-label>
-                <select matNativeControl [attr.aria-label]="'Join type of step ' + (step.index + 1)"
-                        (change)="setJoinType(step.index, $any($event.target).value)">
-                  @for (type of joinTypes; track type.value) {
-                    <option [value]="type.value" [selected]="type.value === joins()[step.index - 1].type">{{ type.label }}</option>
-                  }
-                </select>
-              </mat-form-field>
+              <app-select class="type" label="Join" [ariaLabel]="'Join type of step ' + (step.index + 1)" [options]="joinTypes"
+                          [value]="joins()[step.index - 1].type" (valueChange)="setJoinType(step.index, $event)" />
             }
-            <mat-form-field class="table">
-              <mat-label>Table</mat-label>
-              <select matNativeControl [attr.aria-label]="'Table of step ' + (step.index + 1)"
-                      (change)="setTable(step.index, $any($event.target).value)">
-                <option value="" [selected]="selectedIndex(step.table) < 0">Choose a table…</option>
-                @for (table of tables(); track $index) {
-                  <option [value]="$index" [selected]="$index === selectedIndex(step.table)">{{ tableLabel(table) }}</option>
-                }
-              </select>
-            </mat-form-field>
+            <app-select class="table" label="Table" [ariaLabel]="'Table of step ' + (step.index + 1)" [options]="tableOptions()"
+                        [value]="tableValue(step.table)" (valueChange)="setTable(step.index, $event)" />
             <button mat-stroked-button type="button" class="fields" [disabled]="selectedIndex(step.table) < 0"
                     [attr.aria-label]="'Choose fields of step ' + (step.index + 1)" (click)="chooseFields(step.index)">
               Fields ({{ step.table.fields.length }})
@@ -83,27 +69,12 @@ const MAX_CONDITIONS = 5;
               <p class="label">How does this table relate to the earlier ones?</p>
               @for (condition of joins()[step.index - 1].on; track $index) {
                 <div class="form-row condition">
-                  <mat-form-field>
-                    <mat-label>Earlier field</mat-label>
-                    <select matNativeControl [attr.aria-label]="'Earlier field of condition ' + ($index + 1) + ' in step ' + (step.index + 1)"
-                            (change)="setLeft(step.index, $index, $any($event.target).value)">
-                      <option value="" [selected]="!condition.leftField">Choose…</option>
-                      @for (option of leftOptions(step.index); track option.value) {
-                        <option [value]="option.value" [selected]="option.value === condition.leftStep + ':' + condition.leftField">{{ option.label }}</option>
-                      }
-                    </select>
-                  </mat-form-field>
+                  <app-select label="Earlier field" [ariaLabel]="'Earlier field of condition ' + ($index + 1) + ' in step ' + (step.index + 1)"
+                              [options]="leftChoices(step.index)" [value]="condition.leftField ? condition.leftStep + ':' + condition.leftField : ''"
+                              (valueChange)="setLeft(step.index, $index, $event)" />
                   <span class="equals" aria-hidden="true">=</span>
-                  <mat-form-field>
-                    <mat-label>This table's field</mat-label>
-                    <select matNativeControl [attr.aria-label]="'Field of this table in condition ' + ($index + 1) + ' in step ' + (step.index + 1)"
-                            (change)="setRight(step.index, $index, $any($event.target).value)">
-                      <option value="" [selected]="!condition.rightField">Choose…</option>
-                      @for (column of columnsOf(step.table); track column.name) {
-                        <option [value]="column.name" [selected]="column.name === condition.rightField">{{ column.name }}</option>
-                      }
-                    </select>
-                  </mat-form-field>
+                  <app-select label="This table's field" [ariaLabel]="'Field of this table in condition ' + ($index + 1) + ' in step ' + (step.index + 1)"
+                              [options]="rightChoices(step.table)" [value]="condition.rightField" (valueChange)="setRight(step.index, $index, $event)" />
                   @if (joins()[step.index - 1].on.length > 1) {
                     <button mat-button type="button" [attr.aria-label]="'Remove condition ' + ($index + 1) + ' of step ' + (step.index + 1)"
                             (click)="removeCondition(step.index, $index)">Remove</button>
@@ -231,6 +202,25 @@ export class TableViewBuilderComponent {
 
   protected columnsOf(table: TableViewTable) {
     return this.tables()[this.selectedIndex(table)]?.columns ?? [];
+  }
+
+  protected readonly tableOptions = computed<SelectOption[]>(() => [
+    { value: '', label: 'Choose a table…' },
+    ...this.tables().map((t, i) => ({ value: String(i), label: this.tableLabel(t) })),
+  ]);
+
+  /** The value of the table select for a step: the position of its table in the list, or empty. */
+  protected tableValue(table: TableViewTable): string {
+    const index = this.selectedIndex(table);
+    return index < 0 ? '' : String(index);
+  }
+
+  protected leftChoices(step: number): SelectOption[] {
+    return [{ value: '', label: 'Choose…' }, ...this.leftOptions(step)];
+  }
+
+  protected rightChoices(table: TableViewTable): SelectOption[] {
+    return [{ value: '', label: 'Choose…' }, ...this.columnsOf(table).map((c) => ({ value: c.name, label: c.name }))];
   }
 
   /** Every field of the tables before this step, to relate the new table to. */

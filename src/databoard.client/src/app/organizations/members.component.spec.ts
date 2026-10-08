@@ -6,6 +6,7 @@ import { ActivatedRoute, Router, convertToParamMap, provideRouter } from '@angul
 import { AuthService } from '../auth/auth.service';
 import { MembersComponent } from './members.component';
 import { answerConfirm, ConfirmStub } from '../shared/confirm.testing';
+import { chooseOption, selectDisabled, selectOptions, selectedValue } from '../shared/select.testing';
 
 const ORG = '11111111-1111-1111-1111-111111111111';
 const ME = 'a0000000-0000-0000-0000-000000000001';
@@ -26,7 +27,8 @@ describe('MembersComponent', () => {
   const el = () => fixture.nativeElement as HTMLElement;
   const rows = () => Array.from(el().querySelectorAll('tbody tr'));
   const row = (name: string) => rows().find((r) => r.querySelector('td')?.textContent?.includes(name))!;
-  const select = (name: string) => el().querySelector(`select[aria-label="Role of ${name}"]`) as HTMLSelectElement | null;
+  const roleOf = (name: string) => selectedValue(fixture, `Role of ${name}`);
+  const roleDisabled = (name: string) => selectDisabled(fixture, `Role of ${name}`);
   const button = (name: string, kind: 'remove' | 'leave') => row(name).querySelector(`button.${kind}`) as HTMLButtonElement | null;
 
   /** Opens the page as someone with this role; `members` is what the server lists. */
@@ -88,7 +90,7 @@ describe('MembersComponent', () => {
       http = TestBed.inject(HttpTestingController);
       open(role);
 
-      expect(el().querySelectorAll('select').length).toBe(0);
+      expect(el().querySelectorAll('mat-select').length).toBe(0);
       expect(el().querySelector('form')).toBeNull();
       expect(el().querySelectorAll('button.remove').length).toBe(0);
       expect(button('Cal', 'leave')).not.toBeNull();
@@ -100,9 +102,9 @@ describe('MembersComponent', () => {
   it('gives an owner a role choice for everyone, remove for the others, and leave for themselves', () => {
     open('Owner');
 
-    expect(select('Bea')!.value).toBe('Editor');
-    expect(select('Cal')!.value).toBe('Viewer');
-    expect(Array.from(select('Bea')!.options).map((o) => o.value)).toEqual(['Viewer', 'Editor', 'Owner']);
+    expect(roleOf('Bea')).toBe('Editor');
+    expect(roleOf('Cal')).toBe('Viewer');
+    expect(selectOptions(fixture, 'Role of Bea').map(([value]) => value)).toEqual(['Viewer', 'Editor', 'Owner']);
     expect(button('Bea', 'remove')).not.toBeNull();
     expect(button('Cal', 'remove')).not.toBeNull();
     expect(button('Me', 'remove')).toBeNull();
@@ -112,56 +114,50 @@ describe('MembersComponent', () => {
 
   it('changes a role with the one that was chosen, and shows what the server says afterwards', () => {
     open('Owner');
-    const s = select('Cal')!;
-    s.value = 'Editor';
-    s.dispatchEvent(new Event('change'));
+    chooseOption(fixture, 'Role of Cal', 'Editor');
 
     const put = http.expectOne({ method: 'PUT', url: `${base}/${CAL}` });
     expect(put.request.body).toEqual({ role: 'Editor' });
     put.flush(null, { status: 204, statusText: 'No Content' });
     settle([member(ME, 'Me', 'Owner'), member(BEA, 'Bea', 'Editor'), member(CAL, 'Cal', 'Editor')]);
 
-    expect(select('Cal')!.value).toBe('Editor');
+    expect(roleOf('Cal')).toBe('Editor');
   });
 
   it('puts the choice back and says why when a role could not be changed', () => {
     open('Owner');
-    const s = select('Cal')!;
-    s.value = 'Owner';
-    s.dispatchEvent(new Event('change'));
+    chooseOption(fixture, 'Role of Cal', 'Owner');
 
     http.expectOne({ method: 'PUT', url: `${base}/${CAL}` }).flush({ detail: 'nope' }, { status: 403, statusText: 'Forbidden' });
     fixture.detectChanges();
 
     expect(el().querySelector('[role=alert]')).not.toBeNull();
-    expect(s.value).toBe('Viewer');
+    expect(roleOf('Cal')).toBe('Viewer');
   });
 
   it('does not offer to demote, remove or leave for the only owner', () => {
     open('Owner');
 
-    expect(select('Me')!.disabled).toBe(true);
+    expect(roleDisabled('Me')).toBe(true);
     expect(button('Me', 'leave')!.disabled).toBe(true);
-    expect(select('Bea')!.disabled).toBe(false);
+    expect(roleDisabled('Bea')).toBe(false);
   });
 
   it('offers it again once there is a second owner', () => {
     open('Owner', [member(ME, 'Me', 'Owner'), member(BEA, 'Bea', 'Owner'), member(CAL, 'Cal', 'Viewer')]);
 
-    expect(select('Me')!.disabled).toBe(false);
+    expect(roleDisabled('Me')).toBe(false);
     expect(button('Me', 'leave')!.disabled).toBe(false);
   });
 
   it('asks before an owner gives up their own ownership, and does nothing if they say no', () => {
     open('Owner', [member(ME, 'Me', 'Owner'), member(BEA, 'Bea', 'Owner')]);
     confirmSpy.answer(false);
-    const s = select('Me')!;
-    s.value = 'Viewer';
-    s.dispatchEvent(new Event('change'));
+    chooseOption(fixture, 'Role of Me', 'Viewer');
 
     expect(confirmSpy.ask).toHaveBeenCalledTimes(1);
     http.expectNone({ method: 'PUT', url: `${base}/${ME}` });
-    expect(s.value).toBe('Owner');
+    expect(roleOf('Me')).toBe('Owner');
   });
 
   it('removes a member after asking, with their name in the question, and shows the list without them', () => {
@@ -214,10 +210,7 @@ describe('MembersComponent', () => {
     const email = el().querySelector('input[aria-label="Member email"]') as HTMLInputElement;
     email.value = ' new@example.com ';
     email.dispatchEvent(new Event('input'));
-    const role = el().querySelector('select[aria-label="New member role"]') as HTMLSelectElement;
-    role.value = 'Editor';
-    role.dispatchEvent(new Event('change'));
-    fixture.detectChanges();
+    chooseOption(fixture, 'New member role', 'Editor');
 
     (el().querySelector('button.add') as HTMLButtonElement).click();
 

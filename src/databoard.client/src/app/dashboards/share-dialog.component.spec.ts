@@ -4,6 +4,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { MAT_DIALOG_DATA } from '@angular/material/dialog';
 import { ShareDialogComponent, shareUrl } from './share-dialog.component';
 import { answerConfirm } from '../shared/confirm.testing';
+import { chooseOption, selectOptions, selectedValue } from '../shared/select.testing';
 
 const ORG = '11111111-1111-1111-1111-111111111111';
 const DASH = '44444444-4444-4444-4444-444444444444';
@@ -13,8 +14,8 @@ const orgSharesUrl = `/api/organizations/${ORG}/dashboards/${DASH}/organization-
 const PARTNER = '22222222-2222-2222-2222-222222222222';
 const mine = [{ id: ORG, name: 'Home', role: 'Owner' }, { id: PARTNER, name: 'Partner', role: 'Editor' }];
 
-const share = (id: string, expiresUtc: string | null = '2099-01-01T00:00:00Z', expired = false, organizationIds: string[] = []) =>
-  ({ id, createdUtc: '2026-10-09T10:00:00Z', expiresUtc, expired, organizationIds });
+const share = (id: string, expiresUtc: string | null = '2099-01-01T00:00:00Z', expired = false, organizationIds: string[] = [], token: string | null = null) =>
+  ({ id, createdUtc: '2026-10-09T10:00:00Z', expiresUtc, expired, organizationIds, token });
 
 describe('ShareDialogComponent', () => {
   let fixture: ComponentFixture<ShareDialogComponent>;
@@ -23,10 +24,8 @@ describe('ShareDialogComponent', () => {
   const el = () => fixture.nativeElement as HTMLElement;
   const button = (cls: string) => el().querySelector(`button.${cls}`) as HTMLButtonElement;
   const choose = (label: string) => {
-    const select = el().querySelector('select[aria-label="Link lifetime"]') as HTMLSelectElement;
-    select.value = String(Array.from(select.options).findIndex((o) => o.textContent?.trim() === label));
-    select.dispatchEvent(new Event('change'));
-    fixture.detectChanges();
+    const [value] = selectOptions(fixture, 'Link lifetime').find(([, text]) => text === label)!;
+    chooseOption(fixture, 'Link lifetime', value);
   };
 
   const open = (existing = [share('s1')], sharedWith: unknown[] = []) => {
@@ -54,7 +53,7 @@ describe('ShareDialogComponent', () => {
     vi.restoreAllMocks();
   });
 
-  it('says what a link allows, and lists the links there are without any secret', () => {
+  it('says what a link allows, and lists the links there are', () => {
     open([share('s1'), share('s2', null), share('s3', '2026-10-01T00:00:00Z', true)]);
 
     expect(el().textContent).toContain('Share "Sales"');
@@ -62,18 +61,37 @@ describe('ShareDialogComponent', () => {
     expect(el().textContent).toContain('never expires');
     expect(el().querySelectorAll('.shares li').length).toBe(3);
     expect(el().querySelector('.shares .fail')?.textContent).toContain('expired');
-    expect(el().querySelector('input[aria-label="Share link"]')).toBeNull();
+    expect(el().querySelector('input[aria-label="Share link"]')).toBeNull(); // the address is not written out, only copied
+  });
+
+  it('offers to copy the address of a link again, and says when one cannot be', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    open([share('s1', null, false, [], 'T0KEN'), share('s2')]);
+
+    const rows = Array.from(el().querySelectorAll('.shares li'));
+    expect(rows[0].querySelector('button.copy-link')).not.toBeNull();
+    expect(rows[1].querySelector('button.copy-link')).toBeNull();
+    expect(rows[1].querySelector('.no-address')?.textContent).toContain('address not kept');
+
+    (rows[0].querySelector('button.copy-link') as HTMLButtonElement).click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(writeText).toHaveBeenCalledWith(shareUrl('T0KEN'));
+    expect(rows[0].querySelector('button.copy-link')?.textContent?.trim()).toBe('Copied');
+    expect(rows[1].querySelector('button.copy-link')).toBeNull();
   });
 
   it('starts at 30 days, so a link does not stay public forever by accident', () => {
     open([]);
 
-    const select = el().querySelector('select[aria-label="Link lifetime"]') as HTMLSelectElement;
-    expect(select.options[select.selectedIndex].textContent?.trim()).toBe('30 days');
+    const chosen = selectOptions(fixture, 'Link lifetime').find(([value]) => value === selectedValue(fixture, 'Link lifetime'));
+    expect(chosen?.[1]).toBe('30 days');
     expect(el().textContent).toContain('No links yet.');
   });
 
-  it('creates a link and shows its address once, ready to copy', () => {
+  it('creates a link and shows its address, ready to copy', () => {
     open();
 
     button('create').click();
@@ -85,7 +103,7 @@ describe('ShareDialogComponent', () => {
 
     const input = el().querySelector('input[aria-label="Share link"]') as HTMLInputElement;
     expect(input.value).toBe(`${window.location.origin}/shared/T0KEN`);
-    expect(el().textContent).toContain('cannot be shown again');
+    expect(el().textContent).toContain('Your new link');
     expect(el().querySelectorAll('.shares li').length).toBe(2);
   });
 

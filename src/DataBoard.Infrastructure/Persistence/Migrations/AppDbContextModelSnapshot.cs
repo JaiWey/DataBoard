@@ -234,6 +234,10 @@ namespace DataBoard.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("DashboardId")
                         .HasColumnType("uuid");
 
+                    b.Property<string>("EncryptedToken")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
                     b.Property<DateTime?>("ExpiresUtc")
                         .HasColumnType("timestamp with time zone");
 

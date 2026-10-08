@@ -88,6 +88,11 @@ export class DashboardGridComponent {
 
   /** The layout after a move or a resize. The page decides what to do with it (keep it as a draft, save it). */
   readonly layoutChange = output<LayoutItem[]>();
+  /**
+   * A change is about to begin: once per drag or resize (when the pointer first moves, so a plain click says nothing) and once
+   * per arrow key. The page keeps what was there before it, so one gesture is one step to undo.
+   */
+  readonly layoutBegin = output<void>();
 
   protected readonly template = contentChild.required(TemplateRef);
   protected readonly order = computed(() => readingOrder(this.items()));
@@ -120,7 +125,12 @@ export class DashboardGridComponent {
     const from = { x: event.clientX, y: event.clientY };
     this.activeId.set(item.id);
 
+    let begun = false;
     const onMove = (e: PointerEvent): void => {
+      if (!begun) {
+        begun = true;
+        this.layoutBegin.emit();
+      }
       const dx = Math.round((e.clientX - from.x) / steps.column);
       const dy = Math.round((e.clientY - from.y) / steps.row);
       this.layoutChange.emit(
@@ -148,6 +158,7 @@ export class DashboardGridComponent {
     event.preventDefault();
 
     const current = this.items();
+    this.layoutBegin.emit();
     this.layoutChange.emit(
       event.shiftKey
         ? resize(current, item.id, item.w + step[0], item.h + step[1])

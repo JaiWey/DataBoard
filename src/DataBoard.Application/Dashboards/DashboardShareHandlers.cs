@@ -22,9 +22,14 @@ namespace DataBoard.Application.Dashboards;
 public sealed record CreateShareRequest(int? ExpiresInDays = null, bool NeverExpires = false, IReadOnlyList<Guid>? OrganizationIds = null);
 
 /// <param name="OrganizationIds">Who may open it: empty is anyone with the link.</param>
-public sealed record ShareDto(Guid Id, DateTime CreatedUtc, DateTime? ExpiresUtc, bool Expired, IReadOnlyList<Guid>? OrganizationIds = null);
+/// <param name="Token">
+/// The secret in the link, so an editor can copy it again. Missing for a link made before it was kept (its address cannot be
+/// shown) and when it can no longer be decrypted. Only editors get this list.
+/// </param>
+public sealed record ShareDto(
+    Guid Id, DateTime CreatedUtc, DateTime? ExpiresUtc, bool Expired, IReadOnlyList<Guid>? OrganizationIds = null, string? Token = null);
 
-/// <param name="Token">The secret in the link. It is shown once, here: only its hash is kept.</param>
+/// <param name="Token">The secret in the link.</param>
 public sealed record ShareCreatedDto(Guid Id, string Token, DateTime CreatedUtc, DateTime? ExpiresUtc, IReadOnlyList<Guid>? OrganizationIds = null);
 
 /// <summary>What the public page needs to draw one chart. No query, dataset or column names.</summary>
@@ -102,7 +107,7 @@ internal static class SharedLinks
 
 public sealed class CreateShareHandler(
     IDashboardShareRepository shares, IDashboardRepository dashboards, IOrganizationRepository organizations,
-    IUnitOfWork unitOfWork, IClock clock, OrganizationAccess access, DashboardVisibility visibility)
+    IUnitOfWork unitOfWork, IClock clock, OrganizationAccess access, DashboardVisibility visibility, ISecretProtector secrets)
 {
     public async Task<ShareCreatedDto> HandleAsync(
         Guid organizationId, Guid dashboardId, CreateShareRequest? request, CancellationToken ct = default)
@@ -132,7 +137,8 @@ public sealed class CreateShareHandler(
             throw new ValidationException("Shares", $"A dashboard can have at most {DashboardShare.MaxPerDashboard} active links. Revoke one first.");
 
         var token = ShareTokens.NewToken();
-        var share = DatasetQuery.Guard(() => DashboardShare.Create(organizationId, dashboardId, ShareTokens.Hash(token), userId, now, expires, allowed));
+        var share = DatasetQuery.Guard(() =>
+            DashboardShare.Create(organizationId, dashboardId, ShareTokens.Hash(token), userId, now, expires, allowed, secrets.Protect(token)));
 
         await shares.AddAsync(share, ct);
         await unitOfWork.SaveChangesAsync(ct);
@@ -140,7 +146,8 @@ public sealed class CreateShareHandler(
     }
 }
 
-public sealed class ListSharesHandler(IDashboardShareRepository shares, IDashboardRepository dashboards, IClock clock, OrganizationAccess access, DashboardVisibility visibility)
+public sealed class ListSharesHandler(
+    IDashboardShareRepository shares, IDashboardRepository dashboards, IClock clock, OrganizationAccess access, DashboardVisibility visibility, ISecretProtector secrets)
 {
     public async Task<IReadOnlyList<ShareDto>> HandleAsync(Guid organizationId, Guid dashboardId, CancellationToken ct = default)
     {
@@ -149,8 +156,23 @@ public sealed class ListSharesHandler(IDashboardShareRepository shares, IDashboa
 
         var now = clock.UtcNow;
         return (await shares.ListAsync(organizationId, dashboardId, ct))
-            .Select(s => new ShareDto(s.Id, s.CreatedUtc, s.ExpiresUtc, !s.IsActive(now), s.AllowedOrganizationIds))
+            .Select(s => new ShareDto(s.Id, s.CreatedUtc, s.ExpiresUtc, !s.IsActive(now), s.AllowedOrganizationIds, Reveal(s)))
             .ToList();
+    }
+
+    /// <summary>The secret of a link, or null if none was kept or it cannot be read (the encryption keys changed).</summary>
+    private string? Reveal(DashboardShare share)
+    {
+        if (share.EncryptedToken is not { Length: > 0 } encrypted) return null;
+        try
+        {
+            var token = secrets.Unprotect(encrypted);
+            return ShareTokens.LooksValid(token) ? token : null;
+        }
+        catch (Exception e) when (e is System.Security.Cryptography.CryptographicException or FormatException)
+        {
+            return null;
+        }
     }
 }
 

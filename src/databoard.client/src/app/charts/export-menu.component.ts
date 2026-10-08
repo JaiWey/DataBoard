@@ -4,7 +4,7 @@ import { MatMenuModule } from '@angular/material/menu';
 import { ResultShape } from './chart-option';
 import { ECHARTS_LOADER } from './chart.component';
 import { ChartType } from './charts.service';
-import { downloadCsv, downloadImage } from './export';
+import { downloadChartPicture, downloadCsv, hasPicture } from './export';
 
 /**
  * "Export" button for a chart: the rows as CSV, and, for charts that are drawn, a PNG picture. It lives inside the
@@ -32,19 +32,13 @@ export class ExportMenuComponent {
   private readonly element = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly loader = inject(ECHARTS_LOADER);
 
-  /** A table, a number and a word cloud are not drawn on a canvas, so there is no picture to take; they have the CSV. */
-  protected readonly drawn = computed(() => !['Table', 'Number', 'WordCloud'].includes(this.type()) && this.result().rows.length > 0);
+  protected readonly drawn = computed(() => hasPicture(this.type(), this.result().rows.length));
 
   protected csv(): void {
     downloadCsv(this.name(), this.result());
   }
 
-  protected async png(): Promise<void> {
-    const chartElement = this.element.nativeElement.closest('[data-export-scope]')?.querySelector<HTMLElement>('app-chart .chart');
-    if (!chartElement) return;
-
-    const instance = (await this.loader()).getInstanceByDom?.(chartElement);
-    const picture = instance?.getDataURL?.({ type: 'png', pixelRatio: 2, backgroundColor: '#ffffff' });
-    if (picture) downloadImage(this.name(), picture);
+  protected png(): Promise<void> {
+    return downloadChartPicture(this.element.nativeElement, this.name(), this.loader);
   }
 }

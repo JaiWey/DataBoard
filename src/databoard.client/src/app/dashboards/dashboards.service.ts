@@ -170,12 +170,14 @@ export interface DashboardRun {
 /** Filter id -> the values the viewer picked. A filter with no values is not applied. */
 export type FilterValues = Record<string, string[]>;
 
-/** A public, read-only link to a dashboard. The secret itself is never listed: it is only shown when the link is made. */
+/** A public, read-only link to a dashboard, as an editor sees it. */
 export interface DashboardShare {
   id: string;
   createdUtc: string;
   expiresUtc: string | null;
   expired: boolean;
+  /** The secret part of the address, so the link can be copied again. Missing for a link made before it was kept. */
+  token?: string | null;
   /** Who may open it: empty is anyone with the link, otherwise signed-in members of these organizations. */
   organizationIds?: string[];
 }
@@ -214,7 +216,7 @@ export interface SharedWithMe {
 
 export interface DashboardShareCreated {
   id: string;
-  /** The secret part of the link. Shown once: the server keeps only a hash. */
+  /** The secret part of the link. */
   token: string;
   createdUtc: string;
   expiresUtc: string | null;

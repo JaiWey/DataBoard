@@ -7,8 +7,8 @@ import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { Observable, Subscription } from 'rxjs';
 import { ChartViewComponent } from '../charts/chart-view.component';
-import { ExportMenuComponent } from '../charts/export-menu.component';
 import { problemMessages } from '../organizations/data-sources.service';
+import { WidgetMenuComponent } from './widget-menu.component';
 import { BackgroundLayerComponent } from './background-layer.component';
 import { MarkdownComponent } from '../shared/markdown.component';
 import { DashboardTabBarComponent } from './dashboard-tab-bar.component';
@@ -28,23 +28,16 @@ import { SharedChart, SharedDashboard, SharedDashboardsService, orgSharedAddress
  */
 @Component({
   selector: 'app-shared-dashboard',
-  imports: [ReactiveFormsModule, RouterLink, MatCardModule, MatButtonModule, MatFormFieldModule, MatInputModule, ChartViewComponent, DashboardGridComponent, ExportMenuComponent, BackgroundLayerComponent, ImageWidgetComponent, MarkdownComponent, DashboardTabBarComponent],
+  imports: [ReactiveFormsModule, RouterLink, MatCardModule, MatButtonModule, MatFormFieldModule, MatInputModule, ChartViewComponent, DashboardGridComponent, WidgetMenuComponent, BackgroundLayerComponent, ImageWidgetComponent, MarkdownComponent, DashboardTabBarComponent],
   template: `
-    <header class="bar">
-      <svg viewBox="0 0 32 32" width="24" height="24" aria-hidden="true">
-        <rect x="2" y="2" width="28" height="28" rx="7" fill="#3370ff" />
-        <rect x="8" y="16" width="4" height="8" rx="1" fill="#fff" />
-        <rect x="14" y="10" width="4" height="14" rx="1" fill="#fff" />
-        <rect x="20" y="13" width="4" height="11" rx="1" fill="#fff" />
-      </svg>
-      <span class="brand">DataBoard</span>
-      @if (orgId) {
-        <a class="back no-print" [routerLink]="['/organizations', orgId, 'dashboards']">Back to dashboards</a>
-      }
-      <span class="note no-print">@if (dashboard()?.sharedBy; as owner) { Shared by {{ owner }} } @else { Shared view }</span>
-    </header>
-
     <main class="page">
+      @if (orgId) {
+        <!-- Someone from another organization looking at a dashboard shared with them keeps a way back; a public link has no bar at all. -->
+        <p class="from no-print">
+          <a class="back" [routerLink]="['/organizations', orgId, 'dashboards']">← Back to dashboards</a>
+          @if (dashboard()?.sharedBy; as owner) { <span class="note">Shared by {{ owner }}</span> }
+        </p>
+      }
       @if (dashboard(); as d) {
         @if (d.background; as background) {
           <app-background-layer [load]="loadBackground(background.version)" [version]="background.version" [fit]="background.fit" [opacity]="background.opacity" />
@@ -98,14 +91,12 @@ import { SharedChart, SharedDashboard, SharedDashboardsService, orgSharedAddress
               </mat-card>
             } @else if (chartOf(id); as chart) {
               <mat-card appearance="outlined" class="widget" data-export-scope>
-                <mat-card-header>
-                  <mat-card-title>{{ chart.name }}</mat-card-title>
-                  @if (resultOf(id)?.result; as exported) {
-                    <span class="widget-actions no-print">
-                      <app-export-menu [name]="chart.name" [result]="exported" [type]="chart.type" />
-                    </span>
-                  }
-                </mat-card-header>
+                <mat-card-title class="sr-only">{{ chart.name }}</mat-card-title>
+                @if (resultOf(id)?.result; as exported) {
+                  <div class="widget-actions no-print">
+                    <app-widget-menu [name]="chart.name" [result]="exported" [type]="chart.type" />
+                  </div>
+                }
                 <mat-card-content>
                   @if (resultOf(id); as r) {
                     @if (r.error) {
@@ -149,23 +140,21 @@ import { SharedChart, SharedDashboard, SharedDashboardsService, orgSharedAddress
   styles: `
     /* The background picture is a layer behind the whole page, so the page makes its own stacking context. */
     :host { display: block; min-height: 100vh; position: relative; isolation: isolate; background: var(--mat-sys-surface-container-lowest, #fff); }
-    .bar { display: flex; align-items: center; gap: 0.5rem; padding: 0.6rem 1.5rem; background: #05111f; color: #fff; }
-    .brand { font: var(--mat-sys-title-medium); }
-    .bar .note { margin-left: auto; opacity: 0.7; font-size: 0.85rem; }
-    .bar .back { margin-left: 1rem; color: #fff; opacity: 0.85; font-size: 0.9rem; }
+    .from { display: flex; align-items: baseline; gap: 1rem; margin: 0 0 0.75rem; font-size: 0.9rem; }
+    .from .note { color: var(--mat-sys-on-surface-variant); }
     .page { padding: 1.25rem 1.5rem 2rem; max-width: 96rem; margin: 0 auto; }
     .title { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
     h1 { font: var(--mat-sys-headline-small); margin: 0; }
     .desc { margin: 0.25rem 0 0; color: var(--mat-sys-on-surface-variant); }
     .filters { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: flex-start; margin: 1rem 0; }
     .apply { margin-top: 0.4rem; }
-    .widget { height: 100%; }
-    .widget mat-card-title { font: var(--mat-sys-title-medium); }
-    .widget mat-card-header { align-items: center; }
+    .widget { height: 100%; position: relative; }
+    /* A chart's name is not drawn; it stays for screen readers. Its menu floats over the top right corner. */
+    .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
     .widget.picture, .widget.words { overflow: hidden; padding: 0; }
     .words-text { display: block; height: 100%; overflow: auto; padding: 0.75rem 1rem; box-sizing: border-box; }
-    .widget-actions { margin-left: auto; display: flex; }
-    .widget mat-card-content { flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; padding-bottom: 0.5rem; }
+    .widget-actions { position: absolute; top: 0.25rem; right: 0.25rem; z-index: 2; display: flex; background: rgb(255 255 255 / 0.8); border-radius: 50%; }
+    .widget mat-card-content { flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; padding: 0.75rem 1rem 0.5rem; }
     .widget app-chart-view { flex: 1; min-height: 0; }
     .truncated { margin: 0.25rem 0 0; }
     .expires { margin-top: 1rem; }

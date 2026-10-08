@@ -3,6 +3,7 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { MAT_DIALOG_DATA, MatDialogRef } from '@angular/material/dialog';
 import { Dashboard, DashboardWidget } from './dashboards.service';
+import { chooseOption, selectedValue } from '../shared/select.testing';
 import { TextWidgetDialogComponent, TextWidgetDialogData } from './text-widget-dialog.component';
 
 const ORG = '11111111-1111-1111-1111-111111111111';
@@ -30,11 +31,7 @@ describe('TextWidgetDialogComponent', () => {
     field<HTMLTextAreaElement>('Text').dispatchEvent(new Event('input'));
     fixture.detectChanges();
   };
-  const choose = (label: string, value: string) => {
-    field<HTMLSelectElement>(label).value = value;
-    field<HTMLSelectElement>(label).dispatchEvent(new Event('change'));
-    fixture.detectChanges();
-  };
+  const choose = (label: string, value: string) => chooseOption(fixture, label, value);
 
   const create = (data: TextWidgetDialogData) => {
     close = vi.fn();
@@ -129,8 +126,8 @@ describe('TextWidgetDialogComponent', () => {
     it('shows what the widget has and has nothing to save until something changes', () => {
       expect(el().querySelector('h2')?.textContent).toContain('Text');
       expect(field<HTMLTextAreaElement>('Text').value).toBe('Hello');
-      expect(field<HTMLSelectElement>('Text alignment').value).toBe('right');
-      expect(field<HTMLSelectElement>('Text size').value).toBe('small');
+      expect(selectedValue(fixture, 'Text alignment')).toBe('right');
+      expect(selectedValue(fixture, 'Text size')).toBe('small');
       expect(button('Save').disabled).toBe(true);
     });
 

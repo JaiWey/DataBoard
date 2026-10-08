@@ -7,6 +7,7 @@ import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { problemMessages } from '../organizations/data-sources.service';
 import { ApiToken, ApiTokenCreated, ApiTokensService, TokenLifetime, TokenScope } from './api-tokens.service';
+import { AppSelectComponent, SelectOption } from '../shared/app-select.component';
 import { ConfirmService } from '../shared/confirm.service';
 
 /** How long a new token can last. The default is the one in the middle: three months, then it stops by itself. */
@@ -31,7 +32,7 @@ export const mcpUrl = (): string => `${window.location.origin}/mcp`;
  */
 @Component({
   selector: 'app-api-tokens',
-  imports: [ReactiveFormsModule, DatePipe, MatCardModule, MatFormFieldModule, MatInputModule, MatButtonModule],
+  imports: [ReactiveFormsModule, DatePipe, MatCardModule, MatFormFieldModule, MatInputModule, MatButtonModule, AppSelectComponent],
   template: `
     <h2>Access tokens</h2>
     <p class="intro">
@@ -48,20 +49,8 @@ export const mcpUrl = (): string => `${window.location.origin}/mcp`;
             <mat-label>Name</mat-label>
             <input matInput formControlName="name" aria-label="Token name" placeholder="Claude Desktop" />
           </mat-form-field>
-          <label class="choice">
-            <span>Can</span>
-            <select formControlName="scope" aria-label="Token scope">
-              @for (s of scopes; track s.value) { <option [value]="s.value">{{ s.label }}</option> }
-            </select>
-          </label>
-          <label class="choice">
-            <span>Works for</span>
-            <select aria-label="Token lifetime" (change)="lifetime.set(+$any($event.target).value)">
-              @for (option of lifetimes; track option.label; let i = $index) {
-                <option [value]="i" [selected]="i === lifetime()">{{ option.label }}</option>
-              }
-            </select>
-          </label>
+          <app-select label="Can" ariaLabel="Token scope" formControlName="scope" [options]="scopes" />
+          <app-select label="Works for" ariaLabel="Token lifetime" [options]="lifetimeOptions" [value]="'' + lifetime()" (valueChange)="lifetime.set(+$event)" />
           <button mat-flat-button type="submit" class="create" [disabled]="form.invalid || busy()">Create token</button>
         </form>
       </mat-card-content>
@@ -118,7 +107,6 @@ export const mcpUrl = (): string => `${window.location.origin}/mcp`;
     .make, .created { margin-bottom: 1rem; --mat-card-outlined-container-color: #fff; }
     .created { --mat-card-outlined-container-color: var(--mat-sys-secondary-container); }
     h3 { margin-top: 0; }
-    .choice { display: flex; flex-direction: column; gap: 0.2rem; }
     .create { margin-top: 0.4rem; }
     .copy { display: flex; gap: 0.5rem; margin: 0.5rem 0 1rem; }
     .copy input { flex: 1; min-width: 0; padding: 0.4rem; font-family: monospace; }
@@ -137,6 +125,7 @@ export class ApiTokensComponent implements OnInit {
 
   protected readonly scopes = TOKEN_SCOPES;
   protected readonly lifetimes = TOKEN_LIFETIMES;
+  protected readonly lifetimeOptions: SelectOption[] = TOKEN_LIFETIMES.map((o, i) => ({ value: String(i), label: o.label }));
   protected readonly lifetime = signal(1); // 90 days
   protected readonly tokens = signal<ApiToken[]>([]);
   protected readonly created = signal<ApiTokenCreated | null>(null);

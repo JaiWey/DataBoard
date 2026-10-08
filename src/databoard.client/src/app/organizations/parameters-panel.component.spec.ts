@@ -1,5 +1,6 @@
 import { Component, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { chooseOption, selectDisabled } from '../shared/select.testing';
 import { DatasetParameter } from './dataset-parameters';
 import { ParametersPanelComponent } from './parameters-panel.component';
 
@@ -22,7 +23,11 @@ describe('ParametersPanelComponent', () => {
     fixture.detectChanges();
     fixture.detectChanges(); // the rows follow the SQL one change later
   };
-  const control = (label: string) => el().querySelector(`[aria-label="${label}"]`) as HTMLInputElement | HTMLSelectElement;
+  const control = (label: string) => el().querySelector(`[aria-label="${label}"]`) as HTMLInputElement;
+  const pick = (label: string, value: string) => {
+    chooseOption(fixture, label, value);
+    settle();
+  };
   const set = (label: string, value: string, event = 'input') => {
     const c = control(label);
     c.value = value;
@@ -66,7 +71,7 @@ describe('ParametersPanelComponent', () => {
   it('keeps what was set for a parameter when the SQL changes around it', () => {
     host.sql.set('SELECT {{a}}');
     settle();
-    set('Type of a', 'Number', 'change');
+    pick('Type of a', 'Number');
     set('Default of a', '12.5');
 
     host.sql.set('SELECT 1 + {{a}} AS total');
@@ -79,12 +84,11 @@ describe('ParametersPanelComponent', () => {
     host.sql.set('SELECT {{n}}, {{d}}, {{f}}, {{t}}');
     settle();
 
-    set('Type of n', 'Number', 'change');
+    pick('Type of n', 'Number');
     set('Default of n', '7');
-    set('Type of d', 'Date', 'change');
+    pick('Type of d', 'Date');
     set('Default of d', '2026-03-05');
-    set('Type of f', 'Boolean', 'change');
-    set('Default of f', 'false', 'change');
+    pick('Type of f', 'Boolean');    pick('Default of f', 'false');
     set('Default of t', 'Auckland');
 
     expect(host.parameters()).toEqual([
@@ -101,7 +105,7 @@ describe('ParametersPanelComponent', () => {
     settle();
     set('Default of a', 'Auckland');
 
-    set('Type of a', 'Number', 'change');
+    pick('Type of a', 'Number');
 
     expect(host.parameters()).toEqual([{ name: 'a', type: 'Number', default: null }]);
     expect(el().textContent).toContain('Give a a default');
@@ -110,7 +114,7 @@ describe('ParametersPanelComponent', () => {
   it('does not take text that is not a number as a default', () => {
     host.sql.set('SELECT {{a}}');
     settle();
-    set('Type of a', 'Number', 'change');
+    pick('Type of a', 'Number');
 
     set('Default of a', 'lots');
 
@@ -135,6 +139,6 @@ describe('ParametersPanelComponent', () => {
 
     expect(host.parameters()).toEqual([{ name: 'a', type: 'Text', default: 'x' }]); // not kept in step with the SQL
     expect((control('Default of a') as HTMLInputElement).disabled).toBe(true);
-    expect((control('Type of a') as HTMLSelectElement).disabled).toBe(true);
+    expect(selectDisabled(fixture, 'Type of a')).toBe(true);
   });
 });

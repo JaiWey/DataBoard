@@ -2,6 +2,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { MAT_DIALOG_DATA, MatDialogRef } from '@angular/material/dialog';
+import { chooseOption, selectHost, selectOptions, selectedValue } from '../shared/select.testing';
 import { AccessDialogComponent, AccessDialogData } from './access-dialog.component';
 
 const ORG = '11111111-1111-1111-1111-111111111111';
@@ -23,7 +24,7 @@ describe('AccessDialogComponent', () => {
   const el = () => fixture.nativeElement as HTMLElement;
   const radio = (label: string) => el().querySelector(`input[aria-label="${label}"]`) as HTMLInputElement;
   const person = (name: string) => el().querySelector(`input[aria-label="Allow ${name}"]`) as HTMLInputElement;
-  const role = () => el().querySelector('select[aria-label="Minimum role"]') as HTMLSelectElement;
+  const role = () => selectHost(fixture, 'Minimum role');
   const save = () => el().querySelector('button.save') as HTMLButtonElement;
 
   const open = (current: object, data: Partial<AccessDialogData> = {}) => {
@@ -65,8 +66,8 @@ describe('AccessDialogComponent', () => {
     open({ minRole: 'Editor', memberIds: [VIEWER] });
 
     expect(radio('Only some people').checked).toBe(true);
-    expect(role().value).toBe('Editor');
-    expect(Array.from(role().options).map((o) => o.textContent?.trim())).toEqual(['Nobody by role', 'Editors and Owners', 'Owners only']);
+    expect(selectedValue(fixture, 'Minimum role')).toBe('Editor');
+    expect(selectOptions(fixture, 'Minimum role').map(([, text]) => text)).toEqual(['Nobody by role', 'Editors and Owners', 'Owners only']);
     expect(person('Vic').checked).toBe(true);
     expect(person('Wes').checked).toBe(false);
     expect(person('Olga').checked).toBe(true);
@@ -78,9 +79,7 @@ describe('AccessDialogComponent', () => {
   it('saves the role and the people that were chosen, without the owners who need no listing', () => {
     open({});
     click(radio('Only some people'));
-    role().value = 'Editor';
-    role().dispatchEvent(new Event('change'));
-    fixture.detectChanges();
+    chooseOption(fixture, 'Minimum role', 'Editor');
     click(person('Wes'));
     click(person('Vic'));
 
@@ -143,9 +142,7 @@ describe('AccessDialogComponent', () => {
     expect(el().querySelector('h2')?.textContent).toContain('Finance');
     expect(el().textContent).toContain('covers everything in it');
     click(radio('Only some people'));
-    role().value = 'Owner';
-    role().dispatchEvent(new Event('change'));
-    fixture.detectChanges(); // the button is enabled once the rule lets somebody in
+    chooseOption(fixture, 'Minimum role', 'Owner'); // the button is enabled once the rule lets somebody in
     save().click();
 
     http.expectOne({ method: 'PUT', url: `/api/organizations/${ORG}/folders/${ID}/access` }).flush({ minRole: 'Owner', memberIds: [], inherited: [] });

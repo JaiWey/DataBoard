@@ -4,8 +4,9 @@ namespace DataBoard.Domain.Dashboards;
 
 /// <summary>
 /// A read-only link to one dashboard. By default it is public: anyone who has the link can see the dashboard's charts, so
-/// the link is the secret: only a hash of it is stored (a copy of the database does not hand out working links), and
-/// revoking a link deletes it. A link can instead be limited to signed-in members of chosen organizations
+/// the link is the secret. Visitors are found by a hash of it. The secret is also kept encrypted (<see cref="EncryptedToken"/>),
+/// so an editor can copy the link again later; a copy of the database alone does not hand out working links. Revoking a link
+/// deletes it. A link can instead be limited to signed-in members of chosen organizations
 /// (<see cref="AllowedOrganizationIds"/>); the link is still needed, but no longer enough.
 /// </summary>
 public sealed class DashboardShare : BaseEntity
@@ -14,12 +15,19 @@ public sealed class DashboardShare : BaseEntity
     public const int MaxPerDashboard = 10;
     public const int MaxLifetimeDays = 365;
     public const int MaxAllowedOrganizations = 20;
+    public const int MaxEncryptedTokenLength = 1_000;
 
     private DashboardShare() { }
 
     public Guid OrganizationId { get; private set; }
     public Guid DashboardId { get; private set; }
     public string TokenHash { get; private set; } = string.Empty;
+
+    /// <summary>
+    /// The secret of the link, encrypted, for showing the link to its editors again. Null for a link made before this was kept,
+    /// or one whose secret cannot be read any more; such a link works as before but its address can not be shown.
+    /// </summary>
+    public string? EncryptedToken { get; private set; }
     public Guid CreatedByUserId { get; private set; }
     public DateTime CreatedUtc { get; private set; }
 
@@ -36,7 +44,7 @@ public sealed class DashboardShare : BaseEntity
 
     public static DashboardShare Create(
         Guid organizationId, Guid dashboardId, string tokenHash, Guid createdByUserId, DateTime nowUtc, DateTime? expiresUtc,
-        IEnumerable<Guid>? allowedOrganizationIds = null)
+        IEnumerable<Guid>? allowedOrganizationIds = null, string? encryptedToken = null)
     {
         if (organizationId == Guid.Empty)
             throw new ArgumentException("Organization is required.", nameof(organizationId));
@@ -48,6 +56,9 @@ public sealed class DashboardShare : BaseEntity
             throw new ArgumentException("A token hash is required.", nameof(tokenHash));
         if (expiresUtc is { } expires && expires <= nowUtc)
             throw new ArgumentException("A link has to expire in the future.", nameof(expiresUtc));
+
+        if (encryptedToken is { Length: > MaxEncryptedTokenLength })
+            throw new ArgumentException("The encrypted token is too long.", nameof(encryptedToken));
 
         var allowed = (allowedOrganizationIds ?? []).Distinct().ToArray();
         if (allowed.Any(id => id == Guid.Empty))
@@ -61,6 +72,7 @@ public sealed class DashboardShare : BaseEntity
             OrganizationId = organizationId,
             DashboardId = dashboardId,
             TokenHash = tokenHash,
+            EncryptedToken = encryptedToken,
             CreatedByUserId = createdByUserId,
             CreatedUtc = nowUtc,
             ExpiresUtc = expiresUtc,

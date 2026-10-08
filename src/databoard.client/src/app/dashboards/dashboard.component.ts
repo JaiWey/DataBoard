@@ -1,4 +1,4 @@
-import { Component, OnInit, computed, inject, input, output, signal } from '@angular/core';
+import { Component, OnInit, WritableSignal, computed, inject, input, output, signal } from '@angular/core';
 import { FormBuilder, FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
@@ -6,8 +6,9 @@ import { MatCardModule } from '@angular/material/card';
 import { MatDialog } from '@angular/material/dialog';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
+import { MatMenuModule } from '@angular/material/menu';
 import { ChartViewComponent } from '../charts/chart-view.component';
-import { ExportMenuComponent } from '../charts/export-menu.component';
+import { WidgetMenuComponent } from './widget-menu.component';
 import { downloadJson } from '../charts/export';
 import { Observable } from 'rxjs';
 import { Chart, ChartsService } from '../charts/charts.service';
@@ -45,6 +46,7 @@ import {
   SharedFilterOperator,
   WidgetResult,
 } from './dashboards.service';
+import { AppSelectComponent, SelectOption } from '../shared/app-select.component';
 import { ConfirmService } from '../shared/confirm.service';
 
 /** In and Between take several values, typed as a comma-separated list; the rest take one. */
@@ -56,9 +58,13 @@ export function parseFilterInput(operator: SharedFilterOperator, text: string): 
     : [trimmed];
 }
 
+/** How many moves and resizes can be undone in one go. */
+const MAX_UNDO = 100;
+
 @Component({
   selector: 'app-dashboard',
-  imports: [ReactiveFormsModule, RouterLink, MatCardModule, MatFormFieldModule, MatInputModule, MatButtonModule, ChartViewComponent, DashboardGridComponent, ExportMenuComponent, BackgroundLayerComponent, ImageWidgetComponent, MarkdownComponent, DashboardTabBarComponent, MoveToTabComponent],
+  host: { '(document:keydown)': 'onKey($event)' },
+  imports: [ReactiveFormsModule, RouterLink, MatCardModule, MatFormFieldModule, MatInputModule, MatMenuModule, MatButtonModule, AppSelectComponent, ChartViewComponent, DashboardGridComponent, WidgetMenuComponent, BackgroundLayerComponent, ImageWidgetComponent, MarkdownComponent, DashboardTabBarComponent, MoveToTabComponent],
   template: `
     <mat-card appearance="raised" class="detail">
     @if (dashboard(); as d) {
@@ -70,6 +76,8 @@ export function parseFilterInput(operator: SharedFilterOperator, text: string): 
           }
           @if (canEdit()) {
             @if (editingLayout()) {
+              <button mat-button type="button" class="undo-layout" aria-label="Undo" title="Undo (Ctrl+Z)" [disabled]="busy() || past().length === 0" (click)="undo()">Undo</button>
+              <button mat-button type="button" class="redo-layout" aria-label="Redo" title="Redo (Ctrl+Y)" [disabled]="busy() || future().length === 0" (click)="redo()">Redo</button>
               <button mat-flat-button type="button" class="save-layout" [disabled]="busy() || !layoutChanged()" (click)="saveLayout(d)">Save layout</button>
               <button mat-button type="button" class="cancel-layout" [disabled]="busy()" (click)="cancelLayout()">Cancel</button>
             } @else {
@@ -81,9 +89,12 @@ export function parseFilterInput(operator: SharedFilterOperator, text: string): 
               <button mat-stroked-button type="button" class="access" (click)="editAccess(d)">{{ d.restricted ? 'Access (limited)' : 'Access' }}</button>
               <button mat-stroked-button type="button" class="duplicate" [disabled]="busy()" (click)="duplicate(d)">Duplicate</button>
               <button mat-stroked-button type="button" class="export" [disabled]="busy()" (click)="exportFile(d)">Export</button>
-              <button mat-stroked-button type="button" (click)="addCharts(d)">Add chart</button>
-              <button mat-stroked-button type="button" class="add-picture" (click)="addPicture(d)">Add picture</button>
-              <button mat-stroked-button type="button" class="add-text" (click)="addText(d)">Add text</button>
+              <button mat-stroked-button type="button" class="add-menu" aria-label="Add to the dashboard" [matMenuTriggerFor]="addMenu">Add ▾</button>
+              <mat-menu #addMenu="matMenu">
+                <button mat-menu-item type="button" class="add-chart" (click)="addCharts(d)">Chart</button>
+                <button mat-menu-item type="button" class="add-picture" (click)="addPicture(d)">Picture</button>
+                <button mat-menu-item type="button" class="add-text" (click)="addText(d)">Text</button>
+              </mat-menu>
               <button mat-stroked-button type="button" class="background" (click)="editBackground(d)">Background</button>
               <button mat-button type="button" (click)="removeDashboard(d)">Delete dashboard</button>
             }
@@ -98,14 +109,11 @@ export function parseFilterInput(operator: SharedFilterOperator, text: string): 
       @if (canEdit() || d.definition.reloadSeconds) {
         <div class="reload-bar no-print">
           @if (canEdit()) {
-            <label>
+            <span class="field">
               <span>Reload page every</span>
-              <select aria-label="Reload interval" [disabled]="busy()" (change)="setReload(d, $any($event.target))">
-                @for (choice of reloadChoices(d.definition.reloadSeconds); track choice.seconds) {
-                  <option [value]="choice.seconds ?? ''" [selected]="choice.seconds === (d.definition.reloadSeconds ?? null)">{{ choice.label }}</option>
-                }
-              </select>
-            </label>
+              <app-select ariaLabel="Reload interval" [options]="reloadOptions(d.definition.reloadSeconds)" [value]="'' + (d.definition.reloadSeconds ?? '')"
+                          [disabled]="busy()" (valueChange)="setReload(d, $event)" />
+            </span>
           }
           @if (d.definition.reloadSeconds) {
             <small class="status">
@@ -120,14 +128,11 @@ export function parseFilterInput(operator: SharedFilterOperator, text: string): 
         @if (schedule.intervalMinutes || canEdit()) {
           <div class="schedule no-print">
             @if (canEdit()) {
-              <label>
+              <span class="field">
                 <span>Refresh every</span>
-                <select aria-label="Refresh schedule" [disabled]="busy()" (change)="setSchedule(d, $any($event.target))">
-                  @for (choice of refreshChoices(schedule.intervalMinutes); track choice.minutes) {
-                    <option [value]="choice.minutes ?? ''" [selected]="choice.minutes === schedule.intervalMinutes">{{ choice.label }}</option>
-                  }
-                </select>
-              </label>
+                <app-select ariaLabel="Refresh schedule" [options]="refreshOptions(schedule.intervalMinutes)" [value]="'' + (schedule.intervalMinutes ?? '')"
+                            [disabled]="busy()" (valueChange)="setSchedule(d, $event)" />
+              </span>
             }
             @if (schedule.intervalMinutes) {
               <small class="status">
@@ -165,7 +170,7 @@ export function parseFilterInput(operator: SharedFilterOperator, text: string): 
 
       @if (d.definition.widgets.length === 0) {
         <p><em>This dashboard has no charts yet.</em>
-          @if (canEdit()) { Use <strong>Add chart</strong> to put charts on it, or <a [routerLink]="['/organizations', orgId(), 'charts', 'new']">create a new chart</a>. }
+          @if (canEdit()) { Use <strong>Add</strong> and then <strong>Chart</strong> to put charts on it, or <a [routerLink]="['/organizations', orgId(), 'charts', 'new']">create a new chart</a>. }
         </p>
       }
 
@@ -173,7 +178,7 @@ export function parseFilterInput(operator: SharedFilterOperator, text: string): 
                              (select)="selectTab($event)" (add)="addTab(d)" (rename)="renameTab(d, $event)" (remove)="removeTab(d, $event)"
                              (moveEarlier)="moveTab(d, $event, -1)" (moveLater)="moveTab(d, $event, 1)" />
 
-      <app-dashboard-grid [items]="items()" [editing]="editingLayout()" [labels]="labels()" (layoutChange)="draft.set($event)">
+      <app-dashboard-grid [items]="items()" [editing]="editingLayout()" [labels]="labels()" (layoutBegin)="beginChange()" (layoutChange)="draft.set($event)">
         <ng-template let-id>
           @if (widgetById(id); as widget) {
           @if (widget.kind === 'Image') {
@@ -202,22 +207,14 @@ export function parseFilterInput(operator: SharedFilterOperator, text: string): 
           } @else {
           <mat-card appearance="outlined" class="widget" data-export-scope>
             @if (chartFor(widget.chartId); as chart) {
-              <mat-card-header>
-                <mat-card-title>{{ chart.name }}</mat-card-title>
-                <mat-card-subtitle>{{ datasetName(chart.datasetId) }}</mat-card-subtitle>
-                @if (!editingLayout()) {
-                  <span class="widget-actions no-print">
-                    @if (resultFor(widget.id)?.result; as exported) {
-                      <app-export-menu [name]="chart.name" [result]="exported" [type]="chart.type" />
-                    }
-                    @if (canEdit()) {
-                      <app-move-to-tab [tabs]="tabs()" [current]="activeTabId()" (pick)="moveWidget(d, widget, $event)" />
-                      <a mat-button [routerLink]="['/organizations', orgId(), 'charts', chart.id]">Edit chart</a>
-                      <button mat-button type="button" class="remove-widget" (click)="removeWidget(d, widget.id)">Remove</button>
-                    }
-                  </span>
-                }
-              </mat-card-header>
+              <mat-card-title class="sr-only">{{ chart.name }}</mat-card-title>
+              @if (!editingLayout()) {
+                <div class="widget-actions no-print">
+                  <app-widget-menu [name]="chart.name" [result]="resultFor(widget.id)?.result ?? null" [type]="chart.type" [canEdit]="canEdit()"
+                                   [orgId]="orgId()" [chartId]="chart.id" [tabs]="tabs()" [current]="activeTabId()"
+                                   (pick)="moveWidget(d, widget, $event)" (remove)="removeWidget(d, widget.id)" />
+                </div>
+              }
               <mat-card-content>
                 @if (resultFor(widget.id); as r) {
                   @if (r.error) {
@@ -262,30 +259,11 @@ export function parseFilterInput(operator: SharedFilterOperator, text: string): 
             <mat-label>Label</mat-label>
             <input matInput formControlName="label" aria-label="Filter label" />
           </mat-form-field>
-          <mat-form-field>
-            <mat-label>Applies to</mat-label>
-            <select matNativeControl formControlName="target" aria-label="Filter applies to" (change)="setTarget($any($event.target).value)">
-              <option value="Column">A column</option>
-              <option value="Parameter" [disabled]="parameterNames().length === 0">A dataset parameter</option>
-            </select>
-          </mat-form-field>
-          <mat-form-field>
-            <mat-label>{{ target() === 'Parameter' ? 'Parameter' : 'Column' }}</mat-label>
-            <select matNativeControl formControlName="column" aria-label="Filter column">
-              @for (name of targetNames(); track name) { <option [value]="name">{{ name }}</option> }
-            </select>
-            <mat-hint>
-              @if (target() === 'Parameter') { Sets the value for every chart whose dataset has this parameter }
-              @else { Applies to every chart whose dataset has this column }
-            </mat-hint>
-          </mat-form-field>
+          <app-select label="Applies to" ariaLabel="Filter applies to" formControlName="target" [options]="targetKinds()" (valueChange)="setTarget($any($event))" />
+          <app-select [label]="target() === 'Parameter' ? 'Parameter' : 'Column'" ariaLabel="Filter column" formControlName="column" [options]="targetOptions()"
+                      [hint]="target() === 'Parameter' ? 'Sets the value for every chart whose dataset has this parameter' : 'Applies to every chart whose dataset has this column'" />
           @if (target() === 'Column') {
-            <mat-form-field>
-              <mat-label>Condition</mat-label>
-              <select matNativeControl formControlName="operator" aria-label="Filter condition">
-                @for (op of operators; track op.value) { <option [value]="op.value">{{ op.label }}</option> }
-              </select>
-            </mat-form-field>
+            <app-select label="Condition" ariaLabel="Filter condition" formControlName="operator" [options]="operators" />
           }
           <button mat-flat-button type="submit" class="apply" [disabled]="newFilterForm.invalid || busy()">Add filter</button>
         </form>
@@ -311,17 +289,20 @@ export function parseFilterInput(operator: SharedFilterOperator, text: string): 
     mat-card-title { font: var(--mat-sys-title-medium); }
     mat-card-header { align-items: center; flex-wrap: wrap; gap: 0.5rem; }
     .actions { margin-left: auto; display: flex; gap: 0.4rem; }
-    .widget-actions { margin-left: auto; display: flex; }
+    /* The chart's name is not shown; its menu floats over the top right corner of the widget. */
+    .widget-actions { position: absolute; top: 0.25rem; right: 0.25rem; z-index: 2; display: flex; background: rgb(255 255 255 / 0.8); border-radius: 50%; }
     /* The background picture is a layer under everything in the content, so the content makes its own stacking context. */
     .detail > mat-card-content { flex: 1; min-height: 0; overflow: auto; padding-top: 0.75rem; position: relative; isolation: isolate; }
     .filters { margin: 0.5rem 0 1rem; }
     .schedule, .reload-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.75rem; margin: 0 0 0.75rem; }
-    .schedule label, .reload-bar label { display: flex; align-items: center; gap: 0.5rem; }
-    .schedule select, .reload-bar select { padding: 0.25rem; }
+    .schedule .field, .reload-bar .field { display: flex; align-items: center; gap: 0.5rem; }
     .apply, .remove-filter { margin-top: 0.4rem; }
     /* A widget fills its cell on the grid; its chart takes what the header leaves, and a table scrolls inside. */
-    .widget { height: 100%; }
+    .widget { height: 100%; position: relative; }
     .widget mat-card-header { align-items: center; }
+    .widget mat-card-content { padding-top: 0.75rem; }
+    /* A chart's name is not drawn on the dashboard; it stays for screen readers (and is the name of the chart's picture). */
+    .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
     /* A picture fills its widget; its buttons float over a corner, out of the way until the widget is hovered or focused. */
     .widget.picture, .widget.words { position: relative; overflow: hidden; padding: 0; }
     .words-text { display: block; height: 100%; overflow: auto; padding: 0.75rem 1rem; box-sizing: border-box; }
@@ -379,6 +360,9 @@ export class DashboardComponent implements OnInit {
   protected readonly reloadText = reloadLabel;
   private readonly reloading = autoReload(() => this.dashboard()?.definition.reloadSeconds, () => this.execute(false, true), () => this.busy() || this.editingLayout());
   protected readonly draft = signal<LayoutItem[] | null>(null);
+  /** The layouts Undo goes back to (the latest last), and the ones Redo goes forward to. Both only live while arranging. */
+  protected readonly past = signal<LayoutItem[][]>([]);
+  protected readonly future = signal<LayoutItem[][]>([]);
   /** Where each widget sits as saved, with places made up for widgets that have none yet. */
   private readonly savedLayout = computed(() => arrangeTab(this.dashboard()?.definition.widgets ?? [], this.tabs(), this.activeTabId()));
   protected readonly items = computed(() => this.draft() ?? this.savedLayout());
@@ -407,6 +391,11 @@ export class DashboardComponent implements OnInit {
   protected readonly parameterNames = computed(() =>
     [...new Set(this.datasets().flatMap((d) => (d.parameters ?? []).map((p) => p.name)))].sort((a, b) => a.localeCompare(b)),
   );
+  protected readonly targetKinds = computed<SelectOption[]>(() => [
+    { value: 'Column', label: 'A column' },
+    { value: 'Parameter', label: 'A dataset parameter', disabled: this.parameterNames().length === 0 },
+  ]);
+  protected readonly targetOptions = computed<SelectOption[]>(() => this.targetNames().map((name) => ({ value: name, label: name })));
   protected readonly targetNames = computed(() => (this.target() === 'Parameter' ? this.parameterNames() : this.columnNames()));
 
   protected setTarget(target: FilterTarget): void {
@@ -504,12 +493,56 @@ export class DashboardComponent implements OnInit {
 
   protected editLayout(): void {
     this.draft.set(this.savedLayout());
+    this.past.set([]);
+    this.future.set([]);
     this.editingLayout.set(true);
   }
 
   protected cancelLayout(): void {
     this.editingLayout.set(false);
     this.draft.set(null);
+    this.past.set([]);
+    this.future.set([]);
+  }
+
+  // ---- undo and redo of the layout being arranged ----
+
+  /** A move or a resize is about to start (see the grid's layoutBegin): what is there now is what Undo goes back to. */
+  protected beginChange(): void {
+    this.past.update((past) => [...past, this.items()].slice(-MAX_UNDO));
+    this.future.set([]);
+  }
+
+  protected undo(): void {
+    this.step(this.past, this.future);
+  }
+
+  protected redo(): void {
+    this.step(this.future, this.past);
+  }
+
+  /** Takes the layout off one stack, puts the current one on the other and shows it. A layout equal to the current one is skipped. */
+  private step(from: WritableSignal<LayoutItem[][]>, to: WritableSignal<LayoutItem[][]>): void {
+    const current = this.items();
+    let stack = from();
+    while (stack.length > 0 && sameLayout(stack[stack.length - 1], current)) stack = stack.slice(0, -1);
+    const target = stack[stack.length - 1];
+    from.set(target ? stack.slice(0, -1) : stack);
+    if (!target) return;
+    to.update((others) => [...others, current]);
+    this.draft.set(target);
+  }
+
+  protected onKey(event: KeyboardEvent): void {
+    if (!this.editingLayout() || this.busy() || !(event.ctrlKey || event.metaKey) || event.altKey) return;
+    const target = event.target as HTMLElement | null;
+    if (target && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))) return;
+
+    const key = event.key.toLowerCase();
+    if (key === 'z' && !event.shiftKey) this.undo();
+    else if (key === 'y' || (key === 'z' && event.shiftKey)) this.redo();
+    else return;
+    event.preventDefault();
   }
 
   protected saveLayout(d: Dashboard): void {
@@ -675,10 +708,6 @@ export class DashboardComponent implements OnInit {
       });
   }
 
-  protected datasetName(id: string): string {
-    return this.datasets().find((d) => d.id === id)?.name ?? '';
-  }
-
   protected resultFor(widgetId: string): WidgetResult | undefined {
     return this.run()?.widgets.find((w) => w.widgetId === widgetId);
   }
@@ -688,13 +717,19 @@ export class DashboardComponent implements OnInit {
   }
 
   /** Sets how often the open page reloads its charts. It is saved with the dashboard and applies to everyone. */
-  protected setReload(d: Dashboard, select: HTMLSelectElement): void {
-    const seconds = select.value === '' ? null : Number(select.value);
+  protected setReload(d: Dashboard, value: string): void {
+    const seconds = value === '' ? null : Number(value);
     const before = d.definition.reloadSeconds ?? null;
-    if (seconds === before) return;
-    this.save(d, { ...d.definition, reloadSeconds: seconds }, undefined, false, () => {
-      select.value = before === null ? '' : String(before); // nothing in the page changed, so put the control back by hand
-    });
+    if (seconds === before) return; // if it cannot be saved, the select still shows the old interval
+    this.save(d, { ...d.definition, reloadSeconds: seconds }, undefined, false);
+  }
+
+  protected reloadOptions(current: number | null | undefined): SelectOption[] {
+    return reloadChoices(current).map((c) => ({ value: String(c.seconds ?? ''), label: c.label }));
+  }
+
+  protected refreshOptions(current: number | null): SelectOption[] {
+    return this.refreshChoices(current).map((c) => ({ value: String(c.minutes ?? ''), label: c.label }));
   }
 
   /** The usual intervals, plus the current one if it was set to something else through the API. */
@@ -709,8 +744,8 @@ export class DashboardComponent implements OnInit {
   }
 
   /** Puts the dashboard on a schedule, or off (an empty choice). It takes effect at once and needs no Save. */
-  protected setSchedule(d: Dashboard, select: HTMLSelectElement): void {
-    const minutes = select.value === '' ? null : Number(select.value);
+  protected setSchedule(d: Dashboard, value: string): void {
+    const minutes = value === '' ? null : Number(value);
     const before = d.refresh?.intervalMinutes ?? null;
     if (minutes === before) return;
     this.busy.set(true);
@@ -722,8 +757,7 @@ export class DashboardComponent implements OnInit {
       },
       error: (e) => {
         this.busy.set(false);
-        this.errors.set(problemMessages(e, 'Could not change the refresh schedule.'));
-        select.value = before === null ? '' : String(before); // nothing in the page changed, so put the control back by hand
+        this.errors.set(problemMessages(e, 'Could not change the refresh schedule.')); // the select still shows the old schedule
       },
     });
   }

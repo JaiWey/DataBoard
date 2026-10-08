@@ -2,6 +2,7 @@ import { Component, computed, inject, signal } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MAT_DIALOG_DATA, MatDialogModule, MatDialogRef } from '@angular/material/dialog';
 import { problemMessages } from '../organizations/data-sources.service';
+import { AppSelectComponent } from '../shared/app-select.component';
 import {
   BACKGROUND_MAX_BYTES, BACKGROUND_TYPES, Dashboard, DashboardWidget, DashboardsService, IMAGE_FITS, ImageFit,
 } from './dashboards.service';
@@ -22,7 +23,7 @@ export interface ImageWidgetDialogData {
  */
 @Component({
   selector: 'app-image-widget-dialog',
-  imports: [MatDialogModule, MatButtonModule],
+  imports: [MatDialogModule, MatButtonModule, AppSelectComponent],
   template: `
     <h2 mat-dialog-title>{{ data.widget ? 'Picture' : 'Add a picture' }}</h2>
     <mat-dialog-content>
@@ -33,12 +34,10 @@ export interface ImageWidgetDialogData {
       </div>
       <small>PNG, JPEG, GIF or WebP, up to 5 MB.</small>
 
-      <label class="row">
+      <div class="row">
         <span>Fit</span>
-        <select aria-label="How the picture fits" (change)="fit.set($any($event.target).value)">
-          @for (f of fits; track f.value) { <option [value]="f.value" [selected]="f.value === fit()">{{ f.label }}</option> }
-        </select>
-      </label>
+        <app-select ariaLabel="How the picture fits" [options]="fits" [value]="fit()" (valueChange)="fit.set($any($event))" />
+      </div>
       <label class="row">
         <span>Description</span>
         <input type="text" maxlength="200" aria-label="Picture description" placeholder="What the picture shows"
@@ -68,7 +67,7 @@ export interface ImageWidgetDialogData {
     .pick { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 0.25rem; }
     .chosen { color: var(--mat-sys-on-surface-variant); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 14rem; }
     .row { display: grid; grid-template-columns: 8.5rem 1fr; align-items: center; gap: 0.5rem; margin: 0.6rem 0; }
-    .row input, .row select { min-width: 0; padding: 0.35rem 0.45rem; font: inherit; }
+    .row input { min-width: 0; padding: 0.35rem 0.45rem; font: inherit; }
   `,
 })
 export class ImageWidgetDialogComponent {

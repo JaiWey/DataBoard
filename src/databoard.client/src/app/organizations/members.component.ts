@@ -10,6 +10,7 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { AuthService } from '../auth/auth.service';
 import { problemMessages } from './data-sources.service';
 import { MEMBER_ROLES, Member, MemberRole, MembersService } from './members.service';
+import { AppSelectComponent } from '../shared/app-select.component';
 import { ConfirmService } from '../shared/confirm.service';
 
 interface Organization {
@@ -25,7 +26,7 @@ interface Organization {
  */
 @Component({
   selector: 'app-members',
-  imports: [ReactiveFormsModule, RouterLink, DatePipe, MatButtonModule, MatCardModule, MatFormFieldModule, MatInputModule],
+  imports: [ReactiveFormsModule, RouterLink, DatePipe, MatButtonModule, MatCardModule, MatFormFieldModule, MatInputModule, AppSelectComponent],
   template: `
     <h2>{{ organization()?.name }} <small>members</small></h2>
     <p><a [routerLink]="['/organizations']">Back to organizations</a></p>
@@ -47,12 +48,8 @@ interface Organization {
                   <td>{{ m.email }}</td>
                   <td>
                     @if (isOwner()) {
-                      <select [attr.aria-label]="'Role of ' + m.displayName" [disabled]="busy() || lastOwner(m)"
-                              [title]="lastOwner(m) ? 'Make someone else an Owner first.' : ''" (change)="changeRole(m, $any($event.target))">
-                        @for (r of roles; track r.value) {
-                          <option [value]="r.value" [selected]="r.value === m.role">{{ r.label }}</option>
-                        }
-                      </select>
+                      <app-select [ariaLabel]="'Role of ' + m.displayName" [options]="roles" [value]="m.role" [disabled]="busy() || lastOwner(m)"
+                                  [title]="lastOwner(m) ? 'Make someone else an Owner first.' : ''" (valueChange)="changeRole(m, $event)" />
                     } @else {
                       {{ m.role }}
                     }
@@ -87,12 +84,7 @@ interface Organization {
           <mat-label>Email</mat-label>
           <input matInput type="email" formControlName="email" aria-label="Member email" autocomplete="off" />
         </mat-form-field>
-        <mat-form-field>
-          <mat-label>Role</mat-label>
-          <select matNativeControl formControlName="role" aria-label="New member role">
-            @for (r of roles; track r.value) { <option [value]="r.value">{{ r.label }}</option> }
-          </select>
-        </mat-form-field>
+        <app-select label="Role" ariaLabel="New member role" formControlName="role" [options]="roles" />
         <button mat-flat-button type="submit" class="add" [disabled]="form.invalid || busy()">Add</button>
       </form>
     }
@@ -102,7 +94,6 @@ interface Organization {
     .members th { text-align: left; font-weight: 500; color: var(--mat-sys-on-surface-variant); }
     .members th, .members td { padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--mat-sys-outline-variant); }
     .members tr.me td { background: var(--mat-sys-surface-container-low, transparent); }
-    .members select { padding: 0.25rem; }
     .actions { text-align: right; white-space: nowrap; }
     .danger { color: var(--mat-sys-error); }
     .you { color: var(--mat-sys-on-surface-variant); }
@@ -158,11 +149,11 @@ export class MembersComponent implements OnInit {
     this.run(this.api.add(this.orgId, email.trim(), role), 'Could not add the member.', () => this.form.controls.email.reset());
   }
 
-  protected changeRole(m: Member, select: HTMLSelectElement): void {
-    const role = select.value as MemberRole;
+  /** The select keeps showing the old role until the change is made and the list is read again, so a refusal needs no undoing. */
+  protected changeRole(m: Member, value: string): void {
+    const role = value as MemberRole;
     if (role === m.role) return;
-    const change = () =>
-      this.run(this.api.changeRole(this.orgId, m.userId, role), 'Could not change the role.', undefined, () => (select.value = m.role));
+    const change = () => this.run(this.api.changeRole(this.orgId, m.userId, role), 'Could not change the role.');
 
     // Giving up your own Owner role takes the controls away, so ask first.
     if (this.isMe(m) && m.role === 'Owner') {
@@ -175,7 +166,6 @@ export class MembersComponent implements OnInit {
         })
         .subscribe((yes) => {
           if (yes) change();
-          else select.value = m.role;
         });
       return;
     }

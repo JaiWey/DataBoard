@@ -1,4 +1,5 @@
 import { Component, effect, input, model } from '@angular/core';
+import { AppSelectComponent, SelectOption } from '../shared/app-select.component';
 import {
   DatasetParameter,
   PARAMETER_TYPES,
@@ -17,6 +18,7 @@ import {
  */
 @Component({
   selector: 'app-parameters-panel',
+  imports: [AppSelectComponent],
   template: `
     @if (parameters().length > 0) {
       <section class="params" aria-label="Parameters">
@@ -24,16 +26,11 @@ import {
         @for (p of parameters(); track p.name; let i = $index) {
           <div class="row">
             <code class="name">{{ placeholder(p.name) }}</code>
-            <select [attr.aria-label]="'Type of ' + p.name" [disabled]="readOnly()" (change)="setType(i, $any($event.target).value)">
-              @for (t of types; track t) { <option [value]="t" [selected]="t === p.type">{{ t }}</option> }
-            </select>
+            <app-select [ariaLabel]="'Type of ' + p.name" [options]="typeOptions" [value]="p.type" [disabled]="readOnly()" (valueChange)="setType(i, $any($event))" />
             @switch (p.type) {
               @case ('Boolean') {
-                <select [attr.aria-label]="'Default of ' + p.name" [disabled]="readOnly()" (change)="setDefault(i, $any($event.target).value)">
-                  <option value="" [selected]="p.default === null || p.default === undefined">no default</option>
-                  <option value="true" [selected]="p.default === true">true</option>
-                  <option value="false" [selected]="p.default === false">false</option>
-                </select>
+                <app-select [ariaLabel]="'Default of ' + p.name" [options]="booleanOptions" [value]="booleanValue(p.default)" [disabled]="readOnly()"
+                            (valueChange)="setDefault(i, $event)" />
               }
               @case ('Number') {
                 <input type="number" step="any" placeholder="default" [attr.aria-label]="'Default of ' + p.name" [disabled]="readOnly()"
@@ -66,7 +63,7 @@ import {
     h4 { margin: 0 0 0.4rem; font: var(--mat-sys-title-small); }
     .row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; padding: 0.2rem 0; }
     .name { min-width: 8rem; padding: 0.1rem 0.4rem; background: var(--mat-sys-surface-container); border-radius: 4px; }
-    .row input[type='text'], .row input[type='number'], .row input[type='date'], .row select { padding: 0.25rem; }
+    .row input[type='text'], .row input[type='number'], .row input[type='date'] { padding: 0.25rem; }
     .label { flex: 1; min-width: 8rem; }
     .warn { margin: 0.4rem 0 0; color: var(--mat-sys-error); }
   `,
@@ -79,6 +76,16 @@ export class ParametersPanelComponent {
   readonly readOnly = input(false);
 
   protected readonly types = PARAMETER_TYPES;
+  protected readonly typeOptions: SelectOption[] = PARAMETER_TYPES.map((t) => ({ value: t, label: t }));
+  protected readonly booleanOptions: SelectOption[] = [
+    { value: '', label: 'no default' },
+    { value: 'true', label: 'true' },
+    { value: 'false', label: 'false' },
+  ];
+
+  protected booleanValue(value: unknown): string {
+    return value === true ? 'true' : value === false ? 'false' : '';
+  }
   protected readonly text = parameterText;
 
   constructor() {
