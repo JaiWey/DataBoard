@@ -23,9 +23,18 @@ export const CLOUD_ROTATIONS: { value: CloudRotation; label: string }[] = [
   { value: 'vertical', label: 'All upright' },
 ];
 
-/** The size of the picture words are placed in. It is scaled to fit whatever it is shown in. */
+/**
+ * The size of the picture words are placed in when nothing says how big the place for it is. The height is always this; the
+ * width follows the shape of the place (see `cloudSize`), so the cloud fills a wide widget and a tall one alike.
+ */
 export const CLOUD_WIDTH = 800;
 export const CLOUD_HEIGHT = 500;
+
+/** The picture to place words in for a place that is `aspect` times as wide as it is tall (not told: the usual 800 by 500). */
+export function cloudSize(aspect: number | null): { width: number; height: number } {
+  if (aspect === null || !Number.isFinite(aspect) || aspect <= 0) return { width: CLOUD_WIDTH, height: CLOUD_HEIGHT };
+  return { width: Math.round(Math.min(2000, Math.max(300, CLOUD_HEIGHT * aspect))), height: CLOUD_HEIGHT };
+}
 
 export interface CloudWord {
   text: string;
@@ -41,6 +50,9 @@ export interface PlacedWord extends CloudWord {
   rotate: 0 | 90;
   /** Position by weight, 0 for the heaviest: colours are given out in this order. */
   rank: number;
+  /** The room the word takes up, turned the way it is drawn. */
+  boxWidth: number;
+  boxHeight: number;
 }
 
 /** The words of a result: the first column is the word, the last one its weight. Zero and negative weights are left out. */
@@ -55,12 +67,12 @@ export function wordsOf(rows: unknown[][]): CloudWord[] {
   return [...byText].map(([text, value]) => ({ text, value }));
 }
 
-/** Wide letters (Chinese, Japanese, Korean, full-width forms) take about a font size; Latin letters about 0.58 of it. */
+/** Wide letters (Chinese, Japanese, Korean, full-width forms) take about a font size; Latin letters about 0.6 of it. */
 const WIDE = /[ᄀ-ᅟ⺀-〾ぁ-㏿㐀-䶿一-鿿가-힣豈-﫿＀-｠￠-￦]/;
 
 export function textWidth(text: string, size: number): number {
   let em = 0;
-  for (const ch of text) em += WIDE.test(ch) ? 1 : /[A-Z]/.test(ch) ? 0.68 : /[ilj.,;:'!|]/.test(ch) ? 0.3 : 0.58;
+  for (const ch of text) em += WIDE.test(ch) ? 1 : /[A-Z]/.test(ch) ? 0.68 : /[ilj.,;:'!|]/.test(ch) ? 0.3 : 0.6;
   return em * size;
 }
 
@@ -71,7 +83,7 @@ interface Box {
   h: number;
 }
 
-const GAP = 3;
+const GAP = 8;
 const overlaps = (a: Box, b: Box): boolean =>
   Math.abs(a.x - b.x) * 2 < a.w + b.w + GAP && Math.abs(a.y - b.y) * 2 < a.h + b.h + GAP;
 
@@ -123,14 +135,30 @@ export function layoutWords(
       box.x = spot.x;
       box.y = spot.y;
       boxes.push(box);
-      placed.push({ ...word, x: box.x, y: box.y, size, rotate: upright ? 90 : 0, rank: index });
+      placed.push({ ...word, x: box.x, y: box.y, size, rotate: upright ? 90 : 0, rank: index, boxWidth: box.w, boxHeight: box.h });
       break;
     }
   });
   return placed;
 }
 
-/** The first place on an outward spiral from the centre where the box is inside the picture and touches no other word. */
+/**
+ * The part of the picture the words fill, with a margin: drawing only this and no more makes the cloud as big as its place
+ * allows instead of a small cloud in the middle of empty space.
+ */
+export function cloudBounds(placed: PlacedWord[], margin = 8): { x: number; y: number; width: number; height: number } | null {
+  if (placed.length === 0) return null;
+  const left = Math.min(...placed.map((w) => w.x - w.boxWidth / 2));
+  const right = Math.max(...placed.map((w) => w.x + w.boxWidth / 2));
+  const top = Math.min(...placed.map((w) => w.y - w.boxHeight / 2));
+  const bottom = Math.max(...placed.map((w) => w.y + w.boxHeight / 2));
+  return { x: left - margin, y: top - margin, width: right - left + margin * 2, height: bottom - top + margin * 2 };
+}
+
+/**
+ * The first place on an outward spiral from the centre where the box is inside the picture and touches no other word. The
+ * spiral winds round a rounded rectangle, not an oval, so the words reach the corners of the picture as well.
+ */
 function findSpot(box: Box, taken: Box[], width: number, height: number): { x: number; y: number } | null {
   const cx = width / 2;
   const cy = height / 2;
@@ -141,8 +169,11 @@ function findSpot(box: Box, taken: Box[], width: number, height: number): { x: n
     const radius = 1.6 * t;
     t += Math.min(0.4, Math.max(0.04, 8 / Math.max(radius, 1))); // about 8 pixels along the spiral at a time
     if (radius > limit) return null;
-    const x = cx + radius * Math.cos(t) * stretch;
-    const y = cy + radius * Math.sin(t);
+    const cos = Math.cos(t);
+    const sin = Math.sin(t);
+    const round = 1 / Math.pow(cos ** 4 + sin ** 4, 1 / 4); // pulls the oval out to a rounded rectangle
+    const x = cx + radius * cos * round * stretch;
+    const y = cy + radius * sin * round;
     if (x - box.w / 2 < 0 || x + box.w / 2 > width || y - box.h / 2 < 0 || y + box.h / 2 > height) continue;
     const candidate = { ...box, x, y };
     if (!taken.some((other) => overlaps(candidate, other))) return { x, y };

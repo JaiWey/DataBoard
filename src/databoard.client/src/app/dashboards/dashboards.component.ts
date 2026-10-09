@@ -1,14 +1,19 @@
 import { HttpClient } from '@angular/common/http';
+import { BreakpointObserver } from '@angular/cdk/layout';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
 import { MatButtonModule } from '@angular/material/button';
 import { MatButtonToggleModule } from '@angular/material/button-toggle';
 import { MatCardModule } from '@angular/material/card';
 import { MatDialog } from '@angular/material/dialog';
+import { MatSidenavModule } from '@angular/material/sidenav';
+import { MatTooltipModule } from '@angular/material/tooltip';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { tap } from 'rxjs';
+import { map, tap } from 'rxjs';
 import { CHART_TYPES, Chart, ChartsService } from '../charts/charts.service';
 import { problemMessages } from '../organizations/data-sources.service';
 import { DatasetsService } from '../organizations/datasets.service';
+import { IconComponent } from '../shared/icon.component';
 import { FolderTreeController } from '../shared/folder-tree/folder-tree-controller';
 import { TreeEntry } from '../shared/folder-tree/folder-tree';
 import { FolderTreeComponent } from '../shared/folder-tree/folder-tree.component';
@@ -26,19 +31,40 @@ interface Organization {
 
 type Mode = 'dashboards' | 'charts';
 
+const FOLDED_KEY = 'databoard.dashboardsListFolded';
+
+function readFolded(): boolean {
+  try {
+    return localStorage.getItem(FOLDED_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+function writeFolded(folded: boolean): void {
+  try {
+    localStorage.setItem(FOLDED_KEY, String(folded));
+  } catch {
+    // Not remembered; the list still folds.
+  }
+}
+
 /**
  * Dashboards and the charts they are made of. A list on the left (switch between Dashboards and Charts) and the selected
  * dashboard or chart on the right. Charts are made in the chart editor; dashboards pick charts to show.
  */
 @Component({
   selector: 'app-dashboards',
-  imports: [RouterLink, MatCardModule, MatButtonModule, MatButtonToggleModule, FolderTreeComponent, DashboardComponent, ChartCardComponent],
+  imports: [RouterLink, MatCardModule, MatButtonModule, MatButtonToggleModule, MatSidenavModule, MatTooltipModule, IconComponent, FolderTreeComponent, DashboardComponent, ChartCardComponent],
   template: `
     <h2>{{ organization()?.name }} <small>dashboards</small></h2>
 
-    <div class="layout">
+    <mat-sidenav-container class="layout" [hasBackdrop]="narrow()">
+      <mat-sidenav class="drawer" [mode]="narrow() ? 'over' : 'side'" [opened]="drawerOpen()" (openedChange)="onOpened($event)" [fixedInViewport]="false"
+                   aria-label="Dashboards and charts">
       <mat-card appearance="raised" class="list">
         <mat-card-header>
+          <button mat-icon-button type="button" class="hide-list" aria-label="Hide the list" matTooltip="Hide the list" (click)="toggleList()"><app-icon name="chevronLeft" /></button>
           <mat-button-toggle-group class="modes" aria-label="Show" [value]="mode()" (change)="setMode($event.value)">
             <mat-button-toggle value="dashboards">Dashboards</mat-button-toggle>
             <mat-button-toggle value="charts">Charts</mat-button-toggle>
@@ -100,11 +126,18 @@ type Mode = 'dashboards' | 'charts';
                              (move)="chartTree.moveItem($event.item, $event.targetId)" (moveTo)="chartTree.chooseDestination($event)" />
           }        </mat-card-content>
       </mat-card>
+      </mat-sidenav>
 
+      <mat-sidenav-content class="content">
+      @if (!drawerOpen()) {
+        <div class="content-bar">
+          <button mat-icon-button type="button" class="show-list" aria-label="Show the list" matTooltip="Show the list" (click)="toggleList()"><app-icon name="chevronRight" /></button>
+        </div>
+      }
       <section class="workspace">
         @if (mode() === 'dashboards') {
           @for (dashboard of selected(); track dashboard.id) {
-            <app-dashboard [orgId]="orgId" [dashboardId]="dashboard.id" [canEdit]="canEdit()"
+            <app-dashboard [orgId]="orgId" [dashboardId]="dashboard.id" [canEdit]="canEdit()" (editingChange)="onEditing($event)"
                            (changed)="onChanged($event)" (deleted)="onDeleted($event)" (duplicated)="onCreatedCopy($event)" />
           } @empty {
             <mat-card appearance="raised" class="detail empty">
@@ -126,13 +159,18 @@ type Mode = 'dashboards' | 'charts';
           }
         }
       </section>
-    </div>
+      </mat-sidenav-content>
+    </mat-sidenav-container>
   `,
   styles: `
     :host { --mat-card-elevated-container-color: #fff; }
     /* Both columns are exactly as tall as the space under the title (so the page itself never scrolls) and scroll inside. */
-    .layout { display: grid; grid-template-columns: 20rem 1fr; gap: 1.25rem; height: calc(100vh - 16rem); min-height: 24rem; }
-    .list { height: 100%; min-height: 0; }
+    .layout { height: calc(100vh - 16rem); min-height: 24rem; background: transparent; }
+    /* The drawer takes no surface of its own: the list is the card inside it, as it was before it became a drawer. */
+    .drawer { width: 21.25rem; max-width: 90vw; background: transparent; border: 0; box-shadow: none; }
+    .list { height: calc(100% - 0.5rem); min-height: 0; margin: 0.25rem 1.25rem 0.25rem 0.25rem; }
+    .content { display: flex; flex-direction: column; overflow: hidden; padding: 0.25rem 0.25rem 0.6rem; }
+    .content-bar { flex: none; }
     .list mat-card-content { flex: 1; min-height: 0; display: flex; flex-direction: column; }
     .list app-folder-tree { flex: 1; }
     .fail { color: var(--mat-sys-error); margin: 0 0 0.5rem; }
@@ -143,13 +181,12 @@ type Mode = 'dashboards' | 'charts';
     .shared-with-me small { color: var(--mat-sys-on-surface-variant); }
     .notice { margin: 0 0 0.5rem; padding: 0.5rem 0.75rem; border-radius: 0.5rem; background: var(--mat-sys-secondary-container); }
     .hidden { display: none; }
-    .workspace { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+    .workspace { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
     .workspace > app-dashboard, .workspace > app-chart-card { flex: 1; min-height: 0; }
     .workspace > .empty { flex: 1; }
     @media (max-width: 52rem) {
-      .layout { grid-template-columns: 1fr; height: auto; }
-      .list { height: auto; max-height: 20rem; }
-      .workspace > app-dashboard, .workspace > app-chart-card { min-height: 30rem; }
+      .drawer { box-shadow: var(--mat-sys-level3); background: var(--mat-sys-surface); }
+      .list { margin: 0.25rem; }
     }
     .add { margin-left: auto; }
     mat-card-header { align-items: center; flex-wrap: wrap; gap: 0.5rem; }
@@ -174,6 +211,46 @@ export class DashboardsComponent implements OnInit {
   });
 
   protected readonly mode = signal<Mode>('dashboards');
+
+  /** The list on the left folded away by the person; remembered between visits (a convenience, so it may not be). */
+  private readonly listFolded = signal(readFolded());
+  /** The list folded away because a dashboard is being arranged: it comes back when that is over. */
+  private readonly listFoldedForEditing = signal(false);
+  protected readonly listHidden = computed(() => this.listFolded() || this.listFoldedForEditing());
+
+  /** A narrow screen: the list is a drawer over the page, closed until it is asked for (and not remembered). */
+  protected readonly narrow = toSignal(inject(BreakpointObserver).observe('(max-width: 52rem)').pipe(map((state) => state.matches)), { initialValue: false });
+  private readonly narrowOpen = signal(false);
+  /** Whether the drawer with the list is open now. */
+  protected readonly drawerOpen = computed(() => (this.narrow() ? this.narrowOpen() : !this.listHidden()));
+
+  protected toggleList(): void {
+    this.setListOpen(!this.drawerOpen());
+  }
+
+  /** The person opened or closed the list (a button, or Escape and the backdrop on a narrow screen). */
+  protected onOpened(open: boolean): void {
+    if (open !== this.drawerOpen()) this.setListOpen(open);
+  }
+
+  private setListOpen(open: boolean): void {
+    if (this.narrow()) {
+      this.narrowOpen.set(open);
+      return;
+    }
+    this.listFoldedForEditing.set(false); // what the person chose now wins over what editing did
+    this.listFolded.set(!open);
+    writeFolded(!open);
+  }
+
+  /** Arranging a dashboard folds the list away to give it the room, and unfolds it again after (unless the person chose meanwhile). */
+  protected onEditing(editing: boolean): void {
+    if (editing) {
+      if (!this.listHidden()) this.listFoldedForEditing.set(true);
+    } else {
+      this.listFoldedForEditing.set(false);
+    }
+  }
   protected readonly importing = signal(false);
   protected readonly importErrors = signal<string[]>([]);
   /** What the last import did, when something was left out of it. */
@@ -259,11 +336,14 @@ export class DashboardsComponent implements OnInit {
 
   protected setMode(mode: Mode): void {
     this.mode.set(mode);
+    this.listFoldedForEditing.set(false); // the dashboard being arranged is gone from the page
   }
 
   // ---- dashboards -----------------------------------------------------------------------------------------
 
   protected select(id: string): void {
+    this.narrowOpen.set(false); // on a narrow screen the list gets out of the way of what was chosen
+    this.listFoldedForEditing.set(false); // another dashboard replaces the one being arranged, if any
     this.selectedId.set(id);
     this.dashboardTree.selectedFolderId.set(this.dashboards().find((d) => d.id === id)?.folderId ?? null);
   }
@@ -421,6 +501,7 @@ export class DashboardsComponent implements OnInit {
   // ---- charts ---------------------------------------------------------------------------------------------
 
   protected selectChart(id: string): void {
+    this.narrowOpen.set(false);
     this.selectedChartId.set(id);
     this.chartTree.selectedFolderId.set(this.charts().find((c) => c.id === id)?.folderId ?? null);
   }

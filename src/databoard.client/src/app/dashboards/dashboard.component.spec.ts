@@ -98,7 +98,7 @@ describe('DashboardComponent', () => {
   };
 
   const buttonByText = (text: string) =>
-    Array.from(el().querySelectorAll('button')).find((b) => b.textContent?.trim() === text) as HTMLButtonElement;
+    Array.from(el().querySelectorAll('button')).find((b) => b.textContent?.trim() === text || b.getAttribute('aria-label') === text) as HTMLButtonElement;
 
   beforeEach(() => {
     TestBed.configureTestingModule({
@@ -214,10 +214,86 @@ describe('DashboardComponent', () => {
     load('Viewer');
     http.expectOne(runUrl).flush({ widgets: [] });
 
-    const buttons = Array.from(el().querySelectorAll('button')).map((b) => b.textContent?.trim());
+    const buttons = Array.from(el().querySelectorAll('button')).map((b) => b.getAttribute('aria-label') ?? b.textContent?.trim());
     expect(buttons).toEqual(['Print / PDF', 'Apply filters', 'Clear']); // printing is not editing
     expect(el().textContent).not.toContain('Add a shared filter');
     expect(el().querySelector('.widget a')).toBeNull(); // no "Edit chart"
+  });
+
+  it('draws the buttons of the header as icons, each with a name for screen readers and a tooltip', () => {
+    load('Owner');
+    http.expectOne(runUrl).flush({ widgets: [] });
+
+    const buttons = Array.from(el().querySelectorAll('mat-card-header .actions button')) as HTMLButtonElement[];
+    expect(buttons.map((b) => b.getAttribute('aria-label'))).toEqual([
+      'Print / PDF', 'Edit layout', 'Preview', 'Refresh data', 'Share', 'Access', 'Duplicate', 'Export', 'Add to the dashboard', 'Background', 'Delete dashboard',
+    ]);
+    for (const b of buttons) {
+      expect(b.querySelector('app-icon svg path')).not.toBeNull(); // an icon...
+      expect(b.textContent?.trim()).toBe(''); // ...and no words
+    }
+  });
+
+  describe('preview', () => {
+    const labels = () => Array.from(el().querySelectorAll('mat-card-header .actions button')).map((b) => b.getAttribute('aria-label'));
+    const preview = () => (el().querySelector('button.preview') as HTMLButtonElement).click();
+
+    const open = () => {
+      load('Owner');
+      http.expectOne(runUrl).flush({
+        widgets: [
+          { widgetId: W_BAR, result: ok([['Auckland', 3]]), error: null, appliedFilters: [] },
+          { widgetId: W_TABLE, result: ok([['Auckland', 3]]), error: null, appliedFilters: [] },
+        ],
+      });
+      fixture.detectChanges();
+    };
+
+    it('shows the dashboard as a viewer sees it: nothing to change, only what a viewer can do', () => {
+      open();
+      expect(el().textContent).toContain('Add a shared filter');
+
+      preview();
+      fixture.detectChanges();
+
+      expect(labels()).toEqual(['Print / PDF', 'Back to editing']);
+      expect(el().textContent).toContain('Preview: as people who can only view it see it');
+      expect(el().textContent).not.toContain('Add a shared filter');
+      expect(el().querySelector('select, mat-select[aria-label="Reload interval"]')).toBeNull();
+      openMenu(0);
+      expect(menuItems().map((i) => i.textContent?.trim())).toEqual(['Download CSV', 'Download PNG']); // no Edit chart, no Remove
+    });
+
+    it('goes back to editing, and does not change or save anything on the way', () => {
+      open();
+
+      preview();
+      fixture.detectChanges();
+      (el().querySelector('button.exit-preview') as HTMLButtonElement).click();
+      fixture.detectChanges();
+
+      expect(labels()).toContain('Edit layout');
+      expect(labels()).not.toContain('Back to editing');
+      expect(el().textContent).toContain('Add a shared filter');
+      http.expectNone({ method: 'PUT', url: dashboardUrl });
+      http.expectNone(runUrl);
+    });
+
+    it('is offered to people who can edit, since a viewer already sees the preview', () => {
+      load('Viewer');
+      http.expectOne(runUrl).flush({ widgets: [] });
+
+      expect(el().querySelector('button.preview')).toBeNull();
+    });
+  });
+
+  it('shows a lock on the access button when the dashboard is limited', () => {
+    load('Owner', { ...dashboard(false), restricted: true });
+    http.expectOne(runUrl).flush({ widgets: [] });
+
+    const access = el().querySelector('button.access') as HTMLButtonElement;
+    expect(access.getAttribute('aria-label')).toBe('Access (limited)');
+    expect(access.classList).toContain('limited');
   });
 
   it('lets editors remove a chart from the dashboard by saving it without that widget', () => {
@@ -626,7 +702,7 @@ describe('DashboardComponent', () => {
       expect(config.data).toEqual({ orgId: ORG, kind: 'dashboard', id: DASH, name: 'Sales overview' });
       http.expectOne(dashboardUrl).flush({ ...dashboard(), restricted: true });
       fixture.detectChanges();
-      expect(el().querySelector('button.access')?.textContent?.trim()).toBe('Access (limited)');
+      expect(el().querySelector('button.access')?.getAttribute('aria-label')).toBe('Access (limited)');
     });
 
     it('does nothing when the access dialog is closed without saving', () => {

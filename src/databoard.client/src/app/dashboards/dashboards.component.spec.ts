@@ -1,9 +1,10 @@
+import { BreakpointObserver, BreakpointState } from '@angular/cdk/layout';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { MatDialog } from '@angular/material/dialog';
 import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
-import { of } from 'rxjs';
+import { BehaviorSubject, of } from 'rxjs';
 import { ECHARTS_LOADER } from '../charts/chart.component';
 import { DashboardsComponent } from './dashboards.component';
 import { answerConfirm } from '../shared/confirm.testing';
@@ -30,10 +31,12 @@ describe('DashboardsComponent', () => {
   let http: HttpTestingController;
   let routeParams: Record<string, string>;
   let queryParams: Record<string, string>;
+  /** What the page's screen-width query says: false is a wide screen, true a narrow one. */
+  let narrow$: BehaviorSubject<BreakpointState>;
   const el = () => fixture.nativeElement as HTMLElement;
 
   const item = (index: number) => el().querySelectorAll('button.item')[index] as HTMLButtonElement;
-  const button = (text: string) => Array.from(el().querySelectorAll('button')).find((b) => b.textContent?.trim() === text) as HTMLButtonElement;
+  const button = (text: string) => Array.from(el().querySelectorAll('button')).find((b) => b.textContent?.trim() === text || b.getAttribute('aria-label') === text) as HTMLButtonElement;
   const buttonLabels = () => Array.from(el().querySelectorAll('button, a.mat-mdc-button, a[mat-flat-button]')).map((b) => b.textContent?.trim());
   const toggle = (label: string) =>
     Array.from(el().querySelectorAll('mat-button-toggle button')).find((b) => b.textContent?.trim() === label) as HTMLButtonElement;
@@ -69,8 +72,10 @@ describe('DashboardsComponent', () => {
   beforeEach(() => {
     routeParams = { id: ORG };
     queryParams = {};
+    narrow$ = new BehaviorSubject<BreakpointState>({ matches: false, breakpoints: {} });
     TestBed.configureTestingModule({
       providers: [
+        { provide: BreakpointObserver, useValue: { observe: () => narrow$.asObservable() } },
         provideHttpClient(),
         provideHttpClientTesting(),
         provideRouter([]),
@@ -221,6 +226,136 @@ describe('DashboardsComponent', () => {
 
     expect(el().querySelector('app-dashboard')).toBeNull();
     expect(el().textContent).toContain('No dashboards yet.');
+  });
+
+  // ---- the list on the left can be folded ----
+
+  describe('folding the list', () => {
+    const drawer = () => el().querySelector('mat-sidenav') as HTMLElement;
+    const folded = () => !drawer().classList.contains('mat-drawer-opened');
+    const arrange = () => {
+      start('Editor', [summary('d1', 'Sales', 1, ['c1'])], [chart('c1', 'One')]);
+      item(0).click();
+      fixture.detectChanges();
+      answerDashboard('d1', 'Sales', [widget('w1', 'c1')], [chart('c1', 'One')]);
+      button('Edit layout').click();
+      fixture.detectChanges();
+    };
+
+    beforeEach(() => localStorage.removeItem('databoard.dashboardsListFolded'));
+    afterEach(() => localStorage.removeItem('databoard.dashboardsListFolded'));
+
+    it('is a drawer beside the dashboard, open to begin with, that closes and opens again', () => {
+      start('Viewer', [summary('d1', 'Sales')]);
+      expect(folded()).toBe(false);
+      expect(drawer().classList).toContain('mat-drawer-side');
+      expect(button('Show the list')).toBeUndefined(); // nothing to open while it is open
+
+      button('Hide the list').click();
+      fixture.detectChanges();
+      expect(folded()).toBe(true);
+      expect(button('Show the list')).toBeDefined();
+
+      button('Show the list').click();
+      fixture.detectChanges();
+      expect(folded()).toBe(false);
+      expect(button('Show the list')).toBeUndefined();
+    });
+
+    describe('on a narrow screen', () => {
+      beforeEach(() => narrow$.next({ matches: true, breakpoints: {} }));
+
+      it('is a drawer over the page, closed to begin with, whatever was remembered', () => {
+        start('Viewer', [summary('d1', 'Sales')]);
+
+        expect(drawer().classList).toContain('mat-drawer-over');
+        expect(folded()).toBe(true);
+        expect(localStorage.getItem('databoard.dashboardsListFolded')).toBeNull();
+      });
+
+      it('opens when asked, and closes again after something in it is chosen', () => {
+        start('Viewer', [summary('d1', 'Sales')]);
+
+        button('Show the list').click();
+        fixture.detectChanges();
+        expect(folded()).toBe(false);
+
+        item(0).click();
+        fixture.detectChanges();
+        answerDashboard('d1', 'Sales');
+        expect(folded()).toBe(true);
+      });
+
+      it('closes when the person closes it (Escape or the backdrop), and does not remember it', () => {
+        start('Viewer', [summary('d1', 'Sales')]);
+        button('Show the list').click();
+        fixture.detectChanges();
+
+        (fixture.debugElement.query((d) => d.name === 'mat-sidenav').componentInstance as { close(): void }).close();
+        fixture.detectChanges();
+
+        expect(folded()).toBe(true);
+        expect(localStorage.getItem('databoard.dashboardsListFolded')).toBeNull();
+      });
+    });
+
+    it('is remembered for the next visit', () => {
+      start('Viewer', [summary('d1', 'Sales')]);
+      button('Hide the list').click();
+      fixture.detectChanges();
+      fixture.destroy();
+
+      start('Viewer', [summary('d1', 'Sales')]);
+
+      expect(folded()).toBe(true);
+    });
+
+    it('folds while a dashboard is being arranged and opens again afterwards', () => {
+      arrange();
+      expect(folded()).toBe(true);
+
+      button('Cancel').click();
+      fixture.detectChanges();
+
+      expect(folded()).toBe(false);
+    });
+
+    it('does not remember the fold that arranging caused', () => {
+      arrange();
+      fixture.destroy();
+
+      start('Viewer', [summary('d1', 'Sales')]);
+
+      expect(folded()).toBe(false);
+    });
+
+    it('stays as the person left it when they open the list while arranging', () => {
+      arrange();
+
+      button('Show the list').click();
+      fixture.detectChanges();
+      expect(folded()).toBe(false);
+
+      button('Cancel').click();
+      fixture.detectChanges();
+      expect(folded()).toBe(false);
+    });
+
+    it('stays folded after arranging when the person had folded it already', () => {
+      start('Editor', [summary('d1', 'Sales', 1, ['c1'])], [chart('c1', 'One')]);
+      button('Hide the list').click();
+      fixture.detectChanges();
+      // the list is folded, so a dashboard is opened some other way (a link): select it directly
+      (fixture.componentInstance as unknown as { select(id: string): void }).select('d1');
+      fixture.detectChanges();
+      answerDashboard('d1', 'Sales', [widget('w1', 'c1')], [chart('c1', 'One')]);
+      button('Edit layout').click();
+      fixture.detectChanges();
+      button('Cancel').click();
+      fixture.detectChanges();
+
+      expect(folded()).toBe(true);
+    });
   });
 
   // ---- charts ----
@@ -458,7 +593,7 @@ describe('DashboardsComponent', () => {
     fixture.detectChanges();
     answerDashboard('d1', 'Sales');
 
-    (Array.from(el().querySelectorAll('button')).find((b) => b.textContent?.trim() === 'Duplicate') as HTMLButtonElement).click();
+    button('Duplicate').click();
     http.expectOne({ method: 'POST', url: `/api/organizations/${ORG}/dashboards/d1/duplicate` }).flush(full('d2', 'Copy of Sales'));
     http.expectOne({ method: 'GET', url: `/api/organizations/${ORG}/dashboards` }).flush([summary('d1', 'Sales'), summary('d2', 'Copy of Sales')]);
     fixture.detectChanges();

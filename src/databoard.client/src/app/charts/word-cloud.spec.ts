@@ -1,4 +1,4 @@
-import { CLOUD_HEIGHT, CLOUD_WIDTH, PlacedWord, fontSizeFor, layoutWords, textWidth, wordsOf } from './word-cloud';
+import { CLOUD_HEIGHT, CLOUD_WIDTH, PlacedWord, cloudBounds, cloudSize, fontSizeFor, layoutWords, textWidth, wordsOf } from './word-cloud';
 
 const many = (n: number) => Array.from({ length: n }, (_, i) => ({ text: `word${i}`, value: n - i }));
 
@@ -47,6 +47,43 @@ describe('fontSizeFor', () => {
 
   it('uses the middle size when all words weigh the same', () => {
     expect(fontSizeFor(5, 5, 5, 10, 50)).toBe(30);
+  });
+});
+
+describe('cloudSize', () => {
+  it('is the usual picture when the place is not known', () => {
+    expect(cloudSize(null)).toEqual({ width: CLOUD_WIDTH, height: CLOUD_HEIGHT });
+    expect(cloudSize(0)).toEqual({ width: CLOUD_WIDTH, height: CLOUD_HEIGHT });
+    expect(cloudSize(Number.NaN)).toEqual({ width: CLOUD_WIDTH, height: CLOUD_HEIGHT });
+  });
+
+  it('follows the shape of the place, within reason', () => {
+    expect(cloudSize(2)).toEqual({ width: 1000, height: CLOUD_HEIGHT });
+    expect(cloudSize(0.2).width).toBe(300); // a very tall place is not narrower than this
+    expect(cloudSize(20).width).toBe(2000); // nor a very wide one wider
+  });
+});
+
+describe('cloudBounds', () => {
+  it('has nothing to say about no words', () => {
+    expect(cloudBounds([])).toBeNull();
+  });
+
+  it('is the room the words take, plus a margin, and no more', () => {
+    const placed = layoutWords(many(30));
+    const bounds = cloudBounds(placed, 10)!;
+
+    expect(bounds.width).toBeLessThan(CLOUD_WIDTH);
+    expect(bounds.height).toBeLessThan(CLOUD_HEIGHT);
+    for (const w of placed) {
+      expect(w.x - w.boxWidth / 2).toBeGreaterThanOrEqual(bounds.x + 10 - 0.001);
+      expect(w.x + w.boxWidth / 2).toBeLessThanOrEqual(bounds.x + bounds.width - 10 + 0.001);
+      expect(w.y - w.boxHeight / 2).toBeGreaterThanOrEqual(bounds.y + 10 - 0.001);
+      expect(w.y + w.boxHeight / 2).toBeLessThanOrEqual(bounds.y + bounds.height - 10 + 0.001);
+    }
+    // Something touches each side, so nothing is wasted.
+    expect(Math.min(...placed.map((w) => w.x - w.boxWidth / 2))).toBeCloseTo(bounds.x + 10, 5);
+    expect(Math.max(...placed.map((w) => w.y + w.boxHeight / 2))).toBeCloseTo(bounds.y + bounds.height - 10, 5);
   });
 });
 
@@ -104,6 +141,19 @@ describe('layoutWords', () => {
     expect(Math.max(...sizes)).toBeLessThanOrEqual(30);
 
     expect(layoutWords(many(5), { minFontSize: 50, maxFontSize: 10 }).length).toBeGreaterThan(0);
+  });
+
+  it('places words in a picture of the shape it is given, and keeps them inside it', () => {
+    const wide = layoutWords(many(100), {}, 1600, 500);
+
+    expect(wide.length).toBeGreaterThan(40);
+    expect(wide.every((w) => w.x - w.boxWidth / 2 >= 0 && w.x + w.boxWidth / 2 <= 1600 && w.y - w.boxHeight / 2 >= 0 && w.y + w.boxHeight / 2 <= 500)).toBe(true);
+  });
+
+  it('spreads out to fill a wide picture instead of staying an oval in the middle', () => {
+    const bounds = cloudBounds(layoutWords(many(100), {}, 1600, 500))!;
+
+    expect(bounds.width / bounds.height).toBeGreaterThan(2); // the picture is 3.2 times as wide as tall
   });
 
   it('gives the same picture every time', () => {

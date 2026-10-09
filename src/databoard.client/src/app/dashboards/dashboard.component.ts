@@ -1,4 +1,4 @@
-import { Component, OnInit, WritableSignal, computed, inject, input, output, signal } from '@angular/core';
+import { Component, OnInit, WritableSignal, computed, effect, inject, input, output, signal } from '@angular/core';
 import { FormBuilder, FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
@@ -7,6 +7,7 @@ import { MatDialog } from '@angular/material/dialog';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatMenuModule } from '@angular/material/menu';
+import { MatTooltipModule } from '@angular/material/tooltip';
 import { ChartViewComponent } from '../charts/chart-view.component';
 import { WidgetMenuComponent } from './widget-menu.component';
 import { downloadJson } from '../charts/export';
@@ -47,6 +48,7 @@ import {
   WidgetResult,
 } from './dashboards.service';
 import { AppSelectComponent, SelectOption } from '../shared/app-select.component';
+import { IconComponent } from '../shared/icon.component';
 import { ConfirmService } from '../shared/confirm.service';
 
 /** In and Between take several values, typed as a comma-separated list; the rest take one. */
@@ -64,7 +66,7 @@ const MAX_UNDO = 100;
 @Component({
   selector: 'app-dashboard',
   host: { '(document:keydown)': 'onKey($event)' },
-  imports: [ReactiveFormsModule, RouterLink, MatCardModule, MatFormFieldModule, MatInputModule, MatMenuModule, MatButtonModule, AppSelectComponent, ChartViewComponent, DashboardGridComponent, WidgetMenuComponent, BackgroundLayerComponent, ImageWidgetComponent, MarkdownComponent, DashboardTabBarComponent, MoveToTabComponent],
+  imports: [ReactiveFormsModule, RouterLink, MatCardModule, MatFormFieldModule, MatInputModule, MatMenuModule, MatButtonModule, MatTooltipModule, IconComponent, AppSelectComponent, ChartViewComponent, DashboardGridComponent, WidgetMenuComponent, BackgroundLayerComponent, ImageWidgetComponent, MarkdownComponent, DashboardTabBarComponent, MoveToTabComponent],
   template: `
     <mat-card appearance="raised" class="detail">
     @if (dashboard(); as d) {
@@ -72,31 +74,36 @@ const MAX_UNDO = 100;
         <mat-card-title>{{ d.name }}</mat-card-title>
         <span class="actions no-print">
           @if (d.definition.widgets.length > 0 && !editingLayout()) {
-            <button mat-button type="button" class="print" (click)="print()">Print / PDF</button>
+            <button mat-icon-button type="button" class="print" aria-label="Print / PDF" matTooltip="Print / PDF" (click)="print()"><app-icon name="print" /></button>
           }
           @if (canEdit()) {
-            @if (editingLayout()) {
-              <button mat-button type="button" class="undo-layout" aria-label="Undo" title="Undo (Ctrl+Z)" [disabled]="busy() || past().length === 0" (click)="undo()">Undo</button>
-              <button mat-button type="button" class="redo-layout" aria-label="Redo" title="Redo (Ctrl+Y)" [disabled]="busy() || future().length === 0" (click)="redo()">Redo</button>
-              <button mat-flat-button type="button" class="save-layout" [disabled]="busy() || !layoutChanged()" (click)="saveLayout(d)">Save layout</button>
-              <button mat-button type="button" class="cancel-layout" [disabled]="busy()" (click)="cancelLayout()">Cancel</button>
+            @if (previewing()) {
+              <span class="preview-note" role="status">Preview: as people who can only view it see it</span>
+              <button mat-icon-button type="button" class="exit-preview" aria-label="Back to editing" matTooltip="Back to editing" (click)="previewing.set(false)"><app-icon name="edit" /></button>
+            } @else if (editingLayout()) {
+              <button mat-icon-button type="button" class="undo-layout" aria-label="Undo" matTooltip="Undo (Ctrl+Z)" [disabled]="busy() || past().length === 0" (click)="undo()"><app-icon name="undo" /></button>
+              <button mat-icon-button type="button" class="redo-layout" aria-label="Redo" matTooltip="Redo (Ctrl+Y)" [disabled]="busy() || future().length === 0" (click)="redo()"><app-icon name="redo" /></button>
+              <button mat-icon-button type="button" class="save-layout" aria-label="Save layout" matTooltip="Save layout" [disabled]="busy() || !layoutChanged()" (click)="saveLayout(d)"><app-icon name="save" /></button>
+              <button mat-icon-button type="button" class="cancel-layout" aria-label="Cancel" matTooltip="Cancel" [disabled]="busy()" (click)="cancelLayout()"><app-icon name="close" /></button>
             } @else {
               @if (d.definition.widgets.length > 0) {
-                <button mat-stroked-button type="button" class="edit-layout" (click)="editLayout()">Edit layout</button>
+                <button mat-icon-button type="button" class="edit-layout" aria-label="Edit layout" matTooltip="Edit layout" (click)="editLayout()"><app-icon name="dashboard" /></button>
               }
-              <button mat-button type="button" class="refresh" [disabled]="busy()" (click)="refresh()">Refresh data</button>
-              <button mat-stroked-button type="button" class="share" (click)="share(d)">Share</button>
-              <button mat-stroked-button type="button" class="access" (click)="editAccess(d)">{{ d.restricted ? 'Access (limited)' : 'Access' }}</button>
-              <button mat-stroked-button type="button" class="duplicate" [disabled]="busy()" (click)="duplicate(d)">Duplicate</button>
-              <button mat-stroked-button type="button" class="export" [disabled]="busy()" (click)="exportFile(d)">Export</button>
-              <button mat-stroked-button type="button" class="add-menu" aria-label="Add to the dashboard" [matMenuTriggerFor]="addMenu">Add ▾</button>
+              <button mat-icon-button type="button" class="preview" aria-label="Preview" matTooltip="Preview as a viewer" (click)="previewing.set(true)"><app-icon name="eye" /></button>
+              <button mat-icon-button type="button" class="refresh" aria-label="Refresh data" matTooltip="Refresh data" [disabled]="busy()" (click)="refresh()"><app-icon name="refresh" /></button>
+              <button mat-icon-button type="button" class="share" aria-label="Share" matTooltip="Share" (click)="share(d)"><app-icon name="share" /></button>
+              <button mat-icon-button type="button" class="access" [class.limited]="d.restricted" [attr.aria-label]="d.restricted ? 'Access (limited)' : 'Access'"
+                      [matTooltip]="d.restricted ? 'Who can see it (limited)' : 'Who can see it'" (click)="editAccess(d)"><app-icon [name]="d.restricted ? 'lock' : 'lockOpen'" /></button>
+              <button mat-icon-button type="button" class="duplicate" aria-label="Duplicate" matTooltip="Duplicate" [disabled]="busy()" (click)="duplicate(d)"><app-icon name="copy" /></button>
+              <button mat-icon-button type="button" class="export" aria-label="Export" matTooltip="Export to a file" [disabled]="busy()" (click)="exportFile(d)"><app-icon name="download" /></button>
+              <button mat-icon-button type="button" class="add-menu" aria-label="Add to the dashboard" matTooltip="Add a chart, picture or text" [matMenuTriggerFor]="addMenu"><app-icon name="add" /></button>
               <mat-menu #addMenu="matMenu">
                 <button mat-menu-item type="button" class="add-chart" (click)="addCharts(d)">Chart</button>
                 <button mat-menu-item type="button" class="add-picture" (click)="addPicture(d)">Picture</button>
                 <button mat-menu-item type="button" class="add-text" (click)="addText(d)">Text</button>
               </mat-menu>
-              <button mat-stroked-button type="button" class="background" (click)="editBackground(d)">Background</button>
-              <button mat-button type="button" (click)="removeDashboard(d)">Delete dashboard</button>
+              <button mat-icon-button type="button" class="background" aria-label="Background" matTooltip="Background picture" (click)="editBackground(d)"><app-icon name="background" /></button>
+              <button mat-icon-button type="button" class="delete-dashboard" aria-label="Delete dashboard" matTooltip="Delete dashboard" (click)="removeDashboard(d)"><app-icon name="delete" /></button>
             }
           }
         </span>
@@ -106,9 +113,9 @@ const MAX_UNDO = 100;
         <app-background-layer [load]="loadBackground(d, background.version)" [version]="background.version" [fit]="background.fit" [opacity]="background.opacity" />
       }
 
-      @if (canEdit() || d.definition.reloadSeconds) {
+      @if (editable() || d.definition.reloadSeconds) {
         <div class="reload-bar no-print">
-          @if (canEdit()) {
+          @if (editable()) {
             <span class="field">
               <span>Reload page every</span>
               <app-select ariaLabel="Reload interval" [options]="reloadOptions(d.definition.reloadSeconds)" [value]="'' + (d.definition.reloadSeconds ?? '')"
@@ -117,7 +124,7 @@ const MAX_UNDO = 100;
           }
           @if (d.definition.reloadSeconds) {
             <small class="status">
-              @if (!canEdit()) { Reloads every {{ reloadText(d.definition.reloadSeconds) }}. }
+              @if (!editable()) { Reloads every {{ reloadText(d.definition.reloadSeconds) }}. }
               @if (loadedAt(); as at) { Updated {{ at }}. }
             </small>
           }
@@ -125,9 +132,9 @@ const MAX_UNDO = 100;
       }
 
       @if (d.refresh; as schedule) {
-        @if (schedule.intervalMinutes || canEdit()) {
+        @if (schedule.intervalMinutes || editable()) {
           <div class="schedule no-print">
-            @if (canEdit()) {
+            @if (editable()) {
               <span class="field">
                 <span>Refresh every</span>
                 <app-select ariaLabel="Refresh schedule" [options]="refreshOptions(schedule.intervalMinutes)" [value]="'' + (schedule.intervalMinutes ?? '')"
@@ -136,7 +143,7 @@ const MAX_UNDO = 100;
             }
             @if (schedule.intervalMinutes) {
               <small class="status">
-                @if (!canEdit()) { Refreshed every {{ intervalText(schedule.intervalMinutes) }}. }
+                @if (!editable()) { Refreshed every {{ intervalText(schedule.intervalMinutes) }}. }
                 @if (schedule.lastUtc; as last) { Last refresh {{ age(last) }}. } @else { Not refreshed yet. }
               </small>
               @if (schedule.lastFailures > 0) {
@@ -159,7 +166,7 @@ const MAX_UNDO = 100;
                 <mat-hint>Separate values with commas</mat-hint>
               }
             </mat-form-field>
-            @if (canEdit()) {
+            @if (editable()) {
               <button mat-button type="button" class="remove-filter" (click)="removeFilter(d, filter)">Remove {{ filter.label }}</button>
             }
           }
@@ -170,11 +177,11 @@ const MAX_UNDO = 100;
 
       @if (d.definition.widgets.length === 0) {
         <p><em>This dashboard has no charts yet.</em>
-          @if (canEdit()) { Use <strong>Add</strong> and then <strong>Chart</strong> to put charts on it, or <a [routerLink]="['/organizations', orgId(), 'charts', 'new']">create a new chart</a>. }
+          @if (editable()) { Use <strong>Add</strong> and then <strong>Chart</strong> to put charts on it, or <a [routerLink]="['/organizations', orgId(), 'charts', 'new']">create a new chart</a>. }
         </p>
       }
 
-      <app-dashboard-tab-bar [tabs]="tabs()" [activeId]="activeTabId()" [canEdit]="canEdit()" [editing]="editingLayout()"
+      <app-dashboard-tab-bar [tabs]="tabs()" [activeId]="activeTabId()" [canEdit]="editable()" [editing]="editingLayout()"
                              (select)="selectTab($event)" (add)="addTab(d)" (rename)="renameTab(d, $event)" (remove)="removeTab(d, $event)"
                              (moveEarlier)="moveTab(d, $event, -1)" (moveLater)="moveTab(d, $event, 1)" />
 
@@ -185,7 +192,7 @@ const MAX_UNDO = 100;
             <mat-card appearance="outlined" class="widget picture">
               <app-image-widget [load]="loadWidgetImage(d, widget)" [version]="widget.imageKey ?? ''" [fit]="widget.imageFit ?? 'contain'"
                                 [alt]="widget.alt" [linkUrl]="widget.linkUrl" />
-              @if (canEdit() && !editingLayout()) {
+              @if (editable() && !editingLayout()) {
                 <span class="picture-actions no-print">
                   <app-move-to-tab [tabs]="tabs()" [current]="activeTabId()" (pick)="moveWidget(d, widget, $event)" />
                   <button mat-stroked-button type="button" class="edit-picture" (click)="editPicture(d, widget)">Edit picture</button>
@@ -196,7 +203,7 @@ const MAX_UNDO = 100;
           } @else if (widget.kind === 'Text') {
             <mat-card appearance="outlined" class="widget words">
               <app-markdown class="words-text" [text]="widget.text ?? ''" [align]="widget.textAlign ?? 'left'" [size]="widget.textSize ?? 'normal'" />
-              @if (canEdit() && !editingLayout()) {
+              @if (editable() && !editingLayout()) {
                 <span class="picture-actions no-print">
                   <app-move-to-tab [tabs]="tabs()" [current]="activeTabId()" (pick)="moveWidget(d, widget, $event)" />
                   <button mat-stroked-button type="button" class="edit-text" (click)="editText(d, widget)">Edit text</button>
@@ -210,7 +217,7 @@ const MAX_UNDO = 100;
               <mat-card-title class="sr-only">{{ chart.name }}</mat-card-title>
               @if (!editingLayout()) {
                 <div class="widget-actions no-print">
-                  <app-widget-menu [name]="chart.name" [result]="resultFor(widget.id)?.result ?? null" [type]="chart.type" [canEdit]="canEdit()"
+                  <app-widget-menu [name]="chart.name" [result]="resultFor(widget.id)?.result ?? null" [type]="chart.type" [canEdit]="editable()"
                                    [orgId]="orgId()" [chartId]="chart.id" [tabs]="tabs()" [current]="activeTabId()"
                                    (pick)="moveWidget(d, widget, $event)" (remove)="removeWidget(d, widget.id)" />
                 </div>
@@ -238,7 +245,7 @@ const MAX_UNDO = 100;
             } @else {
               <mat-card-header>
                 <mat-card-title>Chart not found</mat-card-title>
-                @if (canEdit() && !editingLayout()) {
+                @if (editable() && !editingLayout()) {
                   <span class="widget-actions no-print">
                     <button mat-button type="button" class="remove-widget" (click)="removeWidget(d, widget.id)">Remove</button>
                   </span>
@@ -252,7 +259,7 @@ const MAX_UNDO = 100;
         </ng-template>
       </app-dashboard-grid>
 
-      @if (canEdit()) {
+      @if (editable()) {
         <h3 class="no-print">Add a shared filter</h3>
         <form class="form-row no-print" [formGroup]="newFilterForm" (ngSubmit)="addFilter(d)">
           <mat-form-field>
@@ -288,7 +295,11 @@ const MAX_UNDO = 100;
     .detail { --mat-card-elevated-container-color: #fff; height: 100%; }
     mat-card-title { font: var(--mat-sys-title-medium); }
     mat-card-header { align-items: center; flex-wrap: wrap; gap: 0.5rem; }
-    .actions { margin-left: auto; display: flex; gap: 0.4rem; }
+    .actions { margin-left: auto; display: flex; flex-wrap: wrap; align-items: center; gap: 0.1rem; }
+    .preview-note { font: var(--mat-sys-label-medium); color: var(--mat-sys-primary); padding: 0 0.5rem; }
+    .actions .limited { color: var(--mat-sys-primary); }
+    .actions .save-layout:not([disabled]) { color: var(--mat-sys-primary); }
+    .actions .delete-dashboard { color: var(--mat-sys-error); }
     /* The chart's name is not shown; its menu floats over the top right corner of the widget. */
     .widget-actions { position: absolute; top: 0.25rem; right: 0.25rem; z-index: 2; display: flex; background: rgb(255 255 255 / 0.8); border-radius: 50%; }
     /* The background picture is a layer under everything in the content, so the content makes its own stacking context. */
@@ -327,7 +338,14 @@ export class DashboardComponent implements OnInit {
 
   readonly orgId = input.required<string>();
   readonly dashboardId = input.required<string>();
+  /** True while the layout is being arranged, so the page can give the dashboard the room (it folds its list away). */
+  readonly editingChange = output<boolean>();
+  /** Whether the person may change the dashboard (their role). */
   readonly canEdit = input(false);
+  /** Showing the dashboard as someone who can only view it sees it: nothing to change, nothing saved. */
+  protected readonly previewing = signal(false);
+  /** What the page offers to change: the role allows it and it is not a preview. */
+  protected readonly editable = computed(() => this.canEdit() && !this.previewing());
 
   /** The dashboard after it was saved (a chart or filter was added or removed), so the page can update its list. */
   readonly changed = output<Dashboard>();
@@ -403,6 +421,10 @@ export class DashboardComponent implements OnInit {
     const controls = this.newFilterForm.controls;
     controls.column.setValue(this.targetNames()[0] ?? '');
     controls.operator.setValue(target === 'Parameter' ? 'Eq' : 'In');
+  }
+
+  constructor() {
+    effect(() => this.editingChange.emit(this.editingLayout()));
   }
 
   ngOnInit(): void {

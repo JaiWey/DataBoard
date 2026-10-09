@@ -34,7 +34,7 @@ const PIE_POSITIONS: { value: LabelPosition; label: string }[] = [
   selector: 'app-chart-style-panel',
   imports: [MatCheckboxModule, AppSelectComponent, ColorFieldComponent, FontFieldsComponent],
   template: `
-    @if (titled()) {
+    @if (titled() || isCloud()) {
       <details class="section" open>
         <summary>Title{{ axes() ? ' and axes' : '' }}</summary>
         <div class="body">

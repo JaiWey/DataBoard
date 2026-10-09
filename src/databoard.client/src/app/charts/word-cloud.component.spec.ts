@@ -33,7 +33,40 @@ describe('WordCloudComponent', () => {
 
     expect(svg.getAttribute('role')).toBe('img');
     expect(svg.getAttribute('aria-label')).toBe('Word cloud');
-    expect(svg.getAttribute('viewBox')).toBe('0 0 800 500');
+  });
+
+  it('shows only the part of the picture the words fill, so there is no empty margin', () => {
+    const [x, y, width, height] = draw().querySelector('svg')!.getAttribute('viewBox')!.split(' ').map(Number);
+
+    expect(width).toBeGreaterThan(0);
+    expect(height).toBeGreaterThan(0);
+    expect(width).toBeLessThan(800); // four words do not need the whole 800 by 500 picture
+    expect(height).toBeLessThan(500);
+    for (const t of texts(draw())) {
+      const cx = Number(t.getAttribute('x'));
+      const cy = Number(t.getAttribute('y'));
+      expect(cx).toBeGreaterThan(x);
+      expect(cx).toBeLessThan(x + width);
+      expect(cy).toBeGreaterThan(y);
+      expect(cy).toBeLessThan(y + height);
+    }
+  });
+
+  it('shows the usual picture, not a broken one, when there is nothing to draw', () => {
+    expect(draw({}, [['', 5]]).querySelector('svg')!.getAttribute('viewBox')).toBe('0 0 800 500');
+  });
+
+  it('shows the title above the cloud, trimmed, and names the picture by it', () => {
+    const el = draw({ title: '  First names  ' });
+
+    expect(el.querySelector('.title')?.textContent?.trim()).toBe('First names');
+    expect(el.querySelector('svg')!.getAttribute('aria-label')).toBe('First names');
+  });
+
+  it('has no title line when there is no title, or only spaces', () => {
+    expect(draw().querySelector('.title')).toBeNull();
+    expect(draw({ title: '   ' }).querySelector('.title')).toBeNull();
+    expect(draw({ title: null }).querySelector('svg')!.getAttribute('aria-label')).toBe('Word cloud');
   });
 
   it('tells the weight, written the way the number format says, when pointing at a word', () => {

@@ -33,7 +33,7 @@ describe('ChartStylePanelComponent', () => {
       ['Scatter', ['Title and axes', 'Colours', 'Numbers', 'X axis', 'Y axis', 'Split lines', 'Margin', 'Labels', 'Legend']],
       ['Number', ['Numbers']],
       ['Table', ['Numbers', 'Table', 'Header', 'Body']],
-      ['WordCloud', ['Colours', 'Numbers', 'Word cloud']],
+      ['WordCloud', ['Title', 'Colours', 'Numbers', 'Word cloud']],
     ] as [ChartType, string[]][])('for a %s chart', (chartType, expected) => {
       create(chartType);
 
@@ -629,6 +629,15 @@ describe('ChartStylePanelComponent', () => {
       i.value = value;
       i.dispatchEvent(new Event('input'));
     };
+
+    it('has a title, and no axes to name', () => {
+      create('WordCloud', { title: 'First names' });
+
+      expect(field<HTMLInputElement>('Chart title').value).toBe('First names');
+      expect(field('Horizontal axis title')).toBeNull();
+      type('Chart title', 'Names by year');
+      expect(changes).toEqual([{ title: 'Names by year' }]);
+    });
 
     it('shows the usual choices to begin with', () => {
       create('WordCloud');
