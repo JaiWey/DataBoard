@@ -1,0 +1,26 @@
+# Copy to terraform.tfvars and change what you need. Everything has a default; with none of this, the free sslip.io name is used.
+
+# aws_region   = "ap-southeast-2"   # Sydney; Melbourne is ap-southeast-4
+# project_name = "databoard"
+
+# Your own domain (see infra/README.md for how to get one). Point its A record at the public_ip output, or give the zone
+# below to have Route 53 do it.
+# domain_name       = "databoard.example.com"
+# route53_zone_id   = "Z0123456789ABCDEFGHIJ"
+# letsencrypt_email = "you@example.com"
+
+# Sign in with GitHub (optional).
+# github_client_id     = "Iv1.xxxxxxxxxxxxxxxx"
+# github_client_secret = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+
+# An email warning when the month's cost nears this many dollars.
+# alert_email        = "you@example.com"
+# monthly_budget_usd = 5
+
+# The database stays inside the RDS free tier (a micro instance, one zone, 20 GB); terraform plan fails if these would leave it.
+# db_instance_class = "db.t4g.micro"      # or db.t3.micro, if your account's free tier lists that one
+# allow_paid_database = false             # true: go beyond the free tier on purpose
+
+# false (the default here): terraform destroy removes the database at once, with no snapshot. Set true for anything you want to keep:
+# deletion protection is on and a final snapshot is taken if it is ever destroyed.
+# protect_data = false

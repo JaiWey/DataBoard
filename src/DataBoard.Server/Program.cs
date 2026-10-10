@@ -7,6 +7,7 @@ using DataBoard.Infrastructure.Persistence;
 using DataBoard.Server.Infrastructure;
 using DataBoard.Server.Mcp;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
@@ -18,6 +19,15 @@ builder.Services.AddControllers()
 builder.Services.AddOpenApi();
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
+
+// The keys that protect stored secrets (data source passwords, share links) are kept in this folder when one is named, so
+// they survive a restart or a new container. Without it the framework picks its own place, which a container loses.
+if (builder.Configuration["DataProtection:KeysPath"] is { Length: > 0 } keysPath)
+{
+	builder.Services.AddDataProtection()
+		.PersistKeysToFileSystem(new DirectoryInfo(keysPath))
+		.SetApplicationName("DataBoard");
+}
 
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUser, CurrentUser>();
@@ -101,12 +111,13 @@ var app = builder.Build();
 
 app.UseExceptionHandler();
 
-if (app.Environment.IsDevelopment())
+// Migrations run on start in development, and elsewhere only when asked for (Database:MigrateOnStartup=true): a deployment
+// with one server can turn it on; with several, run the migrations as a step of their own. Demo data is development only.
+if (app.Environment.IsDevelopment() || app.Configuration.GetValue<bool>("Database:MigrateOnStartup"))
 {
-	// Convenience for local development only; production migrations should be an explicit deployment step.
 	using var scope = app.Services.CreateScope();
 	await scope.ServiceProvider.GetRequiredService<AppDbContext>().Database.MigrateAsync();
-	await DevelopmentSeeder.SeedAsync(scope.ServiceProvider, app.Logger);
+	if (app.Environment.IsDevelopment()) await DevelopmentSeeder.SeedAsync(scope.ServiceProvider, app.Logger);
 }
 
 app.UseDefaultFiles();

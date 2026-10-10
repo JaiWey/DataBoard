@@ -13,7 +13,9 @@
 **/*.jfm
 **/azds.yaml
 **/bin
-**/charts
+/charts
+# (only the Helm charts folder at the top: a **/charts rule would also drop the app's own src/.../charts folder from the build)
+infra
 **/docker-compose*
 **/Dockerfile*
 **/node_modules

@@ -1,6 +1,9 @@
-# Local development database. Not for production.
-# Start:  docker compose up -d
-# Stop:   docker compose down        (add -v to also delete the data volume)
+# Runs DataBoard locally: the PostgreSQL database and the application (the Angular app is built into it).
+# Start:  docker compose up --build        then open http://localhost:8080
+#         (sign in with the demo user dev@databoard.local / dev-password-123, created on first start)
+# Stop:   docker compose down              (add -v to also delete the database and uploaded data)
+# Only the database, to run the application from Visual Studio or `dotnet run`:  docker compose up -d postgres
+# Local use only: the demo user, the default passwords and the development key below are not for production.
 services:
   postgres:
     image: postgres:17
@@ -19,5 +22,37 @@ services:
       timeout: 3s
       retries: 10
 
+  app:
+    build:
+      context: .
+      dockerfile: src/DataBoard.Server/Dockerfile
+    container_name: databoard-app
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "${APP_PORT:-8080}:8080"
+    environment:
+      # Development: applies the migrations and creates the demo user and organization on start (see appsettings.Development.json),
+      # and lets sign-in cookies work over plain http://localhost.
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_URLS: http://+:8080
+      ConnectionStrings__Default: Host=postgres;Port=5432;Database=databoard;Username=databoard;Password=${POSTGRES_PASSWORD:-databoard_dev}
+      Jwt__Key: ${JWT_KEY:-local-development-key-change-me-0123456789abcdef0123456789abcdef}
+      Uploads__Path: /data/uploads
+      DataProtection__KeysPath: /data/keys
+      # Optional "Continue with GitHub" (callback http://localhost:8080/api/auth/github/callback):
+      Authentication__GitHub__ClientId: ${GITHUB_CLIENT_ID:-}
+      Authentication__GitHub__ClientSecret: ${GITHUB_CLIENT_SECRET:-}
+    volumes:
+      - databoard-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080 && printf \"GET /api/health HTTP/1.0\\r\\n\\r\\n\" >&3 && grep -q \" 200 \" <&3'"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
 volumes:
   databoard-pgdata:
+  databoard-data:
