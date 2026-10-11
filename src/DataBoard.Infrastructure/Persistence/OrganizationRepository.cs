@@ -29,6 +29,9 @@ internal sealed class OrganizationRepository(AppDbContext db) : IOrganizationRep
     public async Task<IReadOnlyDictionary<Guid, string>> GetNamesAsync(IReadOnlyCollection<Guid> organizationIds, CancellationToken ct = default) =>
         await db.Organizations.AsNoTracking().Where(o => organizationIds.Contains(o.Id)).ToDictionaryAsync(o => o.Id, o => o.Name, ct);
 
+    public Task<bool> IsDefaultAsync(Guid organizationId, CancellationToken ct = default) =>
+        db.Organizations.AsNoTracking().AnyAsync(o => o.Id == organizationId && o.IsDefault, ct);
+
     public Task<int> CountOwnersAsync(Guid organizationId, CancellationToken ct = default) =>
         db.OrganizationMembers.CountAsync(m => m.OrganizationId == organizationId && m.Role == OrganizationRole.Owner, ct);
 
@@ -38,8 +41,9 @@ internal sealed class OrganizationRepository(AppDbContext db) : IOrganizationRep
         await db.OrganizationMembers
             .AsNoTracking()
             .Where(m => m.UserId == userId)
-            .Join(db.Organizations, m => m.OrganizationId, o => o.Id, (m, o) => new { o.Id, o.Name, m.Role })
-            .OrderBy(x => x.Name)
-            .Select(x => new OrganizationSummary(x.Id, x.Name, x.Role))
+            .Join(db.Organizations, m => m.OrganizationId, o => o.Id, (m, o) => new { o.Id, o.Name, m.Role, o.IsDefault })
+            .OrderByDescending(x => x.IsDefault)
+            .ThenBy(x => x.Name)
+            .Select(x => new OrganizationSummary(x.Id, x.Name, x.Role, x.IsDefault))
             .ToListAsync(ct);
 }

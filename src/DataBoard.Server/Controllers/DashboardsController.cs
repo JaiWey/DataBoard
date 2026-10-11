@@ -171,6 +171,18 @@ public class DashboardsController : ControllerBase
 		return Created($"api/organizations/{organizationId}/dashboards/{copy.Id}", copy);
 	}
 
+	/// <summary>
+	/// Copies the dashboard, its charts and their datasets into another organization the person belongs to. Data sources are
+	/// found there by name; what cannot be made without one is left out and listed in the answer. Editors and Owners in both.
+	/// </summary>
+	[HttpPost("{dashboardId:guid}/copy-to/{targetOrganizationId:guid}")]
+	public async Task<ActionResult<CopyDashboardResult>> CopyToOrganization(
+		Guid organizationId, Guid dashboardId, Guid targetOrganizationId, [FromServices] CopyDashboardToOrganizationHandler handler, CancellationToken ct)
+	{
+		var result = await handler.HandleAsync(organizationId, dashboardId, targetOrganizationId, ct);
+		return Created($"api/organizations/{targetOrganizationId}/dashboards/{result.Dashboard.Id}", result);
+	}
+
 	/// <summary>Files the dashboard in a folder (folderId null is the top level). Editors and Owners.</summary>
 	[HttpPut("{dashboardId:guid}/folder")]
 	public async Task<ActionResult<DashboardDto>> Move(

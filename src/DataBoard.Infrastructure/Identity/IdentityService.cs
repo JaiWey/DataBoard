@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using DataBoard.Application.Abstractions;
 using DataBoard.Application.Common;
 using DataBoard.Application.Identity;
+using DataBoard.Domain.Organizations;
 using DataBoard.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -62,7 +63,37 @@ internal sealed class IdentityService(
             throw ToValidation(errors);
         }
 
+        await JoinDefaultOrganizationAsync(user.Id, ct);
         return ToInfo(user);
+    }
+
+    /// <summary>
+    /// Everyone belongs to the default organization from the start. It is made when the first user arrives, and that
+    /// user owns it; everyone after joins as an Editor (an Owner can change that on the members page).
+    /// </summary>
+    private async Task JoinDefaultOrganizationAsync(Guid userId, CancellationToken ct)
+    {
+        var now = clock.UtcNow;
+        var organization = await db.Organizations.SingleOrDefaultAsync(o => o.IsDefault, ct);
+        if (organization is null)
+        {
+            organization = Organization.CreateDefault(now);
+            db.Organizations.Add(organization);
+            try
+            {
+                await db.SaveChangesAsync(ct);
+            }
+            catch (DbUpdateException)
+            {
+                // Someone else made it a moment ago (the database allows only one): use theirs.
+                db.Entry(organization).State = EntityState.Detached;
+                organization = await db.Organizations.SingleAsync(o => o.IsDefault, ct);
+            }
+        }
+
+        var hasOwner = await db.OrganizationMembers.AnyAsync(m => m.OrganizationId == organization.Id && m.Role == OrganizationRole.Owner, ct);
+        db.OrganizationMembers.Add(OrganizationMember.Create(organization.Id, userId, hasOwner ? OrganizationRole.Editor : OrganizationRole.Owner, now));
+        await db.SaveChangesAsync(ct);
     }
 
     public async Task<AuthSession> LoginAsync(string email, string password, CancellationToken ct = default)
@@ -136,6 +167,7 @@ internal sealed class IdentityService(
             await users.DeleteAsync(user);
             throw new UnauthorizedException(Refused);
         }
+        await JoinDefaultOrganizationAsync(user.Id, ct);
         return await IssueSessionAsync(user, ct);
     }
 

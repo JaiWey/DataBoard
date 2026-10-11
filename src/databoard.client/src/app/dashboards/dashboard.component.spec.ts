@@ -5,6 +5,7 @@ import { MatDialog } from '@angular/material/dialog';
 import { provideRouter } from '@angular/router';
 import { of } from 'rxjs';
 import { ECHARTS_LOADER } from '../charts/chart.component';
+import { OrgContext } from '../organizations/org-context.service';
 import { DashboardComponent, parseFilterInput } from './dashboard.component';
 import { answerConfirm } from '../shared/confirm.testing';
 import { QUIET_REQUEST } from '../shared/loading.service';
@@ -1729,6 +1730,23 @@ describe('DashboardComponent', () => {
       open('Viewer');
       expect(buttonByText('Duplicate')).toBeUndefined();
       expect(buttonByText('Export')).toBeUndefined();
+    });
+
+    it('offers Copy to another organization only to someone with another organization to copy into', () => {
+      const orgs = TestBed.inject(OrgContext);
+      open('Editor');
+      expect(buttonByText('Copy to another organization')).toBeUndefined();
+
+      orgs.organizations.set([
+        { id: ORG, name: 'Here', role: 'Owner' },
+        { id: 'viewer-org', name: 'Read only', role: 'Viewer' },
+      ]);
+      fixture.detectChanges();
+      expect(buttonByText('Copy to another organization')).toBeUndefined(); // a Viewer there cannot receive it
+
+      orgs.organizations.update((all) => [...all, { id: 'other-org', name: 'Partner', role: 'Editor' }]);
+      fixture.detectChanges();
+      expect(buttonByText('Copy to another organization')).toBeDefined();
     });
 
     it('shows them to an editor', () => {

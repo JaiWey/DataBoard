@@ -440,12 +440,21 @@ namespace DataBoard.Infrastructure.Persistence.Migrations
                     b.Property<DateTime>("CreatedUtc")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<bool>("IsDefault")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("IsDefault")
+                        .IsUnique()
+                        .HasFilter("\"IsDefault\"");
 
                     b.ToTable("organizations", (string)null);
                 });

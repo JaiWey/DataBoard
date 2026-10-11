@@ -13,6 +13,9 @@ internal sealed class OrganizationConfiguration : IEntityTypeConfiguration<Organ
         builder.ToTable("organizations");
         builder.HasKey(o => o.Id);
         builder.Property(o => o.Name).IsRequired().HasMaxLength(Organization.MaxNameLength);
+        builder.Property(o => o.IsDefault).HasDefaultValue(false);
+        // At most one organization is the default.
+        builder.HasIndex(o => o.IsDefault).IsUnique().HasFilter("\"IsDefault\"");
     }
 }
 

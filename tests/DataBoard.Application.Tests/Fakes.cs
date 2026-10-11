@@ -171,6 +171,9 @@ internal sealed class FakeOrganizationRepo : IOrganizationRepository
     public Task<IReadOnlyDictionary<Guid, string>> GetNamesAsync(IReadOnlyCollection<Guid> organizationIds, CancellationToken ct = default) =>
         Task.FromResult<IReadOnlyDictionary<Guid, string>>(Organizations.Where(o => organizationIds.Contains(o.Id)).ToDictionary(o => o.Id, o => o.Name));
 
+    public Task<bool> IsDefaultAsync(Guid organizationId, CancellationToken ct = default) =>
+        Task.FromResult(Organizations.Any(o => o.Id == organizationId && o.IsDefault));
+
     public Task<int> CountOwnersAsync(Guid organizationId, CancellationToken ct = default) =>
         Task.FromResult(Members.Count(m => m.OrganizationId == organizationId && m.Role == OrganizationRole.Owner));
 
@@ -179,7 +182,8 @@ internal sealed class FakeOrganizationRepo : IOrganizationRepository
     public Task<IReadOnlyList<OrganizationSummary>> ListForUserAsync(Guid userId, CancellationToken ct = default) =>
         Task.FromResult<IReadOnlyList<OrganizationSummary>>(
             Members.Where(m => m.UserId == userId)
-                .Select(m => new OrganizationSummary(m.OrganizationId, Organizations.Single(o => o.Id == m.OrganizationId).Name, m.Role))
+                .Select(m => new OrganizationSummary(m.OrganizationId, Organizations.Single(o => o.Id == m.OrganizationId).Name, m.Role,
+                    Organizations.Single(o => o.Id == m.OrganizationId).IsDefault))
                 .ToList());
 }
 

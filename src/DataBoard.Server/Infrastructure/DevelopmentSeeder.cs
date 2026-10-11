@@ -41,7 +41,8 @@ public static class DevelopmentSeeder
 			logger.LogWarning("Seeded development user {Email}. Never enable seeding outside local development.", options.Email);
 		}
 
-		if ((await organizations.ListForUserAsync(userId.Value, ct)).Count == 0)
+		// Everyone is in the default organization already; the demo one is made as well, for the demo data to live in.
+		if ((await organizations.ListForUserAsync(userId.Value, ct)).All(o => o.IsDefault))
 		{
 			var now = clock.UtcNow;
 			var org = Organization.Create(options.OrganizationName, now);

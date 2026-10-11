@@ -17,6 +17,7 @@ interface Organization {
   id: string;
   name: string;
   role: MemberRole;
+  isDefault?: boolean;
 }
 
 /**
@@ -30,6 +31,9 @@ interface Organization {
   template: `
     <h2>{{ organization()?.name }} <small>members</small></h2>
     <p><a [routerLink]="['/organizations']">Back to organizations</a></p>
+    @if (organization()?.isDefault) {
+      <p class="hint">This is the default organization: everyone who signs up joins it, so nobody can leave or be removed.</p>
+    }
 
     <mat-card appearance="raised">
       <mat-card-content>
@@ -56,7 +60,9 @@ interface Organization {
                   </td>
                   <td>{{ m.joinedUtc | date: 'mediumDate' }}</td>
                   <td class="actions">
-                    @if (isMe(m)) {
+                    @if (organization()?.isDefault) {
+                      <!-- everyone belongs to the default organization: nobody leaves it or is removed from it -->
+                    } @else if (isMe(m)) {
                       <button mat-button type="button" class="leave" [disabled]="busy() || lastOwner(m)"
                               [title]="lastOwner(m) ? 'Make someone else an Owner first.' : ''" (click)="remove(m)">Leave</button>
                     } @else if (isOwner()) {

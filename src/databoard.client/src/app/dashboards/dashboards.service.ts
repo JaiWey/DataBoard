@@ -248,6 +248,17 @@ export interface ImportResult {
   missingCharts: string[];
 }
 
+/** What copying a dashboard into another organization did. */
+export interface CopyResult {
+  dashboard: Dashboard;
+  newDatasets: number;
+  newCharts: number;
+  /** Data sources the other organization lacks, by name. */
+  missingDataSources: string[];
+  /** Charts left out because their data source is missing there. */
+  skippedCharts: string[];
+}
+
 /** Ids are assigned by the server; a new widget or filter is sent with the empty id. */
 export const NEW_ID = '00000000-0000-0000-0000-000000000000';
 
@@ -322,6 +333,11 @@ export class DashboardsService {
   /** Makes a dashboard from an exported file; charts are found by name. Editors and owners. */
   importPackage(orgId: string, pkg: DashboardPackage, options: { name?: string | null; folderId?: string | null } = {}): Observable<ImportResult> {
     return this.http.post<ImportResult>(this.url(orgId, '/import'), { package: pkg, name: options.name ?? null, folderId: options.folderId ?? null });
+  }
+
+  /** A copy in another organization of the person, with its charts and datasets; data sources are found there by name. */
+  copyToOrganization(orgId: string, id: string, targetOrgId: string): Observable<CopyResult> {
+    return this.http.post<CopyResult>(this.url(orgId, `/${id}/copy-to/${targetOrgId}`), {});
   }
 
   /** A copy in the same organization. */

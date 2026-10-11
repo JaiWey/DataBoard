@@ -5,6 +5,8 @@ export interface Organization {
   id: string;
   name: string;
   role: 'Viewer' | 'Editor' | 'Owner';
+  /** The organization everyone belongs to; it cannot be left. */
+  isDefault?: boolean;
 }
 
 const STORAGE_KEY = 'databoard.organization';
@@ -35,10 +37,10 @@ export class OrgContext {
   readonly loaded = signal(false);
   private readonly selectedId = signal<string | null>(readStored());
 
-  /** The chosen organization if the user still belongs to it, otherwise their first one. */
+  /** The chosen organization if the user still belongs to it, otherwise the default one, otherwise their first. */
   readonly current = computed(() => {
     const all = this.organizations();
-    return all.find((o) => o.id === this.selectedId()) ?? all[0] ?? null;
+    return all.find((o) => o.id === this.selectedId()) ?? all.find((o) => o.isDefault) ?? all[0] ?? null;
   });
 
   load(): void {

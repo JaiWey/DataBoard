@@ -243,7 +243,7 @@ public class DashboardShareRestrictedApiTests(ApiFactory factory)
         var created = await ReadAsync(await f.Owner.PostAsJsonAsync(Shares(f),
             new { expiresInDays = 7, organizationIds = new[] { f.Org, f.Org, f.OtherOrg } }));
 
-        Assert.Equal([f.Org, f.OtherOrg], created.GetProperty("organizationIds").EnumerateArray().Select(x => x.GetGuid()).Order());
+        Assert.Equal(new[] { f.Org, f.OtherOrg }.Order(), created.GetProperty("organizationIds").EnumerateArray().Select(x => x.GetGuid()).Order());
         var listed = (await ReadAsync(await f.Owner.GetAsync(Shares(f))))[0].GetProperty("organizationIds");
         Assert.Equal(2, listed.GetArrayLength());
     }

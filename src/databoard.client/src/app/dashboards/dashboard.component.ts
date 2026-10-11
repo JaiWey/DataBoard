@@ -27,7 +27,9 @@ import { ImageWidgetDialogComponent, ImageWidgetDialogData } from './image-widge
 import { TextWidgetDialogComponent, TextWidgetDialogData } from './text-widget-dialog.component';
 import { DashboardGridComponent } from './dashboard-grid.component';
 import { AccessDialogComponent, AccessDialogData } from './access-dialog.component';
+import { CopyDashboardDialogComponent, CopyDashboardDialogData } from './copy-dashboard-dialog.component';
 import { ShareDialogComponent, ShareDialogData } from './share-dialog.component';
+import { OrgContext } from '../organizations/org-context.service';
 import { REFRESH_CHOICES, ago, intervalLabel } from '../shared/relative-time';
 import { autoReload, clock, reloadChoices, reloadLabel } from '../shared/auto-reload';
 import { LayoutItem, sameLayout } from './dashboard-layout';
@@ -95,6 +97,9 @@ const MAX_UNDO = 100;
               <button mat-icon-button type="button" class="access" [class.limited]="d.restricted" [attr.aria-label]="d.restricted ? 'Access (limited)' : 'Access'"
                       [matTooltip]="d.restricted ? 'Who can see it (limited)' : 'Who can see it'" (click)="editAccess(d)"><app-icon [name]="d.restricted ? 'lock' : 'lockOpen'" /></button>
               <button mat-icon-button type="button" class="duplicate" aria-label="Duplicate" matTooltip="Duplicate" [disabled]="busy()" (click)="duplicate(d)"><app-icon name="copy" /></button>
+              @if (copyTargets().length > 0) {
+                <button mat-icon-button type="button" class="copy-to" aria-label="Copy to another organization" matTooltip="Copy to another organization" [disabled]="busy()" (click)="copyToOrganization(d)"><app-icon name="copyTo" /></button>
+              }
               <button mat-icon-button type="button" class="export" aria-label="Export" matTooltip="Export to a file" [disabled]="busy()" (click)="exportFile(d)"><app-icon name="download" /></button>
               <button mat-icon-button type="button" class="add-menu" aria-label="Add to the dashboard" matTooltip="Add a chart, picture or text" [matMenuTriggerFor]="addMenu"><app-icon name="add" /></button>
               <mat-menu #addMenu="matMenu">
@@ -334,6 +339,7 @@ export class DashboardComponent implements OnInit {
   private readonly datasetsApi = inject(DatasetsService);
   private readonly chartsApi = inject(ChartsService);
   private readonly dialog = inject(MatDialog);
+  private readonly orgs = inject(OrgContext);
   private readonly fb = inject(FormBuilder);
 
   readonly orgId = input.required<string>();
@@ -498,6 +504,18 @@ export class DashboardComponent implements OnInit {
           error: () => this.deleted.emit(d.id),
         });
       });
+  }
+
+  /** The organizations a copy can go to: where the person is an Editor or Owner, other than this one. */
+  protected readonly copyTargets = computed(() =>
+    this.orgs.organizations().filter((o) => o.id !== this.orgId() && o.role !== 'Viewer').map((o) => ({ id: o.id, name: o.name })));
+
+  protected copyToOrganization(d: Dashboard): void {
+    this.dialog.open<CopyDashboardDialogComponent, CopyDashboardDialogData>(CopyDashboardDialogComponent, {
+      data: { orgId: this.orgId(), dashboardId: d.id, dashboardName: d.name, targets: this.copyTargets() },
+      width: '32rem',
+      maxWidth: '95vw',
+    });
   }
 
   protected share(d: Dashboard): void {

@@ -90,6 +90,7 @@ public static class DependencyInjection
         services.AddScoped<ExportDashboardHandler>();
         services.AddScoped<ImportDashboardHandler>();
         services.AddScoped<DuplicateDashboardHandler>();
+        services.AddScoped<CopyDashboardToOrganizationHandler>();
         services.AddScoped<ReplaceImageWidgetHandler>();
         services.AddScoped<GetImageWidgetHandler>();
         services.AddScoped<GetSharedImageWidgetHandler>();

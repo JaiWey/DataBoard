@@ -124,8 +124,10 @@ public class McpToolsTests(ApiFactory factory)
         var orgs = Json_(await CallAsync(client, "list_organizations", new { }));
         var datasets = await CallAsync(client, "list_datasets", new { organizationId = s.Org });
 
-        Assert.Equal(s.Org, orgs[0].GetProperty("id").GetGuid());
-        Assert.Equal("Owner", orgs[0].GetProperty("role").GetString());
+        // Everyone also belongs to the default organization, which comes first.
+        var mine = orgs.EnumerateArray().Single(o => o.GetProperty("id").GetGuid() == s.Org);
+        Assert.Equal("Owner", mine.GetProperty("role").GetString());
+        Assert.True(orgs[0].GetProperty("isDefault").GetBoolean());
         var orders = Json_(datasets)[0];
         Assert.Equal("Orders", orders.GetProperty("name").GetString());
         var price = orders.GetProperty("columns").EnumerateArray().Single(c => c.GetProperty("name").GetString() == "price");
@@ -346,7 +348,8 @@ public class McpToolsTests(ApiFactory factory)
         var orgs = Json_(await CallAsync(client, "list_organizations", new { }));
         var datasets = await CallAsync(client, "list_datasets", new { organizationId = s.Org });
 
-        Assert.Equal(0, orgs.GetArrayLength());
+        // Only the default organization every user belongs to, never the owner's.
+        Assert.All(orgs.EnumerateArray(), o => Assert.True(o.GetProperty("isDefault").GetBoolean()));
         Assert.True(datasets.IsError);
         Assert.Contains("Organization not found", TextOf(datasets)); // not "forbidden": it does not even say it exists
     }

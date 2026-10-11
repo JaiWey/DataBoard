@@ -205,6 +205,19 @@ describe('MembersComponent', () => {
     expect(navigate).toHaveBeenCalledWith(['/organizations']);
   });
 
+  it('offers no Leave or Remove in the default organization, which everyone belongs to', () => {
+    fixture = TestBed.createComponent(MembersComponent);
+    fixture.detectChanges();
+    http.expectOne('/api/organizations').flush([{ id: ORG, name: 'Default', role: 'Owner', isDefault: true }]);
+    http.expectOne(base).flush(everyone());
+    fixture.detectChanges();
+
+    expect(button('Me', 'leave')).toBeNull();
+    expect(button('Bea', 'remove')).toBeNull();
+    expect(el().textContent).toContain('default organization');
+    expect(roleDisabled('Bea')).toBe(false); // roles can still be changed
+  });
+
   it('adds a member by email with a role, and clears the email afterwards', () => {
     open('Owner');
     const email = el().querySelector('input[aria-label="Member email"]') as HTMLInputElement;

@@ -2,7 +2,7 @@ using DataBoard.Domain.Organizations;
 
 namespace DataBoard.Application.Organizations;
 
-public sealed record OrganizationSummary(Guid Id, string Name, OrganizationRole Role);
+public sealed record OrganizationSummary(Guid Id, string Name, OrganizationRole Role, bool IsDefault);
 
 public interface IOrganizationRepository
 {
@@ -14,6 +14,7 @@ public interface IOrganizationRepository
     Task<OrganizationMember?> GetMemberForUpdateAsync(Guid organizationId, Guid userId, CancellationToken ct = default);
     /// <summary>The names of these organizations. Callers decide who may see them.</summary>
     Task<IReadOnlyDictionary<Guid, string>> GetNamesAsync(IReadOnlyCollection<Guid> organizationIds, CancellationToken ct = default);
+    Task<bool> IsDefaultAsync(Guid organizationId, CancellationToken ct = default);
     Task<int> CountOwnersAsync(Guid organizationId, CancellationToken ct = default);
     void RemoveMember(OrganizationMember member);
     Task<IReadOnlyList<OrganizationSummary>> ListForUserAsync(Guid userId, CancellationToken ct = default);

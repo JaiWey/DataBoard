@@ -44,8 +44,8 @@ cd ../..
 ./infra/deploy.ps1                                  # builds the application, uploads it, starts it (a few minutes)
 ```
 
-Then open the `app_url` that Terraform printed (`terraform -chdir=infra/terraform output app_url`), register, and create
-an organization. The first start applies the database migrations by itself.
+Then open the `app_url` that Terraform printed (`terraform -chdir=infra/terraform output app_url`), register, and you are in
+the shared **Default** organization (the first account to register owns it; everyone after joins as an Editor). The first start applies the database migrations by itself.
 
 To update the application later, run `./infra/deploy.ps1` again. For a Graviton (`t4g`) server, set `architecture = "arm64"`
 in `terraform.tfvars` and run `./infra/deploy.ps1 -Runtime linux-arm64`.

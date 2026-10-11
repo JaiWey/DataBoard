@@ -11,6 +11,7 @@ interface Organization {
   id: string;
   name: string;
   role: 'Viewer' | 'Editor' | 'Owner';
+  isDefault?: boolean;
 }
 
 @Component({
@@ -27,7 +28,7 @@ interface Organization {
           <mat-card appearance="outlined">
             <mat-card-header>
               <mat-card-title>{{ org.name }}</mat-card-title>
-              <mat-card-subtitle>{{ org.role }}</mat-card-subtitle>
+              <mat-card-subtitle>{{ org.role }}@if (org.isDefault) { · Default }</mat-card-subtitle>
             </mat-card-header>
             <mat-card-actions>
               <a mat-button [routerLink]="['/organizations', org.id]">Data sources</a>

@@ -7,7 +7,7 @@ namespace DataBoard.Application.Organizations;
 
 public sealed record CreateOrganizationRequest(string Name);
 public sealed record AddMemberRequest(string Email, OrganizationRole Role);
-public sealed record OrganizationDto(Guid Id, string Name, OrganizationRole Role);
+public sealed record OrganizationDto(Guid Id, string Name, OrganizationRole Role, bool IsDefault);
 
 public sealed class CreateOrganizationHandler(
     IOrganizationRepository organizations,
@@ -34,7 +34,7 @@ public sealed class CreateOrganizationHandler(
         await organizations.AddAsync(organization, owner, ct);
         await unitOfWork.SaveChangesAsync(ct);
 
-        return new OrganizationDto(organization.Id, organization.Name, OrganizationRole.Owner);
+        return new OrganizationDto(organization.Id, organization.Name, OrganizationRole.Owner, false);
     }
 }
 
@@ -44,7 +44,7 @@ public sealed class ListMyOrganizationsHandler(IOrganizationRepository organizat
     {
         var userId = access.RequireUserId();
         var items = await organizations.ListForUserAsync(userId, ct);
-        return items.Select(o => new OrganizationDto(o.Id, o.Name, o.Role)).ToList();
+        return items.Select(o => new OrganizationDto(o.Id, o.Name, o.Role, o.IsDefault)).ToList();
     }
 }
 
@@ -75,6 +75,7 @@ public sealed class ListMembersHandler(IOrganizationRepository organizations, II
 public static class MemberRules
 {
     public const string LastOwner = "An organization needs at least one Owner. Make someone else an Owner first.";
+    public const string DefaultOrganization = "Everyone belongs to the default organization, so nobody can be removed from it or leave it.";
 }
 
 /// <summary>Owners only. Taking the role away from the last Owner is refused, so an organization is never left without one.</summary>
@@ -109,6 +110,9 @@ public sealed class RemoveMemberHandler(IOrganizationRepository organizations, I
     {
         var leaving = access.RequireUserId() == userId;
         await access.RequireRoleAsync(organizationId, leaving ? OrganizationRole.Viewer : OrganizationRole.Owner, ct);
+
+        if (await organizations.IsDefaultAsync(organizationId, ct))
+            throw new ConflictException(MemberRules.DefaultOrganization);
 
         var member = await organizations.GetMemberForUpdateAsync(organizationId, userId, ct)
             ?? throw new NotFoundException("That user is not a member.");

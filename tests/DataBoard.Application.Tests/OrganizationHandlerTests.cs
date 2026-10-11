@@ -286,6 +286,25 @@ public class OrganizationHandlerTests
     }
 
     [Fact]
+    public async Task Nobody_can_leave_or_be_removed_from_the_default_organization()
+    {
+        var org = Organization.CreateDefault(DateTime.UtcNow);
+        _orgs.Organizations.Add(org);
+        var me = _user.UserId!.Value;
+        _orgs.Members.Add(OrganizationMember.Create(org.Id, me, OrganizationRole.Owner, DateTime.UtcNow));
+        var bea = Join(org.Id, OrganizationRole.Editor, "Bea");
+
+        var leave = await Assert.ThrowsAsync<ConflictException>(() => Remove().HandleAsync(org.Id, me));
+        var remove = await Assert.ThrowsAsync<ConflictException>(() => Remove().HandleAsync(org.Id, bea));
+
+        Assert.Equal(MemberRules.DefaultOrganization, leave.Message);
+        Assert.Equal(MemberRules.DefaultOrganization, remove.Message);
+        Assert.Equal(2, _orgs.Members.Count);
+        var listed = Assert.Single(await new ListMyOrganizationsHandler(_orgs, Access()).HandleAsync());
+        Assert.True(listed.IsDefault);
+    }
+
+    [Fact]
     public async Task Removing_one_of_two_owners_is_fine_and_removing_a_stranger_is_not_found()
     {
         var (org, _) = await OwnedOrgAsync();
