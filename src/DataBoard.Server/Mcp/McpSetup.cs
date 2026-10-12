@@ -21,13 +21,13 @@ public static class McpSetup
 		DataBoard is a self-service BI tool: datasets hold the data, charts are saved queries over one dataset, and dashboards are made of charts.
 
 		To build a dashboard from a request:
-		1. list_organizations, then list_datasets to see the columns each dataset offers. Charts can only use those columns.
+		1. list_organizations, then list_datasets to see the columns each dataset offers. Charts can only use those columns. If the data needed is not in a dataset, list_data_sources and create_dataset (a read-only SELECT) to add it; update_dataset changes one.
 		2. For each chart: write the query and run preview_chart to check the numbers before saving. If the query is rejected, the error says what to fix.
 		3. create_chart for each one that looks right. Check list_charts first: reuse a chart that already shows what is needed.
 		4. create_dashboard with the chart ids, then set_widget_layout if the default places (two charts per row) are not what is wanted, and add_dashboard_filter for filters viewers should be able to type.
 		Give charts and dashboards clear names. Say what was created, and its name, when done.
 
-		Everything runs as the person who made the access token, with their roles: creating and changing needs the Editor or Owner role and a Write token. Nothing can be deleted through this endpoint, and datasets cannot be created or changed.
+		Everything runs as the person who made the access token, with their roles: creating and changing needs the Editor or Owner role and a Write token. Nothing can be deleted through this endpoint, and data sources cannot be created or changed.
 		""";
 
 	public static IServiceCollection AddDataBoardMcp(this IServiceCollection services)

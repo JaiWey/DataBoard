@@ -87,8 +87,6 @@ public static class DependencyInjection
         services.AddScoped<GetDashboardBackgroundHandler>();
         services.AddScoped<GetSharedDashboardBackgroundHandler>();
         services.AddScoped<AddImageWidgetHandler>();
-        services.AddScoped<ExportDashboardHandler>();
-        services.AddScoped<ImportDashboardHandler>();
         services.AddScoped<DuplicateDashboardHandler>();
         services.AddScoped<CopyDashboardToOrganizationHandler>();
         services.AddScoped<ReplaceImageWidgetHandler>();

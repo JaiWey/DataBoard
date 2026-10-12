@@ -113,31 +113,13 @@ public class DashboardReloadApiTests(ApiFactory factory)
     }
 
     [Fact]
-    public async Task A_copy_and_an_exported_file_keep_the_interval()
+    public async Task A_copy_keeps_the_interval()
     {
         var f = await NewFixtureAsync();
         await SetReloadAsync(f, 300);
 
         var copy = await Read(await f.Owner.PostAsJsonAsync(Url(f, "/duplicate"), new { }));
         Assert.Equal(300, ReloadOf(copy));
-
-        var package = JsonNode.Parse(await f.Owner.GetStringAsync(Url(f, "/export")))!;
-        Assert.Equal(300, package["reloadSeconds"]!.GetValue<int>());
-
-        var imported = await Read(await f.Owner.PostAsJsonAsync($"/api/organizations/{f.Org}/dashboards/import", new { package }));
-        Assert.Equal(300, ReloadOf(imported.GetProperty("dashboard")));
-    }
-
-    [Fact]
-    public async Task A_file_with_an_interval_out_of_range_is_refused()
-    {
-        var f = await NewFixtureAsync();
-        var package = JsonNode.Parse(await f.Owner.GetStringAsync(Url(f, "/export")))!;
-        package["reloadSeconds"] = 5;
-
-        var response = await f.Owner.PostAsJsonAsync($"/api/organizations/{f.Org}/dashboards/import", new { package });
-
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     [Fact]

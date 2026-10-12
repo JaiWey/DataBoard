@@ -279,12 +279,8 @@ public class DashboardAccessApiTests(ApiFactory factory)
         });
         var moveIn = await f.Editor.Client.PutAsJsonAsync(Dash(f, existing, "/folder"), new { folderId = hidden });
         var folderIn = await f.Editor.Client.PostAsJsonAsync(Folders(f), new { name = "Sub", parentId = hidden, kind = "Dashboard" });
-        var import = await f.Editor.Client.PostAsJsonAsync($"/api/organizations/{f.Org}/dashboards/import", new
-        {
-            package = new { format = "databoard-dashboard", version = 1, name = "Imported", widgets = Array.Empty<object>() }, folderId = hidden,
-        });
 
-        foreach (var response in new[] { create, moveIn, folderIn, import })
+        foreach (var response in new[] { create, moveIn, folderIn })
             Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.Contains("That folder does not exist.", await create.Content.ReadAsStringAsync());
         Assert.Equal(HttpStatusCode.Created, (await f.Owner.Client.PostAsJsonAsync(Folders(f), new { name = "Sub", parentId = hidden, kind = "Dashboard" })).StatusCode);

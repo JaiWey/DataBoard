@@ -227,7 +227,7 @@ describe('DashboardComponent', () => {
 
     const buttons = Array.from(el().querySelectorAll('mat-card-header .actions button')) as HTMLButtonElement[];
     expect(buttons.map((b) => b.getAttribute('aria-label'))).toEqual([
-      'Print / PDF', 'Edit layout', 'Preview', 'Refresh data', 'Share', 'Access', 'Duplicate', 'Export', 'Add to the dashboard', 'Background', 'Delete dashboard',
+      'Print / PDF', 'Edit layout', 'Preview', 'Refresh data', 'Share', 'Access', 'Duplicate', 'Add to the dashboard', 'Background', 'Delete dashboard',
     ]);
     for (const b of buttons) {
       expect(b.querySelector('app-icon svg path')).not.toBeNull(); // an icon...
@@ -1717,19 +1717,18 @@ describe('DashboardComponent', () => {
     });
   });
 
-  // ---- duplicate and export ----
+  // ---- duplicate and copy ----
 
-  describe('duplicate and export', () => {
+  describe('duplicate and copy', () => {
     const open = (role: 'Viewer' | 'Editor' | 'Owner') => {
       load(role);
       http.expectOne(runUrl).flush({ widgets: [] });
       fixture.detectChanges();
     };
 
-    it('offers Duplicate and Export to editors and not to viewers', () => {
+    it('offers Duplicate to editors and not to viewers', () => {
       open('Viewer');
       expect(buttonByText('Duplicate')).toBeUndefined();
-      expect(buttonByText('Export')).toBeUndefined();
     });
 
     it('offers Copy to another organization only to someone with another organization to copy into', () => {
@@ -1749,10 +1748,9 @@ describe('DashboardComponent', () => {
       expect(buttonByText('Copy to another organization')).toBeDefined();
     });
 
-    it('shows them to an editor', () => {
+    it('shows it to an editor', () => {
       open('Editor');
       expect(buttonByText('Duplicate')).toBeDefined();
-      expect(buttonByText('Export')).toBeDefined();
     });
 
     it('makes a copy and reports it, without running anything', () => {
@@ -1781,32 +1779,5 @@ describe('DashboardComponent', () => {
       expect(el().querySelector('[role=alert]')?.textContent).toContain('already exists');
       expect(buttonByText('Duplicate').disabled).toBe(false);
     });
-
-    it('saves the dashboard as a file named after it', async () => {
-      open('Owner');
-      const clicked: HTMLAnchorElement[] = [];
-      vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) { clicked.push(this); });
-      const made = vi.fn(() => 'blob:file');
-      (URL as unknown as Record<string, unknown>)['createObjectURL'] = made;
-      (URL as unknown as Record<string, unknown>)['revokeObjectURL'] = vi.fn();
-
-      buttonByText('Export').click();
-      http.expectOne({ method: 'GET', url: `${dashboardUrl}/export` }).flush({ format: 'databoard-dashboard', version: 1, name: 'Sales overview' });
-
-      expect(clicked.map((a) => a.download)).toEqual(['Sales overview.databoard.json']);
-      const blob = made.mock.calls[0] as unknown as [Blob];
-      expect(JSON.parse(await blob[0].text())).toMatchObject({ format: 'databoard-dashboard', name: 'Sales overview' });
-    });
-
-    it('shows the reason when the export fails', () => {
-      open('Owner');
-
-      buttonByText('Export').click();
-      http.expectOne({ method: 'GET', url: `${dashboardUrl}/export` }).flush(
-        { title: 'Bad request', errors: { Pictures: ['The pictures on this dashboard are too big to export in one file.'] } }, { status: 400, statusText: 'Bad Request' },
-      );
-      fixture.detectChanges();
-
-      expect(el().querySelector('[role=alert]')?.textContent).toContain('too big to export');
-    });
-  });});
+  });
+});

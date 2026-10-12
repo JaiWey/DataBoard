@@ -226,28 +226,6 @@ export interface DashboardShareCreated {
 /** How long a new link lasts: a number of days, or explicitly forever. */
 export type ShareLifetime = { expiresInDays: number } | { neverExpires: true };
 
-/**
- * A dashboard as a file (see the export): charts are named, tabs have keys local to the file, pictures are inside it. Kept loose on
- * purpose: the server checks it, and a file from a newer version is shown its message, not refused here.
- */
-export interface DashboardPackage {
-  format: string;
-  version: number;
-  name: string;
-  description?: string | null;
-  [more: string]: unknown;
-}
-
-export const DASHBOARD_PACKAGE_FORMAT = 'databoard-dashboard';
-/** The biggest file the server takes. */
-export const MAX_PACKAGE_BYTES = 64 * 1024 * 1024;
-
-/** What an import made, and the charts the file named that this organization does not have (their widgets were left out). */
-export interface ImportResult {
-  dashboard: Dashboard;
-  missingCharts: string[];
-}
-
 /** What copying a dashboard into another organization did. */
 export interface CopyResult {
   dashboard: Dashboard;
@@ -323,16 +301,6 @@ export class DashboardsService {
   /** The picture itself, as a file. (An image tag cannot send the sign-in, so it is fetched like any request and shown from memory.) */
   backgroundImage(orgId: string, id: string, version: string): Observable<Blob> {
     return this.http.get(this.url(orgId, `/${id}/background`), { params: { v: version }, responseType: 'blob' });
-  }
-
-  /** The dashboard as a file to keep or to bring into another organization. Editors and owners. */
-  exportPackage(orgId: string, id: string): Observable<DashboardPackage> {
-    return this.http.get<DashboardPackage>(this.url(orgId, `/${id}/export`));
-  }
-
-  /** Makes a dashboard from an exported file; charts are found by name. Editors and owners. */
-  importPackage(orgId: string, pkg: DashboardPackage, options: { name?: string | null; folderId?: string | null } = {}): Observable<ImportResult> {
-    return this.http.post<ImportResult>(this.url(orgId, '/import'), { package: pkg, name: options.name ?? null, folderId: options.folderId ?? null });
   }
 
   /** A copy in another organization of the person, with its charts and datasets; data sources are found there by name. */

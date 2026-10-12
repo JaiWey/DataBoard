@@ -77,7 +77,7 @@ public class McpToolsTests(ApiFactory factory)
     // ---- what the assistant is offered -------------------------------------------------------------------------
 
     [Fact]
-    public async Task The_assistant_is_told_what_the_tools_are_for_and_none_of_them_can_delete_or_write_sql()
+    public async Task The_assistant_is_told_what_the_tools_are_for_and_none_of_them_can_delete()
     {
         var (owner, _, _) = await NewUserAsync(factory);
         await using var client = await ConnectAsync(await TokenAsync(owner));
@@ -85,11 +85,12 @@ public class McpToolsTests(ApiFactory factory)
         var tools = await client.ListToolsAsync();
 
         Assert.Equal(
-            ["add_charts_to_dashboard", "add_dashboard_filter", "create_chart", "create_dashboard", "get_dashboard", "list_charts",
-             "list_dashboards", "list_datasets", "list_organizations", "preview_chart", "set_widget_layout", "update_chart"],
+            ["add_charts_to_dashboard", "add_dashboard_filter", "create_chart", "create_dashboard", "create_dataset", "get_dashboard", "list_charts",
+             "list_dashboards", "list_data_sources", "list_datasets", "list_organizations", "preview_chart", "set_widget_layout", "update_chart",
+             "update_dataset"],
             tools.Select(t => t.Name).Order());
         Assert.All(tools, t => Assert.False(string.IsNullOrWhiteSpace(t.Description), t.Name));
-        Assert.DoesNotContain(tools, t => t.Name.Contains("delete", StringComparison.OrdinalIgnoreCase) || t.Name.Contains("sql", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(tools, t => t.Name.Contains("delete", StringComparison.OrdinalIgnoreCase));
         Assert.Contains("preview_chart", client.ServerInstructions);
         Assert.Equal("DataBoard", client.ServerInfo.Name);
     }
@@ -116,7 +117,7 @@ public class McpToolsTests(ApiFactory factory)
     // ---- looking around ----------------------------------------------------------------------------------------
 
     [Fact]
-    public async Task The_assistant_finds_the_organizations_and_datasets_but_never_sees_the_sql()
+    public async Task The_assistant_finds_the_organizations_and_datasets_but_never_sees_connection_details()
     {
         var s = await NewSetupAsync();
         await using var client = await ConnectAsync(await TokenAsync(s.Owner, "Read"));
@@ -132,8 +133,87 @@ public class McpToolsTests(ApiFactory factory)
         Assert.Equal("Orders", orders.GetProperty("name").GetString());
         var price = orders.GetProperty("columns").EnumerateArray().Single(c => c.GetProperty("name").GetString() == "price");
         Assert.Equal("Measure", price.GetProperty("role").GetString());
-        Assert.DoesNotContain("SELECT", TextOf(datasets), StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("connection", TextOf(datasets), StringComparison.OrdinalIgnoreCase);
+        var sources = await CallAsync(client, "list_data_sources", new { organizationId = s.Org });
+        Assert.Equal("Shop DB", Json_(sources)[0].GetProperty("name").GetString());
+        Assert.DoesNotContain("connection", TextOf(sources), StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Host=", TextOf(sources), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task A_viewers_token_sees_the_datasets_without_their_sql()
+    {
+        var s = await NewSetupAsync();
+        var (viewer, email, _) = await NewUserAsync(factory);
+        (await s.Owner.PostAsJsonAsync($"/api/organizations/{s.Org}/members", new { email, role = "Viewer" })).EnsureSuccessStatusCode();
+        await using var client = await ConnectAsync(await TokenAsync(viewer, "Read"));
+
+        var datasets = await CallAsync(client, "list_datasets", new { organizationId = s.Org });
+
+        Assert.DoesNotContain("SELECT", TextOf(datasets), StringComparison.OrdinalIgnoreCase);
+    }
+
+    // ---- datasets ----------------------------------------------------------------------------------------------
+
+    private static async Task<Guid> SourceOf(McpClient client, Guid org) =>
+        Json_(await CallAsync(client, "list_data_sources", new { organizationId = org }))[0].GetProperty("id").GetGuid();
+
+    [Fact]
+    public async Task A_dataset_is_created_then_changed_and_charts_can_use_it()
+    {
+        var s = await NewSetupAsync();
+        await using var client = await ConnectAsync(await TokenAsync(s.Owner));
+        var source = await SourceOf(client, s.Org);
+
+        var created = Json_(await CallAsync(client, "create_dataset", new
+        {
+            organizationId = s.Org, dataSourceId = source, name = "Regions", sql = "SELECT region, price FROM orders",
+        }));
+        var id = created.GetProperty("id").GetGuid();
+        Assert.Equal(["region", "price"], created.GetProperty("columns").EnumerateArray().Select(c => c.GetProperty("name").GetString()));
+
+        var changed = Json_(await CallAsync(client, "update_dataset", new
+        {
+            organizationId = s.Org, datasetId = id, name = "Regions", sql = "SELECT region, price, quantity FROM orders",
+        }));
+        Assert.Equal(3, changed.GetProperty("columns").GetArrayLength());
+        Assert.Contains("quantity", changed.GetProperty("sql").GetString());
+
+        var preview = Json_(await CallAsync(client, "preview_chart", new { organizationId = s.Org, datasetId = id, query = RevenueByRegion }));
+        Assert.Equal(4, preview.GetProperty("rows").GetArrayLength());
+    }
+
+    [Fact]
+    public async Task Sql_that_is_not_a_plain_read_is_refused_and_nothing_is_saved()
+    {
+        var s = await NewSetupAsync();
+        await using var client = await ConnectAsync(await TokenAsync(s.Owner));
+        var source = await SourceOf(client, s.Org);
+
+        var result = await CallAsync(client, "create_dataset", new { organizationId = s.Org, dataSourceId = source, name = "Bad", sql = "DELETE FROM orders" });
+
+        Assert.True(result.IsError);
+        var datasets = Json_(await CallAsync(client, "list_datasets", new { organizationId = s.Org }));
+        Assert.Equal(1, datasets.GetArrayLength());
+    }
+
+    [Fact]
+    public async Task A_dataset_cannot_be_made_with_a_read_token_or_a_viewers_role()
+    {
+        var s = await NewSetupAsync();
+        await using var reader = await ConnectAsync(await TokenAsync(s.Owner, "Read"));
+        var source = await SourceOf(reader, s.Org);
+        var (viewer, email, _) = await NewUserAsync(factory);
+        (await s.Owner.PostAsJsonAsync($"/api/organizations/{s.Org}/members", new { email, role = "Viewer" })).EnsureSuccessStatusCode();
+        await using var widest = await ConnectAsync(await TokenAsync(viewer, "Write"));
+
+        var byRead = await CallAsync(reader, "create_dataset", new { organizationId = s.Org, dataSourceId = source, name = "X", sql = "SELECT 1 AS a" });
+        var byViewer = await CallAsync(widest, "create_dataset", new { organizationId = s.Org, dataSourceId = source, name = "X", sql = "SELECT 1 AS a" });
+
+        Assert.True(byRead.IsError);
+        Assert.Contains("read-only", TextOf(byRead));
+        Assert.True(byViewer.IsError);
+        Assert.Contains("Editor", TextOf(byViewer));
     }
 
     [Fact]

@@ -2,9 +2,11 @@ using System.ComponentModel;
 using DataBoard.Application.Charts;
 using DataBoard.Application.Common;
 using DataBoard.Application.Dashboards;
+using DataBoard.Application.DataSources;
 using DataBoard.Application.Datasets;
 using DataBoard.Application.Organizations;
 using DataBoard.Domain.Charts;
+using DataBoard.Domain.Datasets;
 using DataBoard.Domain.Users;
 using DataBoard.Server.Infrastructure;
 using ModelContextProtocol;
@@ -15,8 +17,8 @@ namespace DataBoard.Server.Mcp;
 /// <summary>
 /// What an AI assistant can do in DataBoard, through the MCP endpoint. Every tool is a thin wrapper over the same
 /// application handler the web app uses, so the token owner's organization roles, the query planner's checks and the
-/// read-only database access all apply unchanged. There is deliberately no tool that deletes anything, writes SQL,
-/// or creates a public link.
+/// read-only database access all apply unchanged. There is deliberately no tool that deletes anything, touches a data
+/// source's connection details, or creates a public link. Dataset SQL goes through the same read-only validation as in the web app.
 /// </summary>
 [McpServerToolType]
 public sealed class DataBoardTools(IServiceProvider services, IHttpContextAccessor http, ILogger<DataBoardTools> log)
@@ -33,7 +35,7 @@ public sealed class DataBoardTools(IServiceProvider services, IHttpContextAccess
         var scope = user is null ? null : ApiTokenClaims.ScopeOf(user);
         if (scope is null) throw new McpException("This endpoint needs a DataBoard access token.");
         if (writes && scope != ApiTokenScope.Write)
-            throw new McpException("This access token is read-only. Create a token with the Write scope to change charts or dashboards.");
+            throw new McpException("This access token is read-only. Create a token with the Write scope to change datasets, charts or dashboards.");
 
         log.LogInformation("MCP tool {Tool} by token {Token} in organization {Organization}",
             tool, user!.FindFirst("token_name")?.Value, organizationId);
@@ -58,13 +60,22 @@ public sealed class DataBoardTools(IServiceProvider services, IHttpContextAccess
     public Task<IReadOnlyList<OrganizationDto>> ListOrganizations(CancellationToken ct) =>
         Run("list_organizations", null, false, () => Get<ListMyOrganizationsHandler>().HandleAsync(ct));
 
+    [McpServerTool(Name = "list_data_sources", ReadOnly = true, Destructive = false, OpenWorld = false)]
+    [Description("Lists the data sources (databases) of an organization: id, name and type only, never connection details. create_dataset needs one of these ids.")]
+    public Task<IReadOnlyList<DataSourceInfo>> ListDataSources(
+        [Description("The organization's id, from list_organizations.")] Guid organizationId, CancellationToken ct) =>
+        Run("list_data_sources", organizationId, false, async () =>
+            (IReadOnlyList<DataSourceInfo>)(await Get<ListDataSourcesHandler>().HandleAsync(organizationId, ct))
+                .Select(d => new DataSourceInfo(d.Id, d.Name, d.Type.ToString()))
+                .ToList());
+
     [McpServerTool(Name = "list_datasets", ReadOnly = true, Destructive = false, OpenWorld = false)]
-    [Description("Lists the datasets of an organization with their columns. A chart is built on one dataset and can only use its columns. Each column has a dataType and a role: Dimension (to group by) or Measure (a number to total up).")]
+    [Description("Lists the datasets of an organization with their columns. A chart is built on one dataset and can only use its columns. Each column has a dataType and a role: Dimension (to group by) or Measure (a number to total up). Editors and Owners also get each dataset's dataSourceId and sql, which update_dataset needs.")]
     public Task<IReadOnlyList<DatasetSummary>> ListDatasets(
         [Description("The organization's id, from list_organizations.")] Guid organizationId, CancellationToken ct) =>
         Run("list_datasets", organizationId, false, async () =>
             (IReadOnlyList<DatasetSummary>)(await Get<ListDatasetsHandler>().HandleAsync(organizationId, ct))
-                .Select(d => new DatasetSummary(d.Id, d.Name, d.Description, d.Columns, d.Parameters ?? []))
+                .Select(d => new DatasetSummary(d.Id, d.Name, d.Description, d.Columns, d.Parameters ?? [], d.DataSourceId, d.Sql))
                 .ToList());
 
     [McpServerTool(Name = "preview_chart", ReadOnly = true, Destructive = false, OpenWorld = false)]
@@ -102,6 +113,41 @@ public sealed class DataBoardTools(IServiceProvider services, IHttpContextAccess
         [Description("The dashboard's id, from list_dashboards.")] Guid dashboardId,
         CancellationToken ct) =>
         Run("get_dashboard", organizationId, false, async () => DashboardInfo.From(await Get<GetDashboardHandler>().HandleAsync(organizationId, dashboardId, ct)));
+
+    // ---- making and changing datasets -------------------------------------------------------------------------
+
+    [McpServerTool(Name = "create_dataset", ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
+    [Description("Saves a new dataset: a read-only SQL query (one SELECT) on a data source. The query is validated and run once to learn its columns; anything that is not a plain read is rejected with the reason. Charts are then built on the dataset. Needs a Write token and the Editor or Owner role.")]
+    public Task<DatasetSummary> CreateDataset(
+        [Description("The organization's id.")] Guid organizationId,
+        [Description("The data source's id, from list_data_sources.")] Guid dataSourceId,
+        [Description("The dataset's name. Must be unique in the organization.")] string name,
+        [Description(QueryHelp.Sql)] string sql,
+        [Description("A short description. Optional.")] string? description = null,
+        [Description(QueryHelp.Parameters)] IReadOnlyList<DatasetParameter>? parameters = null,
+        CancellationToken ct = default) =>
+        Run("create_dataset", organizationId, true, async () =>
+            DatasetSummary.From(await Get<CreateDatasetHandler>().HandleAsync(
+                organizationId, new CreateDatasetRequest(dataSourceId, name, description, sql, DatasetKind.Sql, null, parameters), ct)));
+
+    [McpServerTool(Name = "update_dataset", ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false)]
+    [Description("Replaces a SQL dataset's name, description, SQL and parameters. Every chart on the dataset uses the new query, so keep the columns the charts use. Send the full new definition; get the current one from list_datasets. The data source cannot change. Table-view datasets are not supported here. Needs a Write token and the Editor or Owner role.")]
+    public Task<DatasetSummary> UpdateDataset(
+        [Description("The organization's id.")] Guid organizationId,
+        [Description("The dataset's id, from list_datasets.")] Guid datasetId,
+        [Description("The dataset's name.")] string name,
+        [Description(QueryHelp.Sql)] string sql,
+        [Description("A short description. Optional.")] string? description = null,
+        [Description(QueryHelp.Parameters)] IReadOnlyList<DatasetParameter>? parameters = null,
+        CancellationToken ct = default) =>
+        Run("update_dataset", organizationId, true, async () =>
+        {
+            var current = await Get<GetDatasetHandler>().HandleAsync(organizationId, datasetId, ct);
+            if (current.Kind != DatasetKind.Sql)
+                throw new ValidationException("Dataset", "This dataset is a table view; change it in the DataBoard app.");
+            return DatasetSummary.From(await Get<UpdateDatasetHandler>().HandleAsync(
+                organizationId, datasetId, new UpdateDatasetRequest(name, description, sql, null, parameters), ct));
+        });
 
     // ---- making and changing charts ---------------------------------------------------------------------------
 
@@ -213,11 +259,18 @@ public sealed class DataBoardTools(IServiceProvider services, IHttpContextAccess
     }
 }
 
-// ---- what the tools return: only what an assistant needs, never SQL, connection details or other people's data ------
+// ---- what the tools return: only what an assistant needs, no connection details or other people's data; SQL only for Editors and Owners ------
 
 /// <param name="Parameters">Values the dataset's SQL takes (name, type, default). A chart can set them in its query's "parameters".</param>
+/// <param name="DataSourceId">Only for Editors and Owners, with <paramref name="Sql"/>; a Viewer's token sees neither.</param>
 public sealed record DatasetSummary(
-    Guid Id, string Name, string? Description, IReadOnlyList<DatasetColumnDto> Columns, IReadOnlyList<DatasetParameter> Parameters);
+    Guid Id, string Name, string? Description, IReadOnlyList<DatasetColumnDto> Columns, IReadOnlyList<DatasetParameter> Parameters,
+    Guid? DataSourceId = null, string? Sql = null)
+{
+    public static DatasetSummary From(DatasetDto d) => new(d.Id, d.Name, d.Description, d.Columns, d.Parameters ?? [], d.DataSourceId, d.Sql);
+}
+
+public sealed record DataSourceInfo(Guid Id, string Name, string Type);
 
 public sealed record PreviewColumnInfo(string Name, string DataType);
 
@@ -237,6 +290,10 @@ public sealed record DashboardInfo(Guid Id, string Name, string? Description, IR
 /// <summary>The part of the query format an assistant needs, kept next to the tools that take it.</summary>
 internal static class QueryHelp
 {
+    public const string Sql = "One read-only SELECT (or WITH ... SELECT) in the data source's own SQL dialect, with no semicolons or several statements. Values that should change per chart or filter can be written as {{name}} placeholders, each declared in parameters.";
+
+    public const string Parameters = "Optional values the SQL takes: a list of {\"name\":\"region\",\"type\":\"Text\",\"default\":\"Auckland\"}. Every {{placeholder}} in the SQL needs one. type is Text, Number, Date or Boolean.";
+
     public const string Type = "Table, Bar, BarHorizontal, Line, Area, Pie, Donut, Number, Heatmap or Scatter. Bar, BarHorizontal, Line and Area have an X-axis. Pie and Donut need one dimension and one measure. Number needs exactly one measure and no dimensions. Heatmap needs exactly two dimensions (across, then down) and one measure (the colour). Scatter needs one dimension (what each point is, such as a customer) and two measures (X, then Y); a second dimension splits the points into coloured series and a third measure sizes them (a bubble chart). WordCloud needs exactly one dimension (the word) and one measure (how big it is)."; 
 
     public const string Query =

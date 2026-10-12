@@ -10,7 +10,6 @@ import { MatMenuModule } from '@angular/material/menu';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { ChartViewComponent } from '../charts/chart-view.component';
 import { WidgetMenuComponent } from './widget-menu.component';
-import { downloadJson } from '../charts/export';
 import { Observable } from 'rxjs';
 import { Chart, ChartsService } from '../charts/charts.service';
 import { problemMessages } from '../organizations/data-sources.service';
@@ -100,7 +99,6 @@ const MAX_UNDO = 100;
               @if (copyTargets().length > 0) {
                 <button mat-icon-button type="button" class="copy-to" aria-label="Copy to another organization" matTooltip="Copy to another organization" [disabled]="busy()" (click)="copyToOrganization(d)"><app-icon name="copyTo" /></button>
               }
-              <button mat-icon-button type="button" class="export" aria-label="Export" matTooltip="Export to a file" [disabled]="busy()" (click)="exportFile(d)"><app-icon name="download" /></button>
               <button mat-icon-button type="button" class="add-menu" aria-label="Add to the dashboard" matTooltip="Add a chart, picture or text" [matMenuTriggerFor]="addMenu"><app-icon name="add" /></button>
               <mat-menu #addMenu="matMenu">
                 <button mat-menu-item type="button" class="add-chart" (click)="addCharts(d)">Chart</button>
@@ -846,22 +844,6 @@ export class DashboardComponent implements OnInit {
       error: (e) => {
         this.busy.set(false);
         this.errors.set(problemMessages(e, 'Could not copy the dashboard.'));
-      },
-    });
-  }
-
-  /** Saves the dashboard as a file, to keep or to bring into another organization. */
-  protected exportFile(d: Dashboard): void {
-    this.busy.set(true);
-    this.errors.set([]);
-    this.api.exportPackage(this.orgId(), d.id).subscribe({
-      next: (file) => {
-        this.busy.set(false);
-        downloadJson(d.name, file, 'databoard.json');
-      },
-      error: (e) => {
-        this.busy.set(false);
-        this.errors.set(problemMessages(e, 'Could not export the dashboard.'));
       },
     });
   }
