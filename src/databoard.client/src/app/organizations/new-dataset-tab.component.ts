@@ -49,7 +49,6 @@ import { SaveDatasetDialogComponent, SaveDatasetDialogData } from './save-datase
     mat-card-content { flex: 1; min-height: 0; overflow: auto; }
     mat-card-title { font: var(--mat-sys-title-medium); }
     mat-card-header { align-items: center; flex-wrap: wrap; gap: 0.5rem; }
-    .actions { margin-left: auto; display: flex; gap: 0.4rem; }
     mat-card-content { padding-top: 0.75rem; }
     .source { width: 18rem; max-width: 100%; }
   `,

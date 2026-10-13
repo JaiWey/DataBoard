@@ -77,9 +77,9 @@ type Panel = 'schema' | 'query';
               <button mat-stroked-button type="button" (click)="open(source, 'schema')">Schema</button>
               @if (canEdit()) {
                 <button mat-stroked-button type="button" (click)="open(source, 'query')">Query</button>
-                <button mat-button type="button" (click)="testSaved(source)">Test</button>
+                <button mat-stroked-button type="button" (click)="testSaved(source)">Test</button>
                 @if (source.type === 'Csv') {
-                  <button mat-button type="button" (click)="fileInput.click()" [disabled]="busy()">Replace file</button>
+                  <button mat-stroked-button type="button" (click)="fileInput.click()" [disabled]="busy()">Replace file</button>
                   <input #fileInput type="file" hidden aria-label="New CSV file" accept=".csv,.tsv,.txt,text/csv,text/plain"
                          (change)="replaceFile(source, $any($event.target))" />
                 }
@@ -204,7 +204,6 @@ type Panel = 'schema' | 'query';
     mat-card-header { align-items: center; flex-wrap: wrap; gap: 0.5rem; }
     mat-card-title { font: var(--mat-sys-title-medium); }
     .add { margin-left: auto; }
-    .actions { margin-left: auto; display: flex; gap: 0.4rem; }
     mat-card-content { padding-top: 0.75rem; }
     .placeholder { flex: 1; display: grid; place-items: center; text-align: center; color: var(--mat-sys-on-surface-variant); }
     .columns { margin: 0.25rem 0 0.5rem 1rem; padding: 0; list-style: none; }

@@ -54,4 +54,6 @@ small { color: var(--mat-sys-on-surface-variant); }
 }
 
 .form-row { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: flex-start; }
-.actions { margin-left: auto; display: flex; gap: 0.4rem; }
+.actions { margin-left: auto; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 0.4rem; }
+/* A button label never wraps onto a second line. */
+.mat-mdc-button-base { white-space: nowrap; }

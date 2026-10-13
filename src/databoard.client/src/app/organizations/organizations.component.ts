@@ -30,11 +30,11 @@ interface Organization {
               <mat-card-title>{{ org.name }}</mat-card-title>
               <mat-card-subtitle>{{ org.role }}@if (org.isDefault) { · Default }</mat-card-subtitle>
             </mat-card-header>
-            <mat-card-actions>
-              <a mat-button [routerLink]="['/organizations', org.id]">Data sources</a>
-              <a mat-button [routerLink]="['/organizations', org.id, 'datasets']">Datasets</a>
-              <a mat-button [routerLink]="['/organizations', org.id, 'dashboards']">Dashboards</a>
-              <a mat-button [routerLink]="['/organizations', org.id, 'members']">Members</a>
+            <mat-card-actions class="links">
+              <a mat-stroked-button [routerLink]="['/organizations', org.id]">Data sources</a>
+              <a mat-stroked-button [routerLink]="['/organizations', org.id, 'datasets']">Datasets</a>
+              <a mat-stroked-button [routerLink]="['/organizations', org.id, 'dashboards']">Dashboards</a>
+              <a mat-stroked-button [routerLink]="['/organizations', org.id, 'members']">Members</a>
             </mat-card-actions>
           </mat-card>
         }
@@ -56,6 +56,8 @@ interface Organization {
   `,
   styles: `
     .orgs { display: grid; grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr)); gap: 1rem; }
+    .links { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; padding: 0.75rem 1rem 1rem; }
+    .links a { white-space: nowrap; }
     .create { margin-top: 0.4rem; }
   `,
 })

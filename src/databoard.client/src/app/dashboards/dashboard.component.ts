@@ -310,6 +310,7 @@ const MAX_UNDO = 100;
     .filters { margin: 0.5rem 0 1rem; }
     .schedule, .reload-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.75rem; margin: 0 0 0.75rem; }
     .schedule .field, .reload-bar .field { display: flex; align-items: center; gap: 0.5rem; }
+    .reload-bar .field app-select, .schedule .field app-select { width: 12rem; }
     .apply, .remove-filter { margin-top: 0.4rem; }
     /* A widget fills its cell on the grid; its chart takes what the header leaves, and a table scrolls inside. */
     .widget { height: 100%; position: relative; }

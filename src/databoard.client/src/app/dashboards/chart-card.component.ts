@@ -54,7 +54,6 @@ import { ConfirmService } from '../shared/confirm.service';
     .detail { --mat-card-elevated-container-color: #fff; height: 100%; }
     mat-card-title { font: var(--mat-sys-title-medium); }
     mat-card-header { align-items: center; flex-wrap: wrap; gap: 0.5rem; }
-    .actions { margin-left: auto; display: flex; gap: 0.4rem; }
     .detail > mat-card-content { flex: 1; min-height: 0; overflow: auto; padding-top: 0.75rem; }
     .desc { margin: 0.25rem 0; color: var(--mat-sys-on-surface-variant); }
     .used { margin: 0.25rem 0 1rem; color: var(--mat-sys-on-surface-variant); }

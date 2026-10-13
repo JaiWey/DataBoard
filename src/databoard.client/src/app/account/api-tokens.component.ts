@@ -19,7 +19,7 @@ export const TOKEN_LIFETIMES: { label: string; value: TokenLifetime }[] = [
 ];
 
 export const TOKEN_SCOPES: { value: TokenScope; label: string }[] = [
-  { value: 'Write', label: 'Read and create (charts and dashboards)' },
+  { value: 'Write', label: 'Read and create' },
   { value: 'Read', label: 'Read only' },
 ];
 
@@ -38,7 +38,7 @@ export const mcpUrl = (): string => `${window.location.origin}/mcp`;
     <p class="intro">
       An access token lets an AI assistant such as Claude work in DataBoard for you: it can look at your datasets and, with
       the right scope, build charts and dashboards from a prompt. It acts as you and never has more rights than you do.
-      It cannot delete anything or change datasets.
+      It can also create and change datasets (read-only SQL). It cannot delete anything or change data sources.
     </p>
 
     <mat-card appearance="outlined" class="make">
@@ -108,6 +108,7 @@ export const mcpUrl = (): string => `${window.location.origin}/mcp`;
     .created { --mat-card-outlined-container-color: var(--mat-sys-secondary-container); }
     h3 { margin-top: 0; }
     .create { margin-top: 0.4rem; }
+    .make app-select { min-width: 12rem; }
     .copy { display: flex; gap: 0.5rem; margin: 0.5rem 0 1rem; }
     .copy input { flex: 1; min-width: 0; padding: 0.4rem; font-family: monospace; }
     h4 { margin: 1rem 0 0.25rem; }

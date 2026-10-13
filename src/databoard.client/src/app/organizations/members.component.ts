@@ -59,7 +59,7 @@ interface Organization {
                     }
                   </td>
                   <td>{{ m.joinedUtc | date: 'mediumDate' }}</td>
-                  <td class="actions">
+                  <td class="cell-actions">
                     @if (organization()?.isDefault) {
                       <!-- everyone belongs to the default organization: nobody leaves it or is removed from it -->
                     } @else if (isMe(m)) {
@@ -100,7 +100,7 @@ interface Organization {
     .members th { text-align: left; font-weight: 500; color: var(--mat-sys-on-surface-variant); }
     .members th, .members td { padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--mat-sys-outline-variant); }
     .members tr.me td { background: var(--mat-sys-surface-container-low, transparent); }
-    .actions { text-align: right; white-space: nowrap; }
+    .cell-actions { text-align: right; white-space: nowrap; vertical-align: middle; }
     .danger { color: var(--mat-sys-error); }
     .you { color: var(--mat-sys-on-surface-variant); }
     .hint { color: var(--mat-sys-on-surface-variant); font-size: 0.9rem; max-width: 50rem; }

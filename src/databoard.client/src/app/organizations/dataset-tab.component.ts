@@ -103,7 +103,6 @@ import { ConfirmService } from '../shared/confirm.service';
     mat-card-content { flex: 1; min-height: 0; overflow: auto; }
     mat-card-title { font: var(--mat-sys-title-medium); }
     mat-card-header { align-items: center; flex-wrap: wrap; gap: 0.5rem; }
-    .actions { margin-left: auto; display: flex; gap: 0.4rem; }
     mat-card-content { padding-top: 0.75rem; }
     .desc { margin: 0.25rem 0; color: var(--mat-sys-on-surface-variant); }
     .chips { display: flex; flex-wrap: wrap; gap: 0.35rem; }
