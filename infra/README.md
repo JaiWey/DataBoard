@@ -26,7 +26,10 @@ The same thing as text:
 | Secrets | The database password and the token-signing key are generated and kept as SecureString parameters in Parameter Store | Free (Secrets Manager costs about $0.40 a secret a month). |
 | Releases | A private S3 bucket; archives older than 30 days are deleted | 5 GB is free. |
 
-The default region is **ap-southeast-2 (Sydney, Australia)**. Change `aws_region` in `terraform.tfvars` to use another\n(for example `ap-southeast-4` for Melbourne). Prices there are a little higher than in the US regions; the free tier is the same.\n\n## What you need
+The default region is **ap-southeast-2 (Sydney, Australia)**. Change `aws_region` in `terraform.tfvars` to use another
+(for example `ap-southeast-4` for Melbourne). Prices there are a little higher than in the US regions; the free tier is the same.
+
+## What you need
 
 - An AWS account, and the AWS CLI signed in to it (`aws configure`, or `aws sso login`).
 - Terraform 1.6 or later.
