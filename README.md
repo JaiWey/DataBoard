@@ -25,6 +25,15 @@ Upload a CSV file, turn it into a dataset, and build a chart from it in a few cl
 - **Work together**: organizations with Owner, Editor and Viewer roles, and control over who sees each dashboard.
 - **Ask an AI assistant to build it**: DataBoard speaks MCP, so an assistant such as Claude can create datasets, charts and dashboards from a plain-language request.
 
+## Safe by design
+
+People who can build charts should not be able to break your database. DataBoard checks every query before it runs:
+
+- **User SQL is parsed, not pattern-matched.** It is read with a real SQL parser ([SqlParserCS](https://github.com/TylerBrinks/SqlParser-cs)) for each database dialect, and only a single read-only `SELECT` is allowed. Dangerous functions, file access and system tables are refused.
+- **Charts are never written as SQL.** They are described as structured data, checked against the dataset, and turned into SQL by the server.
+- **Values are never pasted into SQL.** Filters and parameters are always sent to the database as bound parameters.
+- **Queries run read-only with a time limit.**
+
 Built with ASP.NET Core (.NET 10), Angular and PostgreSQL.
 
 ## Try it
