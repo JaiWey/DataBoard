@@ -47,6 +47,10 @@ docker compose up --build
 Open <http://localhost:8080> and sign in with the demo account `dev@databoard.local` / `dev-password-123`.
 The demo account is only for trying it out on your own machine.
 
+To let visitors try it without registering, set `Guests__Enabled=true`. The sign-in page then shows **Continue as guest**,
+which opens a temporary account with a sandbox of its own, deleted after a day. Guests cannot connect databases, make
+access tokens or share links.
+
 ## Deployment
 
 DataBoard runs on a single small server. The `infra/` folder has everything to put it on AWS inside the free tier: a server

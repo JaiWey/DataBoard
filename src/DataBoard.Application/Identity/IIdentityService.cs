@@ -28,6 +28,17 @@ public interface IIdentityService
     Task<UserInfo> RegisterAsync(string email, string password, string displayName, CancellationToken ct = default);
 
     /// <exception cref="Common.UnauthorizedException">Unknown user, wrong password or locked out (same message for all).</exception>
+    /// <summary>
+    /// A temporary account with a sandbox organization of its own (it is never put in the default organization, which
+    /// holds other people's work). The session ends with the account.
+    /// </summary>
+    /// <exception cref="Common.ForbiddenException">Guests are turned off or too many are here already.</exception>
+    Task<AuthSession> StartGuestAsync(CancellationToken ct = default);
+
+    /// <summary>Deletes guests whose time is up, with their sandbox organizations. Returns how many.</summary>
+    Task<int> DeleteExpiredGuestsAsync(CancellationToken ct = default);
+
+    /// <exception cref="Common.UnauthorizedException">Unknown user, wrong password or locked out (same message for all).</exception>
     Task<AuthSession> LoginAsync(string email, string password, CancellationToken ct = default);
 
     /// <summary>Rotates the refresh token: the presented one stops working.</summary>

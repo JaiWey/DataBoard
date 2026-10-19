@@ -27,6 +27,8 @@ export class AuthService {
   private refreshInFlight$: Observable<string | null> | null = null;
 
   readonly user = this._user.asReadonly();
+  /** A temporary guest account (the server gives these addresses that cannot be real ones). */
+  readonly isGuest = computed(() => this._user()?.email.endsWith('@guest.invalid') === true);
   readonly isAuthenticated = computed(() => this._accessToken() !== null);
 
   get accessToken(): string | null {
@@ -40,6 +42,14 @@ export class AuthService {
         tap((s) => this.setSession(s)),
         map((s) => s.user),
       );
+  }
+
+  /** "Continue as guest": a temporary account with a sandbox of its own. */
+  guest(): Observable<User> {
+    return this.http.post<SessionResponse>('/api/auth/guest', {}).pipe(
+      tap((s) => this.setSession(s)),
+      map((s) => s.user),
+    );
   }
 
   register(email: string, password: string, displayName: string): Observable<User> {

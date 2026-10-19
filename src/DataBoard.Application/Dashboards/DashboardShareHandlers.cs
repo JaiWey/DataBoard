@@ -113,6 +113,7 @@ public sealed class CreateShareHandler(
         Guid organizationId, Guid dashboardId, CreateShareRequest? request, CancellationToken ct = default)
     {
         var member = await access.RequireRoleAsync(organizationId, OrganizationRole.Editor, ct);
+        access.RequireNotGuest(); // a public link would show the sandbox to anyone
         var userId = access.RequireUserId();
         _ = await visibility.GetAsync(dashboards, organizationId, dashboardId, member, ct);
 

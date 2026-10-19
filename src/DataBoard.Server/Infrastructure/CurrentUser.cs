@@ -14,4 +14,8 @@ public sealed class CurrentUser(IHttpContextAccessor accessor) : ICurrentUser
 			return Guid.TryParse(sub, out var id) ? id : null;
 		}
 	}
+
+	public bool IsGuest => accessor.HttpContext?.User.FindFirst(GuestClaim)?.Value == "true";
+
+	public const string GuestClaim = "guest";
 }

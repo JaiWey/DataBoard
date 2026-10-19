@@ -49,6 +49,7 @@ public sealed class CreateApiTokenHandler(IApiTokenRepository tokens, IUnitOfWor
     public async Task<ApiTokenCreatedDto> HandleAsync(CreateApiTokenRequest request, CancellationToken ct = default)
     {
         var userId = access.RequireUserId();
+        access.RequireNotGuest();
         var now = clock.UtcNow;
 
         DateTime? expires = null;

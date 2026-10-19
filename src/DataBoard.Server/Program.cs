@@ -46,6 +46,7 @@ builder.Services.AddDataBoardMcp();
 // The scheduled refresh of dashboards runs inside the server (each server may run it; a due dashboard goes to one of them).
 builder.Services.Configure<DashboardRefreshOptions>(builder.Configuration.GetSection(DashboardRefreshOptions.SectionName));
 builder.Services.AddHostedService<DashboardRefreshService>();
+builder.Services.AddHostedService<GuestCleanupService>(); // deletes guests whose day is up
 builder.Services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme)
 	.Configure<IOptions<JwtOptions>>((bearer, jwt) =>
 	{
@@ -97,6 +98,14 @@ builder.Services.AddRateLimiter(options =>
 		return RateLimitPartition.GetFixedWindowLimiter(
 			key,
 			_ => new FixedWindowRateLimiterOptions { PermitLimit = limit, Window = TimeSpan.FromMinutes(1) });
+	});
+	// "Continue as guest" makes an account each time, so it is limited much harder than a sign-in.
+	options.AddPolicy("guest", context =>
+	{
+		var limit = context.RequestServices.GetRequiredService<IConfiguration>().GetValue("RateLimiting:GuestPermitLimit", 5);
+		return RateLimitPartition.GetFixedWindowLimiter(
+			context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+			_ => new FixedWindowRateLimiterOptions { PermitLimit = limit, Window = TimeSpan.FromHours(1) });
 	});
 	options.AddPolicy("auth", context =>
 	{

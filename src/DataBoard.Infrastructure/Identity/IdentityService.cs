@@ -1,6 +1,8 @@
 using System.Security.Cryptography;
 using DataBoard.Application.Abstractions;
 using DataBoard.Application.Common;
+using DataBoard.Application.DataSources;
+using DataBoard.Domain.DataSources;
 using DataBoard.Application.Identity;
 using DataBoard.Domain.Organizations;
 using DataBoard.Infrastructure.Persistence;
@@ -15,7 +17,10 @@ internal sealed class IdentityService(
     AppDbContext db,
     JwtTokenService tokens,
     IOptions<JwtOptions> jwtOptions,
-    IClock clock) : IIdentityService
+    IOptions<GuestOptions> guestOptions,
+    IClock clock,
+    ISecretProtector secrets,
+    IUploadStore uploads) : IIdentityService
 {
     private const string InvalidCredentials = "Invalid email or password.";
 
@@ -94,6 +99,58 @@ internal sealed class IdentityService(
         var hasOwner = await db.OrganizationMembers.AnyAsync(m => m.OrganizationId == organization.Id && m.Role == OrganizationRole.Owner, ct);
         db.OrganizationMembers.Add(OrganizationMember.Create(organization.Id, userId, hasOwner ? OrganizationRole.Editor : OrganizationRole.Owner, now));
         await db.SaveChangesAsync(ct);
+    }
+
+    public async Task<AuthSession> StartGuestAsync(CancellationToken ct = default)
+    {
+        var options = guestOptions.Value;
+        if (!options.Enabled) throw new ForbiddenException("Guest access is not available.");
+
+        var now = clock.UtcNow;
+        if (await users.Users.CountAsync(u => u.IsGuest && u.GuestExpiresUtc > now, ct) >= options.MaxActive)
+            throw new ForbiddenException("Too many guests are here right now. Try again later or create an account.");
+
+        var id = Guid.NewGuid();
+        var email = $"guest-{id:N}@guest.invalid";
+        var user = new AppUser
+        {
+            Id = id,
+            UserName = email,
+            Email = email,
+            DisplayName = "Guest",
+            CreatedUtc = now,
+            IsGuest = true,
+            GuestExpiresUtc = now.AddHours(Math.Max(1, options.LifetimeHours)),
+        };
+        if (!(await users.CreateAsync(user)).Succeeded) throw new ForbiddenException("Could not start a guest session.");
+
+        // A sandbox of their own: the default organization holds other people's work and is never shown to a guest.
+        var sandbox = Organization.Create("Guest sandbox", now);
+        db.Organizations.Add(sandbox);
+        db.OrganizationMembers.Add(OrganizationMember.Create(sandbox.Id, id, OrganizationRole.Owner, now));
+        await db.SaveChangesAsync(ct);
+
+        return await IssueSessionAsync(user, ct);
+    }
+
+    public async Task<int> DeleteExpiredGuestsAsync(CancellationToken ct = default)
+    {
+        var now = clock.UtcNow;
+        var expired = await users.Users.Where(u => u.IsGuest && u.GuestExpiresUtc <= now).Select(u => u.Id).ToListAsync(ct);
+        foreach (var id in expired)
+        {
+            // Organizations first: what a guest made points at the guest and cannot outlive them, and it goes with its organization.
+            var sandboxes = db.OrganizationMembers.Where(m => m.UserId == id && m.Role == OrganizationRole.Owner).Select(m => m.OrganizationId);
+            var csvSources = await db.DataSources.Where(d => d.Type == DataSourceType.Csv && sandboxes.Contains(d.OrganizationId))
+                .Select(d => d.EncryptedConnectionString).ToListAsync(ct);
+            await db.Organizations.Where(o => !o.IsDefault && sandboxes.Contains(o.Id)).ExecuteDeleteAsync(ct);
+            foreach (var secret in csvSources) // the uploaded files go too
+                if (CsvConnection.TryGetKey(secrets.Unprotect(secret), out var key)) uploads.Delete(key);
+            await db.RefreshTokens.Where(t => t.UserId == id).ExecuteDeleteAsync(ct);
+            var user = await users.FindByIdAsync(id.ToString());
+            if (user is not null) await users.DeleteAsync(user);
+        }
+        return expired.Count;
     }
 
     public async Task<AuthSession> LoginAsync(string email, string password, CancellationToken ct = default)
@@ -234,6 +291,7 @@ internal sealed class IdentityService(
 
         var raw = Base64Url(RandomNumberGenerator.GetBytes(32));
         var refreshExpires = now.AddDays(jwtOptions.Value.RefreshTokenDays);
+        if (user.GuestExpiresUtc is { } ends && ends < refreshExpires) refreshExpires = ends; // a guest session ends with the guest
         db.RefreshTokens.Add(new RefreshToken
         {
             UserId = user.Id,

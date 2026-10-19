@@ -17,6 +17,7 @@ public sealed class CreateDataSourceHandler(
     public async Task<DataSourceDto> HandleAsync(CreateDataSourceRequest request, CancellationToken ct = default)
     {
         await access.RequireRoleAsync(request.OrganizationId, OrganizationRole.Editor, ct);
+        access.RequireNotGuest(); // a connection string would make the server connect to a host the guest picks
 
         if (string.IsNullOrWhiteSpace(request.ConnectionString))
             throw new ValidationException(nameof(request.ConnectionString), "Connection string is required.");

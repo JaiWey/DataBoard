@@ -233,6 +233,7 @@ internal sealed class FakeResultCache : IResultCache
 internal sealed class FakeCurrentUser(Guid? userId) : ICurrentUser
 {
     public Guid? UserId { get; set; } = userId;
+    public bool IsGuest { get; set; }
 }
 
 internal sealed class FakeIdentity : IIdentityService
@@ -244,6 +245,8 @@ internal sealed class FakeIdentity : IIdentityService
 
     public Task<UserInfo> RegisterAsync(string email, string password, string displayName, CancellationToken ct = default) =>
         throw new NotSupportedException();
+    public Task<AuthSession> StartGuestAsync(CancellationToken ct = default) => throw new NotSupportedException();
+    public Task<int> DeleteExpiredGuestsAsync(CancellationToken ct = default) => throw new NotSupportedException();
     public Task<AuthSession> LoginAsync(string email, string password, CancellationToken ct = default) =>
         throw new NotSupportedException();
     /// <summary>The people the identity system knows, for the member list.</summary>

@@ -31,6 +31,7 @@ public sealed class ShareWithOrganizationHandler(
     public async Task<OrgShareDto> HandleAsync(Guid organizationId, Guid dashboardId, ShareWithOrganizationRequest? request, CancellationToken ct = default)
     {
         var member = await access.RequireRoleAsync(organizationId, OrganizationRole.Editor, ct);
+        access.RequireNotGuest();
         var userId = access.RequireUserId();
         _ = await visibility.GetAsync(dashboards, organizationId, dashboardId, member, ct);
 

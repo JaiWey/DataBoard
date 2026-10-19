@@ -1,6 +1,6 @@
-import { HttpClient } from '@angular/common/http';
 import { Component, computed, inject, input, signal } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
+import { AuthProvidersService } from './auth-providers.service';
 
 /**
  * "Continue with GitHub", shown only when the server has GitHub set up. It is a plain link: the whole page goes to GitHub
@@ -29,8 +29,6 @@ import { MatButtonModule } from '@angular/material/button';
   `,
 })
 export class GitHubSignInComponent {
-  private readonly http = inject(HttpClient);
-
   /** A page of this app to come back to after signing in. */
   readonly returnUrl = input<string | null>(null);
 
@@ -42,9 +40,6 @@ export class GitHubSignInComponent {
 
   constructor() {
     // Not knowing is the same as not offering: a failed call just leaves the password form.
-    this.http.get<{ gitHub: boolean }>('/api/auth/providers').subscribe({
-      next: (p) => this.enabled.set(p.gitHub === true),
-      error: () => this.enabled.set(false),
-    });
+    inject(AuthProvidersService).load().subscribe((p) => this.enabled.set(p.gitHub === true));
   }
 }

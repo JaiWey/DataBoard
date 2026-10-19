@@ -75,6 +75,12 @@ export class App implements OnInit {
     });
   }
 
+  /** A guest who wants to keep their work signs up as someone new: the guest session ends first. */
+  protected logoutToRegister(event: Event) {
+    event.preventDefault();
+    this.auth.logout().subscribe(() => this.router.navigate(['/register']));
+  }
+
   protected logout() {
     this.auth.logout().subscribe(() => this.router.navigate(['/login']));
   }

@@ -18,6 +18,7 @@ public sealed class CreateOrganizationHandler(
     public async Task<OrganizationDto> HandleAsync(CreateOrganizationRequest request, CancellationToken ct = default)
     {
         var userId = access.RequireUserId();
+        access.RequireNotGuest();
         var now = clock.UtcNow;
 
         Organization organization;

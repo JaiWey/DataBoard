@@ -16,7 +16,9 @@
         <a mat-button [routerLink]="['/organizations', id]" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }">Data sources</a>
       }
       <a mat-button routerLink="/organizations" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }">Organizations</a>
-      <a mat-button routerLink="/account/tokens" routerLinkActive="active">Access tokens</a>
+      @if (!auth.isGuest()) {
+        <a mat-button routerLink="/account/tokens" routerLinkActive="active">Access tokens</a>
+      }
     </nav>
 
     <span class="spacer"></span>
@@ -25,6 +27,13 @@
     <button mat-stroked-button type="button" class="signout" (click)="logout()">Sign out</button>
   }
 </mat-toolbar>
+}
+
+@if (auth.isGuest() && !publicPage()) {
+<div class="guest-banner" role="status">
+  You are browsing as a guest. Your work is deleted after a day.
+  <a routerLink="/register" (click)="logoutToRegister($event)">Create an account</a>
+</div>
 }
 
 <main [class.public]="publicPage()">

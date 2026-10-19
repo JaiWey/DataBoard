@@ -32,6 +32,7 @@ internal sealed class JwtTokenService(IOptions<JwtOptions> options, IClock clock
                 [JwtRegisteredClaimNames.Jti] = Guid.NewGuid().ToString(),
             },
         };
+        if (user.IsGuest) descriptor.Claims["guest"] = "true"; // CurrentUser.GuestClaim
 
         return (_handler.CreateToken(descriptor), expires);
     }

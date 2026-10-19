@@ -32,3 +32,12 @@ footer { text-align: center; font-size: 0.85rem; padding-bottom: 1rem; }
   .who { display: none; }
   nav a { padding: 0 0.6rem; min-width: 0; }
 }
+
+.guest-banner {
+  padding: 0.4rem 1rem;
+  text-align: center;
+  font-size: 0.9rem;
+  background: var(--mat-sys-tertiary-container);
+  color: var(--mat-sys-on-tertiary-container);
+}
+.guest-banner a { margin-left: 0.5rem; font-weight: 500; color: inherit; }

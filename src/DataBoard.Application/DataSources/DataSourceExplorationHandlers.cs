@@ -28,6 +28,7 @@ public sealed class TestNewConnectionHandler(DataSourceConnectors connectors, Or
     public async Task<ConnectionTestResult> HandleAsync(Guid organizationId, TestConnectionRequest request, CancellationToken ct = default)
     {
         await access.RequireRoleAsync(organizationId, OrganizationRole.Editor, ct);
+        access.RequireNotGuest(); // it would connect to a host the guest picks
 
         if (string.IsNullOrWhiteSpace(request.ConnectionString))
             throw new ValidationException(nameof(request.ConnectionString), "Connection string is required.");

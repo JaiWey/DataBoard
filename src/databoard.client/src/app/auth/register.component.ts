@@ -8,11 +8,12 @@ import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { AuthService } from './auth.service';
 import { GitHubSignInComponent } from './github-sign-in.component';
+import { GuestSignInComponent } from './guest-sign-in.component';
 import { returnQuery, safeReturnUrl } from './return-url';
 
 @Component({
   selector: 'app-register',
-  imports: [ReactiveFormsModule, RouterLink, MatCardModule, MatFormFieldModule, MatInputModule, MatButtonModule, GitHubSignInComponent],
+  imports: [ReactiveFormsModule, RouterLink, MatCardModule, MatFormFieldModule, MatInputModule, MatButtonModule, GitHubSignInComponent, GuestSignInComponent],
   template: `
     <mat-card class="auth">
       <mat-card-header><mat-card-title>Create account</mat-card-title></mat-card-header>
@@ -37,6 +38,7 @@ import { returnQuery, safeReturnUrl } from './return-url';
           <p class="fail" role="alert">{{ message }}</p>
         }
         <app-github-sign-in [returnUrl]="returnUrl" />
+        <app-guest-sign-in [returnUrl]="returnUrl" />
         <p>Already registered? <a routerLink="/login" [queryParams]="returnQuery">Sign in</a></p>
       </mat-card-content>
     </mat-card>

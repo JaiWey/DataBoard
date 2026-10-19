@@ -1,5 +1,6 @@
 using DataBoard.Application.Identity;
 using System.Security.Claims;
+using DataBoard.Infrastructure.Identity;
 using DataBoard.Server.Infrastructure;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
@@ -13,7 +14,7 @@ namespace DataBoard.Server.Controllers;
 [ApiController]
 [Route("api/auth")]
 [EnableRateLimiting("auth")]
-public class AuthController(IIdentityService identity, IWebHostEnvironment env, IOptions<GitHubOptions> github) : ControllerBase
+public class AuthController(IIdentityService identity, IWebHostEnvironment env, IOptions<GitHubOptions> github, IOptions<GuestOptions> guests) : ControllerBase
 {
 	public const string RefreshCookieName = "databoard_refresh";
 
@@ -40,12 +41,24 @@ public class AuthController(IIdentityService identity, IWebHostEnvironment env, 
 		return ToResponse(session);
 	}
 
-	public sealed record ProvidersResponse(bool GitHub);
+	/// <summary>"Continue as guest": a temporary account with a sandbox of its own, deleted after a day.</summary>
+	[HttpPost("guest")]
+	[AllowAnonymous]
+	[EnableRateLimiting("guest")]
+	public async Task<ActionResult<SessionResponse>> Guest(CancellationToken ct)
+	{
+		if (!guests.Value.Enabled) return NotFound();
+		var session = await identity.StartGuestAsync(ct);
+		SetRefreshCookie(session);
+		return ToResponse(session);
+	}
+
+	public sealed record ProvidersResponse(bool GitHub, bool Guest);
 
 	/// <summary>Which ways of signing in besides a password are set up, so the sign-in page offers only those.</summary>
 	[HttpGet("providers")]
 	[AllowAnonymous]
-	public ActionResult<ProvidersResponse> Providers() => new ProvidersResponse(github.Value.Enabled);
+	public ActionResult<ProvidersResponse> Providers() => new ProvidersResponse(github.Value.Enabled, guests.Value.Enabled);
 
 	/// <summary>Sends the browser to GitHub. It comes back to <c>github/callback</c> and then to <see cref="GitHubComplete"/>.</summary>
 	[HttpGet("github")]

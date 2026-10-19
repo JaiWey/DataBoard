@@ -8,6 +8,7 @@ import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { AuthService } from './auth.service';
 import { GitHubSignInComponent } from './github-sign-in.component';
+import { GuestSignInComponent } from './guest-sign-in.component';
 import { returnQuery, safeReturnUrl } from './return-url';
 
 /** What the server says, by the code it puts in the address when a sign-in with GitHub ends here. */
@@ -18,7 +19,7 @@ const GITHUB_ERRORS: Record<string, string> = {
 
 @Component({
   selector: 'app-login',
-  imports: [ReactiveFormsModule, RouterLink, MatCardModule, MatFormFieldModule, MatInputModule, MatButtonModule, GitHubSignInComponent],
+  imports: [ReactiveFormsModule, RouterLink, MatCardModule, MatFormFieldModule, MatInputModule, MatButtonModule, GitHubSignInComponent, GuestSignInComponent],
   template: `
     <mat-card class="auth">
       <mat-card-header><mat-card-title>Sign in</mat-card-title></mat-card-header>
@@ -38,6 +39,7 @@ const GITHUB_ERRORS: Record<string, string> = {
           <p class="fail" role="alert">{{ e }}</p>
         }
         <app-github-sign-in [returnUrl]="returnUrl" />
+        <app-guest-sign-in [returnUrl]="returnUrl" />
         <p>No account? <a routerLink="/register" [queryParams]="returnQuery">Register</a></p>
       </mat-card-content>
     </mat-card>

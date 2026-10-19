@@ -85,6 +85,7 @@ public static class DependencyInjection
         services.AddSingleton<ITableViewSqlRenderer, MySqlTableViewSqlRenderer>();
 
         // Uploaded CSV files: imported into a small SQLite file each, then read like any other data source.
+        services.Configure<GuestOptions>(configuration.GetSection(GuestOptions.SectionName));
         services.Configure<UploadOptions>(configuration.GetSection(UploadOptions.SectionName));
         services.AddSingleton<IUploadStore, LocalUploadStore>();
         services.AddSingleton<IImageStore, LocalImageStore>();
