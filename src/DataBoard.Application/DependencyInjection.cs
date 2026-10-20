@@ -20,6 +20,7 @@ public static class DependencyInjection
 
         services.AddScoped<CreateOrganizationHandler>();
         services.AddScoped<ListMyOrganizationsHandler>();
+        services.AddScoped<SeedGuestSandboxHandler>();
         services.AddScoped<AddMemberHandler>();
         services.AddScoped<SharedLinkAccess>();
         services.AddScoped<DashboardVisibility>();

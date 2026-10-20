@@ -45,10 +45,25 @@ public class AuthController(IIdentityService identity, IWebHostEnvironment env, 
 	[HttpPost("guest")]
 	[AllowAnonymous]
 	[EnableRateLimiting("guest")]
-	public async Task<ActionResult<SessionResponse>> Guest(CancellationToken ct)
+	public async Task<ActionResult<SessionResponse>> Guest(
+		[FromServices] Application.Organizations.SeedGuestSandboxHandler sandbox, [FromServices] ILogger<AuthController> logger, CancellationToken ct)
 	{
 		if (!guests.Value.Enabled) return NotFound();
 		var session = await identity.StartGuestAsync(ct);
+
+		// The example is made as the new guest, through the handlers a signed-in guest would use. If it cannot be made the guest
+		// still gets an empty sandbox, which is the lesser problem.
+		HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity(
+			[new Claim(JwtRegisteredClaimNames.Sub, session.User.Id.ToString()), new Claim(CurrentUser.GuestClaim, "true")], "guest"));
+		try
+		{
+			await sandbox.HandleAsync(ct);
+		}
+		catch (Exception ex) when (ex is not OperationCanceledException)
+		{
+			logger.LogWarning(ex, "Could not put the example into a guest sandbox.");
+		}
+
 		SetRefreshCookie(session);
 		return ToResponse(session);
 	}

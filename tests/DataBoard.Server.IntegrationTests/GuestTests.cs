@@ -62,6 +62,32 @@ public class GuestTests(ApiFactory factory)
     }
 
     [Fact]
+    public async Task A_new_sandbox_holds_a_working_example()
+    {
+        using var app = WithGuests();
+        var (client, _) = await StartAsync(app);
+        var org = (await client.GetFromJsonAsync<List<Org>>("/api/organizations", Json))!.Single();
+        var root = $"/api/organizations/{org.Id}";
+
+        var sources = await client.GetFromJsonAsync<List<System.Text.Json.JsonElement>>($"{root}/data-sources", Json);
+        var datasets = await client.GetFromJsonAsync<List<System.Text.Json.JsonElement>>($"{root}/datasets", Json);
+        var charts = await client.GetFromJsonAsync<List<System.Text.Json.JsonElement>>($"{root}/charts", Json);
+        var dashboards = await client.GetFromJsonAsync<List<System.Text.Json.JsonElement>>($"{root}/dashboards", Json);
+
+        Assert.Single(sources!);
+        Assert.Single(datasets!);
+        Assert.Equal(3, charts!.Count);
+        var dashboard = Assert.Single(dashboards!);
+        Assert.Equal(3, dashboard.GetProperty("widgetCount").GetInt32());
+
+        var run = await client.PostAsJsonAsync($"{root}/dashboards/{dashboard.GetProperty("id").GetGuid()}/run", new { });
+        Assert.Equal(HttpStatusCode.OK, run.StatusCode);
+        var body = await run.Content.ReadAsStringAsync();
+        Assert.DoesNotContain("\"error\":\"", body); // no chart failed
+        Assert.Contains("Auckland", body);
+    }
+
+    [Fact]
     public async Task A_guest_cannot_reach_outside_the_sandbox()
     {
         using var app = WithGuests();
